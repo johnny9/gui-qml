@@ -20,7 +20,7 @@
 
 namespace {
 struct PrepareWallet : StubWallet {
-    bool encrypted{false}, locked{true}, fail_relock{false}, throw_create{false}, unknown_sweep{false};
+    bool encrypted{false}, locked{true}, fail_relock{false}, throw_create{false}, unknown_sweep{false}, coin_locked{false};
     int creates{0}, unlocks{0}, locks{0}, internals{0};
     FeeReason reason{FeeReason::FALLBACK};
     std::string expected_password{"secret"};std::atomic<QThread*> unlock_thread{nullptr};
@@ -61,7 +61,7 @@ struct PrepareWallet : StubWallet {
         return outputs;
     }
     bool txoutIsMine(const CTxOut& output) override { return output.scriptPubKey == own_script; }
-    bool isLockedCoin(const COutPoint&) override { return false; }
+    bool isLockedCoin(const COutPoint&) override { return coin_locked; }
     util::Result<wallet::CreatedTransactionResult> createTransaction(const std::vector<wallet::CRecipient>& recipients,
         const wallet::CCoinControl&, bool, std::optional<unsigned int>) override {
         ++creates;
@@ -187,6 +187,18 @@ private Q_SLOTS:
         QCOMPARE(wallet.creates, 0);
         QCOMPARE(wallet.locks, 0);
     }
+    void selectedLockIsCheckedAtTheNativeBoundaryBeforeUnlock()
+    {
+        PrepareWallet wallet; wallet.encrypted = true; wallet.coin_locked = true;
+        auto request = Request(); request.input_mode = coinselection::InputMode::Manual;
+        request.selected = std::make_shared<const std::set<COutPoint>>(std::set<COutPoint>{wallet.input});
+        request.available_balance = 50'000; request.passphrase = SecureString{"secret"};
+        const auto result = walletprepare::Execute(wallet, std::move(request));
+        QCOMPARE(result.error, walletprepare::Error::InsufficientSelectedBalance);
+        QVERIFY(!result.review); QVERIFY(result.message.contains(QStringLiteral("locked")));
+        QCOMPARE(wallet.unlocks, 0); QCOMPARE(wallet.creates, 0); QCOMPARE(wallet.locks, 0);
+    }
+
     void capturedPasswordOwnsOriginalPreparation_data()
     {
         QTest::addColumn<int>("scenario");QTest::newRow("held-result")<<0;QTest::newRow("quiet-close-before-work")<<1;QTest::newRow("native-admission-refused")<<2;

@@ -166,7 +166,7 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
         quint64 lock_revision{0}, selection_revision{0};
     };
     struct Input { std::mutex mutex; Controls controls; };
-    struct Chunk { std::vector<LockItemOutcome> items; Selection changed; bool failed{false}, uncertain{false}; };
+    struct Chunk { std::vector<LockItemOutcome> items; Selection changed; bool failed{false}, uncertain{false}, already_locked{false}; };
     struct LockJob {
         std::shared_ptr<const walletopening::Session::Action> action;
         std::vector<COutPoint> targets;
@@ -174,7 +174,7 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
         std::shared_ptr<const Selection> marks_at_admission;
         Selection changed, selected_after;
         size_t cursor{0}, requested{0};
-        bool locked{false}, failed{false}, uncertain{false};
+        bool locked{false}, failed{false}, uncertain{false}, already_locked{false};
         std::function<void(LockResult)> done;
     };
     const std::shared_ptr<walletopening::Session> opening;
@@ -240,7 +240,9 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
             // A missing selected input is an explicit reconciliation state.
             // Keep the user's Manual intent until they choose a replacement
             // or explicitly switch back to Automatic.
-            session->reconcileCatalog(native->outpoints);
+            Selection spendable;
+            for (const auto& coin : native->coins) if (!coin.locked) spendable.insert(coin.outpoint);
+            session->reconcileCatalog(spendable);
         }
         projection->request();
     }
@@ -386,6 +388,28 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
                 auto item = job->items[i];
                 try {
                     const auto& target = job->targets[i];
+                    // A displayed row is not an action precondition. Query the
+                    // original public wallet immediately before locking; the
+                    // captured output may have been spent since enumeration.
+                    // Unlock must still be able to clear an obsolete lock.
+                    if (job->locked) {
+                        bool available{false}, already_locked{false};
+                        try {
+                            const auto current = wallet.getCoins({target});
+                            available = current.size() == 1 && !current.front().txout.IsNull()
+                                && !current.front().is_spent && current.front().depth_in_main_chain >= 0;
+                            if (available) already_locked = wallet.isLockedCoin(target);
+                        } catch (...) { available = false; /* No mutation was attempted. */ }
+                        if (!available || already_locked) {
+                            // Public Wallet cannot report lock persistence.
+                            // Never silently upgrade a possibly temporary lock.
+                            item.state = already_locked ? LockItemOutcome::State::AlreadyLocked : LockItemOutcome::State::Failed;
+                            result.already_locked |= already_locked;
+                            result.failed = true;
+                            result.items.push_back(std::move(item));
+                            continue;
+                        }
+                    }
                     if (job->locked ? wallet.lockCoin(target, true) : wallet.unlockCoin(target)) {
                         item.state = LockItemOutcome::State::Changed;
                         result.changed.insert(target);
@@ -404,7 +428,7 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
         }, [self, job, begin](Chunk result) {
             job->cursor = begin + result.items.size(); job->changed.insert(result.changed.begin(), result.changed.end());
             for (size_t i = 0; i < result.items.size(); ++i) job->items[begin + i] = std::move(result.items[i]);
-            job->failed |= result.failed; job->uncertain |= result.uncertain;
+            job->failed |= result.failed; job->uncertain |= result.uncertain; job->already_locked |= result.already_locked;
             if (result.uncertain) self->finishLock();
             self->lockChunk();
         }, [self, job, begin, end](std::exception_ptr) {
@@ -435,7 +459,7 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
         auto items = std::move(job->items);
         job->action.reset();
         std::vector<COutPoint>{}.swap(job->targets); Selection{}.swap(job->changed);
-        done({job->failed, job->uncertain, requested, changed, session->selection(), session->revision(), session->marks(), session->marksRevision(), std::move(items)});
+        done({job->failed, job->uncertain, requested, changed, session->selection(), session->revision(), session->marks(), session->marksRevision(), std::move(items), job->already_locked});
         locks.pop_front();
         if (locks.empty()) native_query->request();
     }
@@ -807,6 +831,7 @@ void CoinsListModel::publishLocks()
             m_mark_revision = result->value->marks_revision; m_marked_count = result->value->marks->size();
         }
         if (result->error || !result->value || result->value->uncertain) m_lock_error = tr("A coin lock action ended without a confirmed outcome. Refresh before retrying.");
+        else if (result->value->already_locked) m_lock_error = tr("Some coins were already locked. Unlock them before requesting a persistent lock.");
         else if (result->value->failed) m_lock_error = tr("Some coin lock changes could not be saved. Refresh before retrying.");
     }
     if (!consumed) return;

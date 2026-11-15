@@ -192,15 +192,16 @@ inline bool Click(BitcoinQmlApplication& app, const char* name)
 
 inline bool SetText(BitcoinQmlApplication& app, const char* name, const QString& text)
 {
-    auto* item = qobject_cast<QQuickItem*>(WaitForVisible(app, name));
-    if (!item) return false;
+    QPointer<QQuickItem> item{qobject_cast<QQuickItem*>(WaitForVisible(app, name))};
+    if (!item || !QTest::qWaitFor([&] { return !item || item->isEnabled(); }) || !item) return false;
     item->forceActiveFocus();
-    if (!QMetaObject::invokeMethod(item, "selectAll")) return false;
+    if (!item || !item->hasActiveFocus() || !QMetaObject::invokeMethod(item, "selectAll")) return false;
     QTest::keyClick(item->window(), Qt::Key_Backspace, Qt::NoModifier, 1);
+    if (!item) return false;
     QInputMethodEvent edit;
     edit.setCommitString(text);
-    QCoreApplication::sendEvent(item, &edit);
-    return edit.isAccepted();
+    QCoreApplication::sendEvent(item.data(), &edit);
+    return item && edit.isAccepted();
 }
 
 inline bool SelectSettings(BitcoinQmlApplication& app, const char* section)

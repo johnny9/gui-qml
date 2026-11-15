@@ -10,8 +10,11 @@
 #include <key_io.h>
 #include <util/string.h>
 #include <addresstype.h>
+#include <algorithm>
 #include <set>
+#include <tuple>
 #include <QPersistentModelIndex>
+#include <QElapsedTimer>
 #include <QThread>
 #include <QScopeGuard>
 #include <QCoreApplication>
@@ -26,7 +29,7 @@ public:
     std::mutex mutex;
     CoinsList coins;
     bool fail_read{false};
-    std::atomic<QThread*> read_thread{nullptr}, lock_thread{nullptr};
+    std::atomic<QThread*> read_thread{nullptr}, lock_thread{nullptr}, coin_lookup_thread{nullptr};
     std::atomic<size_t> read_calls{0};
     void setReadFailure(bool failed) { std::lock_guard lock{mutex}; fail_read = failed; }
     void clearCoins() { std::lock_guard lock{mutex}; coins.clear(); }
@@ -37,6 +40,20 @@ public:
     std::vector<bool> lockCalls() { std::lock_guard lock{mutex}; return lock_calls; }
     std::map<CTxDestination, std::string> labels;
     CoinsList listCoins() override { ++read_calls; read_thread = QThread::currentThread(); std::lock_guard lock{mutex}; if (fail_read) throw std::runtime_error{"Coin read failed"}; return coins; }
+    std::vector<interfaces::WalletTxOut> getCoins(const std::vector<COutPoint>& outputs) override {
+        coin_lookup_thread = QThread::currentThread();
+        std::lock_guard lock{mutex};
+        std::vector<interfaces::WalletTxOut> result;
+        for (const auto& target : outputs) {
+            interfaces::WalletTxOut value{};
+            for (const auto& [address, entries] : coins) {
+                (void)address;
+                for (const auto& [outpoint, output] : entries) if (outpoint == target) value = output;
+            }
+            result.push_back(value);
+        }
+        return result;
+    }
     bool isLockedCoin(const COutPoint& p) override { std::lock_guard lock{mutex}; return locked.contains(p); }
     bool lockCoin(const COutPoint& p, bool) override { lock_thread = QThread::currentThread(); std::lock_guard lock{mutex}; lock_calls.push_back(true); if (fail_lock.contains(p)) return false; locked.insert(p); if (throw_after_lock.contains(p)) throw std::runtime_error{"lock result lost"}; return true; }
     bool unlockCoin(const COutPoint& p) override { lock_thread = QThread::currentThread(); std::lock_guard lock{mutex}; lock_calls.push_back(false); locked.erase(p); return true; }
@@ -377,6 +394,131 @@ private Q_SLOTS:
         QCOMPARE(fixture.model->totalSatoshi(), qint64{257 * 1000 + 256 * 257 / 2});
         QVERIFY(!fixture.model->loading());
     }
+    void anExternalLockIsNotSilentlyUpgradedAndInvalidatesManualAvailability()
+    {
+        ManualCoins fixture{1}; auto& coins = *fixture.model;
+        const auto id = coins.data(coins.index(0), CoinsListModel::CoinIdRole).toString();
+        QVERIFY(coins.setManualInputSelection(true));
+        QVERIFY(coins.toggleCoinSelectionById(id)); QVERIFY(coins.toggleMarkById(id)); fixture.finish();
+        {
+            std::lock_guard lock{fixture.wallet->mutex};
+            fixture.wallet->locked.insert(COutPoint{Txid{}, 0});
+        }
+        QVERIFY(!coins.data(coins.index(0), CoinsListModel::LockedRole).toBool());
+        QVERIFY(coins.lockMarkedCoins(true)); const auto owner = coins.lockOperation(); fixture.finish();
+        QVERIFY(owner && owner->result() && owner->result()->value);
+        const auto& result = *owner->result()->value;
+        QVERIFY(result.failed); QVERIFY(result.already_locked); QVERIFY(!result.uncertain);
+        QCOMPARE(result.changed, size_t{0}); QCOMPARE(result.items.size(), size_t{1});
+        QCOMPARE(result.items[0].state, CoinsListModel::LockItemOutcome::State::AlreadyLocked);
+        QVERIFY(fixture.wallet->lockCalls().empty());
+        QCOMPARE(coins.markedCount(), 1); QVERIFY(coins.manualInputSelection());
+        QCOMPARE(coins.selectedCoinsCount(), 1); QVERIFY(coins.selectionReconciliationRequired());
+        QVERIFY(coins.lockError().contains(QStringLiteral("already locked")));
+    }
+
+    void fiveThousandCoinsPublishInBoundedTurns()
+    {
+        ManualCoins fixture{5000, false};
+        QElapsedTimer total; total.start();
+        fixture.commands.drain();
+        const auto worker_ns = total.nsecsElapsed();
+        QCOMPARE(fixture.model->rowCount(), 0);
+        qint64 maximum_turn_ns{0};
+        int previous{0}, turns{0};
+        while (!fixture.publications.empty()) {
+            QElapsedTimer turn; turn.start();
+            QVERIFY(fixture.publishOne());
+            maximum_turn_ns = std::max(maximum_turn_ns, turn.nsecsElapsed());
+            const auto count = fixture.model->rowCount();
+            QVERIFY(count - previous >= 0 && count - previous <= 32);
+            previous = count; ++turns;
+        }
+        QCOMPARE(fixture.model->rowCount(), 5000);
+        QVERIFY(turns >= 157);
+        QVERIFY(!fixture.model->loading());
+        QCOMPARE(fixture.model->totalSatoshi(), qint64{5000 * 1000 + 4999LL * 5000 / 2});
+        qInfo().nospace() << "R18 synthetic 5000-coin trace: worker_ns=" << worker_ns
+                         << " publication_turns=" << turns << " maximum_turn_ns=" << maximum_turn_ns
+                         << " total_ns=" << total.nsecsElapsed();
+    }
+
+    void lockedInputCannotReturnWhenAnEditingPickerIsCancelled()
+    {
+        coinselection::Session session{[](coinselection::Session::Selection value) {
+            return std::make_shared<const coinselection::Session::Selection>(std::move(value));
+        }};
+        const COutPoint locked{Txid{}, 0}, untouched{Txid{}, 1}, temporary{Txid{}, 2};
+        session.apply(coinselection::Session::Intent::ChooseManual);
+        session.apply(coinselection::Session::Intent::Select, locked);
+        session.apply(coinselection::Session::Intent::Select, untouched);
+        session.apply(coinselection::Session::Intent::Begin);
+        session.apply(coinselection::Session::Intent::Select, temporary);
+        QVERIFY(session.applyLockResults({locked}, {}));
+        session.apply(coinselection::Session::Intent::Cancel);
+        QCOMPARE(*session.selection(), (coinselection::Session::Selection{untouched}));
+        QCOMPARE(session.inputMode(), coinselection::InputMode::Manual);
+    }
+
+    void pickerDismissalPreservesPartialLockOutcome_data()
+    {
+        QTest::addColumn<bool>("effect_completed");
+        QTest::newRow("dismiss-before-native-effect") << false;
+        QTest::newRow("dismiss-after-effect-before-result") << true;
+    }
+    void pickerDismissalPreservesPartialLockOutcome()
+    {
+        QFETCH(bool, effect_completed);
+        ManualCoins fixture{4}; auto& coins = *fixture.model;
+        coins.setSortBy("amount"); coins.setSortDescending(false); fixture.finish();
+        QStringList ids;
+        for (int row{0}; row < 4; ++row) ids.push_back(coins.data(coins.index(row), CoinsListModel::CoinIdRole).toString());
+        QCOMPARE(ids[0], QString::fromStdString(Txid{}.GetHex()) + QStringLiteral(":0"));
+        QCOMPARE(ids[3], QString::fromStdString(Txid{}.GetHex()) + QStringLiteral(":3"));
+        QVERIFY(coins.setManualInputSelection(true));
+        QVERIFY(coins.toggleCoinSelectionById(ids[0]));
+        QVERIFY(coins.toggleCoinSelectionById(ids[3])); fixture.finish();
+        QCOMPARE(coins.selectedCoinsCount(), 2);
+        coins.beginSelection();
+        QVERIFY(coins.toggleCoinSelectionById(ids[1]));
+        for (int row{0}; row < 3; ++row) QVERIFY(coins.toggleMarkById(ids[row]));
+        fixture.finish();
+        QCOMPARE(coins.selectedCoinsCount(), 3); QCOMPARE(coins.markedCount(), 3);
+        {
+            std::lock_guard lock{fixture.wallet->mutex};
+            fixture.wallet->fail_lock.insert(COutPoint{Txid{}, 1});
+            for (auto& [address, entries] : fixture.wallet->coins) {
+                (void)address;
+                std::erase_if(entries, [](const auto& entry) { return std::get<0>(entry) == COutPoint{Txid{}, 2}; });
+            }
+        }
+        const auto calls = fixture.commands.coreSubmissions();
+        QVERIFY(coins.lockMarkedCoins(true));
+        const auto operation = coins.lockOperation(); QVERIFY(operation);
+        for (int turn{0}; fixture.commands.coreSubmissions() == calls && turn < 16; ++turn)
+            QVERIFY(fixture.commands.step(execution::Lane::Domain));
+        QVERIFY(fixture.commands.coreSubmissions() > calls);
+        if (effect_completed) QVERIFY(fixture.commands.step(execution::Lane::Core));
+        // These are the production picker close semantics. Closing is not
+        // cancellation of an already admitted lock operation.
+        coins.cancelSelection();
+        fixture.finish();
+        QVERIFY(operation->result()); QVERIFY(operation->result()->value);
+        const auto& result = *operation->result()->value;
+        QVERIFY(result.failed); QVERIFY(!result.uncertain);
+        QCOMPARE(result.requested, size_t{3}); QCOMPARE(result.changed, size_t{1});
+        QCOMPARE(result.items.size(), size_t{3});
+        QCOMPARE(result.items[0].state, CoinsListModel::LockItemOutcome::State::Changed);
+        QCOMPARE(result.items[1].state, CoinsListModel::LockItemOutcome::State::Failed);
+        QCOMPARE(result.items[2].state, CoinsListModel::LockItemOutcome::State::Failed);
+        QVERIFY(!fixture.wallet->locked.contains(COutPoint{Txid{}, 2}));
+        QCOMPARE(fixture.wallet->lockCalls().size(), size_t{2});
+        QVERIFY(coins.manualInputSelection());
+        QCOMPARE(*coins.selectionSnapshot(), (CoinsListModel::Selection{COutPoint{Txid{}, 3}}));
+        QCOMPARE(coins.markedCount(), 2);
+        QVERIFY(!coins.lockError().isEmpty()); QVERIFY(!coins.lockPending());
+    }
+
     void manualReorderPreservesPersistentIdentityAndFencesOldControls() {
         ManualCoins fixture{129}; auto& coins = *fixture.model;
         QPersistentModelIndex persistent{coins.index(0)};
@@ -618,6 +760,8 @@ private Q_SLOTS:
         QCOMPARE(source->lockCalls(), std::vector<bool>({true, false}));
         QVERIFY(source->read_thread.load() != QThread::currentThread());
         QVERIFY(source->lock_thread.load() != QThread::currentThread());
+        QVERIFY(source->coin_lookup_thread.load());
+        QVERIFY(source->coin_lookup_thread.load() != QThread::currentThread());
         QTRY_VERIFY(!coins->data(coins->index(0), CoinsListModel::LockedRole).toBool());
     }
     void stableIdentitySurvivesReorderAndRejectsRemovedCoin() {

@@ -10,6 +10,8 @@
 #include <key_io.h>
 #include <wallet/wallet.h> // Public CRecipient value required by interfaces::Wallet.
 
+#include <QCoreApplication>
+
 namespace walletprepare {
 Result ExecuteInto(interfaces::Wallet& wallet, Request request, std::shared_ptr<Result> owner)
 {
@@ -66,6 +68,15 @@ Result Execute(interfaces::Wallet& wallet, Request request)
             (!request.selected || request.selected->empty())) {
             result.error = Error::InsufficientSelectedBalance;
             return finish();
+        }
+        if (request.input_mode == coinselection::InputMode::Manual) {
+            for (const auto& output : *request.selected) {
+                if (wallet.isLockedCoin(output)) {
+                    result.error = Error::InsufficientSelectedBalance;
+                    result.message = QCoreApplication::translate("WalletQmlModel", "Some selected inputs are locked. Unlock or replace them and prepare again.");
+                    return finish();
+                }
+            }
         }
         // A captured acknowledged balance is an early refusal, not authority
         // to spend. Core still validates the original inputs at construction.

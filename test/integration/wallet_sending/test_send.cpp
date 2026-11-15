@@ -827,6 +827,120 @@ private Q_SLOTS:
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
     }
 
+    void manualSelectionKeepsItsOpeningAndRejectsMaturityReversal_data()
+    {
+        QTest::addColumn<bool>("reverse_maturity"); QTest::addColumn<bool>("external_lock");
+        QTest::newRow("wallet-switch") << false << false;
+        QTest::newRow("independent-rpc-reorg") << true << false;
+        QTest::newRow("independent-rpc-lock") << false << true;
+    }
+    void manualSelectionKeepsItsOpeningAndRejectsMaturityReversal()
+    {
+        QFETCH(bool, reverse_maturity); QFETCH(bool, external_lock);
+        auto* destination = qmltest::CreateWallet(m_app, "manual-destination"); QVERIFY(destination);
+        const auto address = qmltest::NewAddress(m_app, destination->name());
+        auto* wallet = qmltest::CreateWallet(m_app, "manual-original"); QVERIFY(wallet);
+        QVERIFY(qmltest::FundWallet(m_app, *wallet));
+        qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + qmltest::NewAddress(m_app, wallet->name()).toStdString() + "\"]"));
+        const auto available = qmltest::Rpc(m_app, "listunspent", {}, wallet->name());
+        QVERIFY(available.size() >= 2);
+        UniValue chosen;
+        for (const auto& input : available.getValues())
+            if (chosen.isNull() || input.find_value("confirmations").getInt<int>() < chosen.find_value("confirmations").getInt<int>()) chosen = input;
+        QCOMPARE(chosen.find_value("confirmations").getInt<int>(), 101);
+        const auto id = QString::fromStdString(chosen.find_value("txid").get_str()) + QLatin1Char(':') + QString::number(chosen.find_value("vout").getInt<int>());
+        auto* coins = wallet->coinsListModel(); QVERIFY(coins); coins->update();
+        QTRY_VERIFY(!coins->loading());
+        QVERIFY(coins->setManualInputSelection(true));
+        coins->beginSelection(); QVERIFY(coins->toggleCoinSelectionById(id)); coins->applySelection();
+        QTRY_VERIFY(!wallet->coinSelectionPending()); QTRY_COMPARE(wallet->selectedCoins()->size(), size_t{1});
+        const auto selected = *wallet->selectedCoins()->begin();
+        QCOMPARE(selected.hash.GetHex(), chosen.find_value("txid").get_str());
+        QVERIFY(qmltest::Click(m_app, "sendTabButton"));
+        QVERIFY(qmltest::Click(m_app, "feeSelectionPickerButton"));
+        QVERIFY(qmltest::Click(m_app, "feeSelectionOption3"));
+        QVERIFY(qmltest::SetText(m_app, "feeSelectionCustomRateInput", "1"));
+        QTRY_COMPARE(wallet->customFeeRate(), QStringLiteral("1"));
+        QTRY_VERIFY(wallet->customFeeRateValid());
+        QVERIFY(qmltest::SetText(m_app, "sendAddressInput", address));
+        QVERIFY(qmltest::SetText(m_app, "sendAmountInput", "1"));
+        QTRY_VERIFY(!wallet->sendRecipientList()->validationPending());
+        if (reverse_maturity || external_lock) {
+            if (external_lock) {
+                UniValue input{UniValue::VOBJ}; input.pushKV("txid", selected.hash.GetHex()); input.pushKV("vout", selected.n);
+                UniValue inputs{UniValue::VARR}; inputs.push_back(input);
+                qmltest::Rpc(m_app, "lockunspent", qmltest::Json("[false," + inputs.write() + "]"), wallet->name());
+                QCOMPARE(qmltest::Rpc(m_app, "listlockunspent", {}, wallet->name()).size(), size_t{1});
+            } else {
+                const auto tip = qmltest::Rpc(m_app, "getbestblockhash").get_str();
+                qmltest::Rpc(m_app, "invalidateblock", qmltest::Json("[\"" + tip + "\"]"));
+                const auto remaining = qmltest::Rpc(m_app, "listunspent", {}, wallet->name());
+                QVERIFY(remaining.size() >= 1);
+                for (const auto& input : remaining.getValues())
+                    QVERIFY(input.find_value("txid").get_str() != selected.hash.GetHex() || input.find_value("vout").getInt<int>() != int(selected.n));
+            }
+            // For an external lock, try the original candidate before any
+            // explicit catalog refresh: Native must check the public wallet.
+            if (!external_lock) { coins->update(); QTRY_VERIFY(!coins->loading()); }
+            QVERIFY2(!AwaitPreparation(*wallet), "An unavailable Manual input must not prepare with another wallet input.");
+            QVERIFY(!wallet->currentTransaction());
+            if (external_lock) {
+                coins->update(); QTRY_VERIFY(!coins->loading());
+                QTRY_VERIFY(coins->selectionReconciliationRequired());
+            }
+        } else {
+            auto* other = qmltest::CreateWallet(m_app, "manual-other"); QVERIFY(other);
+            QVERIFY(!other->coinsListModel()->manualInputSelection());
+            QVERIFY(qmltest::Click(m_app, "walletBadge"));
+            QVERIFY(qmltest::WaitForVisible(m_app, "walletSelectPopup"));
+            QVERIFY(qmltest::Click(m_app, "walletSelectItem_manual_original"));
+            QCOMPARE(qmltest::WaitForWallet(m_app, "manual-original"), wallet);
+            QVERIFY(qmltest::Click(m_app, "sendTabButton"));
+            QTRY_COMPARE(qmltest::Find(m_app, "sendCoinControlPicker")->property("currentIndex").toInt(), 1);
+            QCOMPARE(wallet->selectedCoins()->size(), size_t{1});
+            QVERIFY(wallet->selectedCoins()->contains(selected));
+            QVERIFY(coins->manualInputSelection());
+            QCOMPARE(wallet->sendRecipientList()->currentRecipient()->address()->address(), address);
+            QCOMPARE(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi(), qint64{COIN});
+            QTRY_VERIFY(!wallet->customFeeTargetPending());
+            QVERIFY2(AwaitPreparation(*wallet), qPrintable(QStringLiteral("preparation=%1, error=%2, feeValid=%3, selected=%4")
+                .arg(int(wallet->preparationState())).arg(wallet->transactionError()).arg(wallet->customFeeRateValid()).arg(wallet->selectedCoins()->size())));
+            const auto transaction = wallet->currentTransaction()->getWtx(); QVERIFY(transaction);
+            QCOMPARE(transaction->vin.size(), size_t{1}); QCOMPARE(transaction->vin[0].prevout, selected);
+            QVERIFY(!other->coinsListModel()->manualInputSelection());
+        }
+        QVERIFY(coins->manualInputSelection());
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{0});
+    }
+
+    void temporaryCoreLockUpgradeDoesNotReturnAfterUnlock()
+    {
+        auto* wallet = qmltest::CreateWallet(m_app, "temporary-lock-upgrade"); QVERIFY(wallet);
+        QVERIFY(qmltest::FundWallet(m_app, *wallet));
+        const auto unspent = qmltest::Rpc(m_app, "listunspent", {}, wallet->name()); QVERIFY(unspent.size() >= 1);
+        UniValue input{UniValue::VOBJ}; input.pushKV("txid", unspent[0].find_value("txid")); input.pushKV("vout", unspent[0].find_value("vout"));
+        UniValue inputs{UniValue::VARR}; inputs.push_back(input);
+        const auto id = QString::fromStdString(unspent[0].find_value("txid").get_str()) + QLatin1Char(':') + QString::number(unspent[0].find_value("vout").getInt<int>());
+        qmltest::Rpc(m_app, "lockunspent", qmltest::Json("[false," + inputs.write() + ",false]"), wallet->name());
+        auto* coins = wallet->coinsListModel(); QVERIFY(coins); coins->update(); QTRY_VERIFY(!coins->loading());
+        QVERIFY(coins->setCoinsLocked({id}, true)); QTRY_VERIFY(!coins->lockPending());
+        // The adapter refuses a persistence upgrade it cannot identify safely.
+        QVERIFY(coins->lockError().contains(QStringLiteral("already locked")));
+        QVERIFY(coins->lockOperation()->result() && coins->lockOperation()->result()->value);
+        QVERIFY(coins->lockOperation()->result()->value->already_locked);
+        QCOMPARE(coins->lockOperation()->result()->value->changed, size_t{0});
+        QVERIFY(coins->setCoinsLocked({id}, false)); QTRY_VERIFY(!coins->lockPending());
+        QVERIFY2(coins->lockError().isEmpty(), qPrintable(coins->lockError()));
+        QCOMPARE(qmltest::Rpc(m_app, "listlockunspent", {}, wallet->name()).size(), size_t{0});
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller);
+        QPointer<WalletQmlModel> original{wallet}; controller->closeWallet("temporary-lock-upgrade");
+        QTRY_VERIFY(original.isNull());
+        controller->setSelectedWallet("temporary-lock-upgrade");
+        QVERIFY(qmltest::WaitForOpenWallet(m_app, "temporary-lock-upgrade"));
+        const auto after = qmltest::Rpc(m_app, "listlockunspent", {}, QStringLiteral("temporary-lock-upgrade"));
+        QVERIFY2(after.empty(), "Core persisted a temporary-lock upgrade but did not erase it on successful unlock; this needs an upstream Core disposition.");
+    }
+
     void emptyManualSelectionCannotBroadenToWalletInputs()
     {
         auto* destination = qmltest::CreateWallet(m_app, "empty_manual_destination");

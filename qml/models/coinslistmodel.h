@@ -54,12 +54,12 @@ class CoinsListModel : public QAbstractListModel
 public:
     using Selection = std::set<COutPoint>;
     struct LockItemOutcome {
-        enum class State { Changed, Failed, Unknown, NotAttempted };
+        enum class State { Changed, Failed, Unknown, NotAttempted, AlreadyLocked };
         QString coin_id;
         COutPoint outpoint;
         State state{State::NotAttempted};
     };
-    struct LockOutcome { bool failed{false}, uncertain{false}; size_t requested{0}, changed{0}; std::shared_ptr<const Selection> selection; quint64 selection_revision{0}; std::shared_ptr<const Selection> marks; quint64 marks_revision{0}; std::vector<LockItemOutcome> items; };
+    struct LockOutcome { bool failed{false}, uncertain{false}; size_t requested{0}, changed{0}; std::shared_ptr<const Selection> selection; quint64 selection_revision{0}; std::shared_ptr<const Selection> marks; quint64 marks_revision{0}; std::vector<LockItemOutcome> items; bool already_locked{false}; };
     struct MarkOutcome { std::shared_ptr<const Selection> marks; quint64 revision{0}; bool failed{false}; };
     struct SelectionOutcome { std::shared_ptr<const Selection> selection; quint64 revision{0}; bool failed{false}; coinselection::InputMode input_mode{coinselection::InputMode::Automatic}; bool editing{false}; };
     std::shared_ptr<const execution::OwnedCommand<LockOutcome>> lockOperation() const { return m_last_lock; }

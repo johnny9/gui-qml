@@ -148,27 +148,34 @@ public:
 
     bool applyLockResults(const Selection& successfully_locked, const Selection& restore_marks)
     {
-        if (!successfully_locked.empty()) {
-            Selection next = *m_selection;
+        const auto remove_locked = [&](const Snapshot& source) -> Snapshot {
+            if (!source || successfully_locked.empty()) return source;
+            Selection next = *source;
             for (const auto& output : successfully_locked) next.erase(output);
-            if (next != *m_selection) {
-                if (auto retained = m_retain(std::move(next))) {
-                    m_selection = std::move(retained); updateMissing(); ++m_revision;
-                } else return false;
-            }
-        }
+            return next == *source ? source : m_retain(std::move(next));
+        };
+        auto selected = remove_locked(m_selection);
+        auto baseline = m_baseline == m_selection ? selected : remove_locked(m_baseline);
+        if (!selected || (m_baseline && !baseline)) return false;
+        auto marks = m_marks;
         if (!restore_marks.empty()) {
             Selection next = *m_marks;
             next.insert(restore_marks.begin(), restore_marks.end());
             if (next != *m_marks) {
-                if (auto retained = m_retain(std::move(next))) {
-                    m_marks = std::move(retained); ++m_marks_revision;
-                } else return false;
+                marks = m_retain(std::move(next));
+                if (!marks) return false;
             }
         }
-        // This reports whether the results were applied, not whether they
-        // changed the selection or marks. A successful native lock can be a
-        // no-op for this session when the outpoint was not selected/marked.
+        // Reserve every changed value before altering the editor. A later
+        // Cancel restores the committed choice minus known successful locks;
+        // it cannot resurrect an input that this operation already locked.
+        if (selected != m_selection) {
+            m_selection = std::move(selected); updateMissing(); ++m_revision;
+        }
+        m_baseline = std::move(baseline);
+        if (marks != m_marks) { m_marks = std::move(marks); ++m_marks_revision; }
+        // Success means that the actual results were reconciled, including a
+        // no-op for an input that was never selected or marked here.
         return true;
     }
 
