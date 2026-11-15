@@ -22,6 +22,8 @@ These local notes retain changes that could simplify the application or remove a
 
 Add a note whenever a discovered Core interface limitation, ordering hazard or missing guarantee complicates the app solution, including when an app-only workaround succeeds. Use a stable local note ID and record:
 
+User amendment `wallet-adapter-upstream-notes-20261115` makes this mandatory for every new or materially changed app adapter compensating for missing public Wallet/WalletLoader functionality. Link the adapter implementation and its focused acceptance receipt to the appropriate note before accepting the work order. Successful public-RPC or isolated-process workarounds still need notes. State whether the upstream improvement is optional or required, and when the workaround can be retired. Keep these updates branch-local; do not overwrite shared planning/evidence registers or imply authorization to change Core or submit upstream.
+
 - Affected work orders and existing scope IDs, exact app/Core revisions and source locations.
 - Confirmed behavior, the required guarantee, assumptions still needing verification, and reproduction/regression evidence.
 - The app-only workaround, its lifecycle, performance or maintenance costs, and remaining limitations.
@@ -340,11 +342,31 @@ and actual submission ownership.
 A future typed observation would simplify RPC adaptation, but cannot reserve
 later admission against independent changes. It is an optional improvement.
 
-## R35 proposed wallet-directory inspection — decision pending
+## R35 proposed wallet-directory inspection — public helper workaround
 
 The [boundary audit](R35_WALLET_DIRECTORY_BOUNDARY.md) identifies the preexisting
 direct `wallet::ListDatabases(proposed_path)` helper. Public WalletLoader directory
 enumeration reads global configuration and cannot inspect that proposed path.
-A typed explicit-path read-only public inspector would preserve the existing
-wallet-versus-junk distinction without changing global state. The affected
-piece is held pending user input; no temporary exception is assumed.
+A fresh headless app helper has demonstrated the same classification through
+public Init/Node/WalletLoader calls and child-only directory/network settings:
+10 actual controls pass, including parent isolation and read-only targets.
+The user requested this app-side solution; production integration and its
+focused gate remain pending. A typed explicit-path inspector would remove the
+process workaround and provide bounded/structured scan diagnostics. It is an
+upstream improvement, not a required Core change or a private-access exception.
+
+## R24 verified partial signing outcomes — app verification and quarantine
+
+**Status:** App-only public-value verification and explicit quarantine are being implemented; no Core change or external submission is authorized. This note satisfies `wallet-adapter-upstream-notes-20261115`. Focused qualification is recorded in [R24 partial verification](evidence/R24_PARTIAL_VERIFICATION.json) at `4c3d01e6e631265ebab4328a6719759910906fc1`; full integration and sibling-path follow-ups remain separately tracked.
+
+**Missing contract:** Stock Core `44901d8f64cb617714707bd025ecd83f108353c2` exposes mutable `Wallet::fillPSBT` plus an optional error and completion flag. It does not return a typed per-contribution verification result or all script/execution context needed to authenticate every incomplete PSBT contribution. `PSBTInputSignedAndVerified` validates finalized scripts. `SignPSBTInput` checks supplied sighash types but reuses unfinished signature maps; it is not a generic verifier of those maps. This is an interface/verification-contract gap, not a claim that every wallet producer yields invalid signatures.
+
+**Confirmed app failure:** At application test snapshot `bbbb27f092b48795a1a7cc9367fe2121e72d9bd2` (production parent `6151996cc8e`), `WalletSendTests::approvalCannotInstallInvalidUnfinalizedContributions` executes three controlled normal/error/exception responses with unchanged reviewed terms and corrupted unfinished ECDSA signatures. All three retain the invalid map in the original review. Evidence: task-local `R24/partial-audit-red-02/actual/report.json` and its per-selection raw XML/stdout. No transaction submission occurs in these counterexamples; this proves incorrect review installation, not a broadcast exploit or independently observed Core defect.
+
+**Adapter and actual guarantee:** `qml/psbtsignatures.cpp` delegates signature mathematics, script hashes and Taproot commitments to Core public value/crypto APIs. Known legacy/witness ECDSA and Taproot key/script contexts are verified without Wallet internals. Missing witness/redeem/leaf context, separator-dependent unfinished scripts and incomplete MuSig2 protocol data remain Unknown. The app does not implement an interpreter or MuSig protocol. Known-invalid contributions are rejected; Unknown bytes remain in a separately Native-owned quarantine and never replace the approved review or grant verified-Partial/submit authority. Complete signatures retain full script verification. An explicit M24 export is bound to the original opening, approval, review and view token; late chooser results cannot select a successor. Valid supported multisig partials remain mergeable/exportable. Missing-context bytes remain exportable for reconciliation with the required script/signature information. Observer loss and result retirement retain the existing opening/executor cleanup ownership.
+
+**Costs and limits:** The application maintains context extraction and a third verification outcome, separate original/returned document ownership and a narrow export intent. Public value checks cannot establish transaction acceptance or wallet-wide authority; the final protected command and existing Core/RPC checks remain authoritative. Quarantine does not assert that unverified bytes are valid or safe to submit. Missing context is not silently classified as invalid. The ordinary app regression gate does not qualify physical hardware or the deferred R42 sanitizer/platform matrix.
+
+**Upstream improvement:** Consider a public read-only PSBT contribution-verification API with Valid/Invalid/Unknown, per-input/contribution context and diagnostics, plus a typed Wallet signing outcome that separates verified additions, unverified recoverable bytes, completion and failure. Preserve exact unsigned commitments, authenticated prevouts, existing partial signatures and error/exception semantics. A documented outcome must not imply atomicity against independent RPC writers or cancellation/lock-release guarantees absent from the backend. Required tests include valid/invalid unfinished ECDSA and Schnorr signatures, mixed inputs, missing scripts, separator-dependent script paths, MuSig2 partial protocols, partial returns with errors, incomplete foreign inputs and exact preservation of original/export bytes.
+
+**Retirement condition:** Replace the app context adapter only when the pinned public interface supplies equivalent independently tested verification/context/outcome guarantees. Preserve explicit Unknown/quarantine if the upstream API can still return incomplete information. R24 records focused app evidence separately; this note does not close canonical findings or authorize any Core pin/subtree edit.

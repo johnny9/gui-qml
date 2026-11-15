@@ -4,8 +4,9 @@ The immutable approval owner is integrated at
 `0224c4c0f2fa919990a21f723da589a6bef87803`, with unchanged Core
 `44901d8f64cb617714707bd025ecd83f108353c2`. Exact composed test source is
 `e3373af66b2aa05430bdf162e36ce96994dd6c4d`; the worker candidate is
-`c8e3d5fff4ad64c549e716b6ed4abb6eae499dee`. Final order acceptance waits for
-the reopened R22 retirement prerequisite. This checkpoint does not close R42.
+`c8e3d5fff4ad64c549e716b6ed4abb6eae499dee`. R22 is now restored. Final R24
+acceptance awaits the bounded contributed-partial-signature audit below.
+This checkpoint does not close R42.
 
 `walletsigning::ApprovalOwner` owns Domain transitions and the original opening,
 review, view and immutable request. Native signing authenticates reviewed input
@@ -51,3 +52,21 @@ Core's wallet lock across it. Background execution and stale-result fencing do
 not claim those stronger guarantees. Physical devices were not tested. These
 inherited limits, exhaustive coverage, all configurations/platforms and
 sanitizers remain explicit pending obligations under the approved cadence.
+
+Source review found that `VerifyFinalizedInputs(false)` skips unfinalized
+`partial_sigs` and Taproot signature maps. The existing tests cover valid
+partial outcomes and invalid finalized scripts, but do not establish that
+every newly contributed unfinalized signature is authenticated. The signing
+worker is checking an independent counterexample and pinned public Core/value
+helpers. Keep this as an open acceptance audit, preserve supported multisig
+PSBT retention, and do not infer a Core API requirement before that check.
+
+
+R24 contributed-signature follow-up: the controlled three-path partial-map counterexample at `bbbb27f092b` reopens signer review installation. The public-value verifier and explicit unverified-result quarantine/export implementation are pending focused qualification. The approved review remains separate from returned Unknown bytes; no verified-Partial or submit authority is inferred from exact unsigned terms alone. See [upstream contract and adapter limits](QT6_UPSTREAM_IMPROVEMENTS.md#r24-verified-partial-signing-outcomes--app-verification-and-quarantine).
+
+
+Contributed-signature repair is focused-qualified at `4c3d01e6e631265ebab4328a6719759910906fc1`, stock Core449 unchanged. [Receipt](evidence/R24_PARTIAL_VERIFICATION.json):177 distinct passing identities across explicit source carries and final affected reruns,4 actual HWI/IPC process scenarios,13 pinned static entries across final8 plus5 unchanged handwritten carries, exact-head app lint and unchanged QML259 files per compatibility variant. This is a corrective R24 checkpoint, not a claim that all177 bodies ran against one final ELF or that R42 qualification is complete.
+
+An app-owned original review and a separately owned Unknown signer result now have distinct authority. Known-invalid partial contributions cannot be installed; supported ECDSA/Schnorr contributions are verified with public Core value APIs. Missing context remains explicit and exportable with the original approval/review/view token, without automatic merge, retry or submission. The original valid multisig partial path remains usable and can still be completed after export. The actual Core gate and synthetic HWI process cases pass; no physical-device qualification is claimed.
+
+The same finalized-only pattern in local SignOnly and standalone PSBT Sign is under a separate controlled follow-up; this receipt does not silently qualify those sibling paths. Any reproduced defect reopens its affected R21/R22 scope and must be repaired with ordinary focused checks rather than deferred to R42.

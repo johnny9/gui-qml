@@ -184,10 +184,35 @@ std::function<bool()> Session::observationGuard() const
 std::shared_ptr<const Session::Action> Session::startAction()
 {
     auto scope = m_commands->openActionScope(sizeof(Action) + 128);
-    if (!scope || !admitAction()) return {};
+    if (!scope) return {};
+    execution::ResourceKey work_key;
+    try { work_key = m_commands->allocateKey(); } catch (...) { return {}; }
+    if (!admitAction()) return {};
     auto wallet = borrow();
     if (!wallet) return {};
-    return std::shared_ptr<const Action>{new Action{m_identity, std::move(scope), std::move(wallet)}};
+    return std::shared_ptr<const Action>{new Action{m_identity, std::move(scope), work_key, std::move(wallet)}};
+}
+
+execution::Admission Session::submitActionWork(const std::shared_ptr<const Action>& action,
+                                               std::function<void()> work, size_t payload_bytes)
+{
+    if (!action || action->m_identity != m_identity) return {{}, execution::Rejection::Invalid};
+    return execution::Submit(*action->m_scope, [action, work = std::move(work)] { work(); }, [] {}, {},
+        {execution::Lane::Core, payload_bytes, action->m_work_key, execution::WorkClass::Action});
+}
+
+execution::Admission Session::reserveActionCleanup(const std::shared_ptr<const Action>& action,
+                                                   std::function<void()> work)
+{
+    if (!action || action->m_identity != m_identity) return {{}, execution::Rejection::Invalid};
+    return execution::Submit(*action->m_scope, [action, work = std::move(work)] { work(); }, [] {}, {},
+        {execution::Lane::Cleanup, 256, action->m_work_key, execution::WorkClass::Action}, true);
+}
+
+bool Session::activateActionCleanup(const std::shared_ptr<const Action>& action, execution::TaskId id)
+{
+    if (!action || action->m_identity != m_identity) return false;
+    return action->m_scope->activateCleanup(id);
 }
 
 execution::Admission Session::planAction(const std::shared_ptr<const Action>& action,

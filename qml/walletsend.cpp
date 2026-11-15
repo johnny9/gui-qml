@@ -631,8 +631,13 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
             if (returned && MatchesUnsignedTransaction(unsigned_tx, *returned) &&
                 psbtfee::MatchesReview(document, *authenticated, request.approved_fee) &&
                 psbtsignatures::VerifyFinalizedInputs(document, /*require_all=*/false)) {
-                result.document = std::make_shared<const PartiallySignedTransaction>(document);
-                result.partial = true;
+                result.signature_status = psbtsignatures::VerifyPartialInputs(document);
+                if (result.signature_status == psbtsignatures::Status::Valid) {
+                    result.document = std::make_shared<const PartiallySignedTransaction>(document);
+                    result.partial = true;
+                } else if (result.signature_status == psbtsignatures::Status::Unknown) {
+                    result.quarantined_document = std::make_shared<const PartiallySignedTransaction>(document);
+                }
             }
             result.fill_error = error;
             result.error = *error == common::PSBTError::EXTERNAL_SIGNER_NOT_FOUND ? Error::SignerNotFound
@@ -657,6 +662,17 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
                 result.document = approved;
                 result.error = Error::InvalidSignature; return result;
             }
+            result.signature_status = psbtsignatures::Status::Valid;
+        } else {
+            result.signature_status = psbtsignatures::VerifyPartialInputs(document);
+            if (result.signature_status != psbtsignatures::Status::Valid) {
+                result.document = approved;
+                result.error = result.signature_status == psbtsignatures::Status::Invalid
+                    ? Error::InvalidSignature : Error::UnverifiedSignatures;
+                if (result.signature_status == psbtsignatures::Status::Unknown)
+                    result.quarantined_document = std::make_shared<const PartiallySignedTransaction>(std::move(document));
+                return result;
+            }
         }
         result.document = std::make_shared<const PartiallySignedTransaction>(std::move(document));
         result.partial = !extracted;
@@ -668,8 +684,13 @@ static Result ExecuteApproval(interfaces::Wallet& wallet, const Request& request
             if (returned && MatchesUnsignedTransaction(unsigned_tx, *returned) &&
                 psbtfee::MatchesReview(document, *authenticated, request.approved_fee) &&
                 psbtsignatures::VerifyFinalizedInputs(document, /*require_all=*/false)) {
-                result.document = std::make_shared<const PartiallySignedTransaction>(document);
-                result.partial = true;
+                result.signature_status = psbtsignatures::VerifyPartialInputs(document);
+                if (result.signature_status == psbtsignatures::Status::Valid) {
+                    result.document = std::make_shared<const PartiallySignedTransaction>(document);
+                    result.partial = true;
+                } else if (result.signature_status == psbtsignatures::Status::Unknown) {
+                    result.quarantined_document = std::make_shared<const PartiallySignedTransaction>(document);
+                }
             }
         } catch (...) {}
     }
@@ -691,6 +712,7 @@ Result ApproveInto(interfaces::Wallet& wallet, const Request& request, std::shar
     Result result = *owner;
     result.lifetime = owner;
     if (result.document) result.document = std::shared_ptr<const PartiallySignedTransaction>{owner, result.document.get()};
+    if (result.quarantined_document) result.quarantined_document = std::shared_ptr<const PartiallySignedTransaction>{owner, result.quarantined_document.get()};
     if (result.signed_transaction) result.signed_transaction = CTransactionRef{owner, result.signed_transaction.get()};
     return result;
 }
@@ -891,6 +913,7 @@ execution::Admission ApprovalOwner::request(uint64_t attempt_id, uint64_t review
             state->in_flight = false;
             state->publishable = true;
             state->phase = state->error == Error::Uncertain ? ApprovalPhase::Uncertain
+                : state->result->quarantined_document ? ApprovalPhase::Unverified
                 : state->error != Error::None ? ApprovalPhase::Failed
                 : state->result->partial ? ApprovalPhase::Partial : ApprovalPhase::Complete;
             state->request.reset();

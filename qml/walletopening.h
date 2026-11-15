@@ -123,14 +123,24 @@ public:
         Opening identity() const { return m_identity; }
     private:
         friend class Session;
-        Action(Opening identity, std::shared_ptr<execution::Scheduler> scope, std::shared_ptr<interfaces::Wallet> wallet)
-            : m_identity(std::move(identity)), m_scope(std::move(scope)), m_wallet(std::move(wallet)) {}
+        Action(Opening identity, std::shared_ptr<execution::Scheduler> scope, execution::ResourceKey work_key,
+               std::shared_ptr<interfaces::Wallet> wallet)
+            : m_identity(std::move(identity)), m_scope(std::move(scope)), m_work_key(work_key), m_wallet(std::move(wallet)) {}
         const Opening m_identity;
         const std::shared_ptr<execution::Scheduler> m_scope; // Released after its original wallet borrower.
+        const execution::ResourceKey m_work_key;
         const std::shared_ptr<interfaces::Wallet> m_wallet;
     };
     // App-side admission/lifetime only, not a Core/RPC authorization lease.
     std::shared_ptr<const Action> startAction();
+    // File/export continuation work does not access Wallet. It shares the
+    // opening's admission lifetime but uses a private action key so a
+    // pre-reserved Native retirement receipt can run after queue pressure.
+    execution::Admission submitActionWork(const std::shared_ptr<const Action>& action,
+                                         std::function<void()> work, size_t payload_bytes = 256);
+    execution::Admission reserveActionCleanup(const std::shared_ptr<const Action>& action,
+                                              std::function<void()> work);
+    bool activateActionCleanup(const std::shared_ptr<const Action>& action, execution::TaskId id);
     void requestClose();
     void refreshMetadata() { ingress(4); }
     void retryNotifications() { scheduleRefresh(); }

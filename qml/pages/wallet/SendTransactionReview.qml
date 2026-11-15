@@ -183,12 +183,14 @@ Page {
             + Qt.formatDateTime(new Date(), "yyyy-MM-dd-HHmm") + ".psbt"
     }
 
-    function savePsbt(path) {
+    function savePsbt(path, signerResultToken) {
         if (!wallet || !String(path).length || wallet.psbtActionBusy) return
         psbtSaving = true
         psbtReview = transaction
         psbtTicket = 0
-        psbtTicket = wallet.requestSaveCurrentTransactionAsPsbt(String(path))
+        psbtTicket = signerResultToken
+            ? wallet.requestSaveUnverifiedSignerResult(signerResultToken, String(path))
+            : wallet.requestSaveCurrentTransactionAsPsbt(String(path))
         if (!psbtTicket) { saveStatus = qsTr("Another wallet action is still running."); saveError = true }
         else handlePsbtOutcome()
     }
@@ -203,6 +205,22 @@ Page {
         } else {
             savePsbtDialog.currentFile = defaultSavePsbtFileUrl()
             savePsbtDialog.targetWallet = wallet
+            savePsbtDialog.signerResultToken = ""
+            savePsbtDialog.open()
+        }
+    }
+
+    function startSaveUnverifiedSignerResult() {
+        if (!wallet || !wallet.signerUnverifiedResultToken.length) return
+        const token = wallet.signerUnverifiedResultToken
+        if (savePsbtAutomationPath.text.length) {
+            const path = savePsbtAutomationPath.text
+            savePsbtAutomationPath.text = ""
+            savePsbt(path, token)
+        } else {
+            savePsbtDialog.currentFile = defaultSavePsbtFileUrl()
+            savePsbtDialog.targetWallet = wallet
+            savePsbtDialog.signerResultToken = token
             savePsbtDialog.open()
         }
     }
@@ -231,18 +249,21 @@ Page {
     AppFileDialog {
         id: savePsbtDialog
         objectName: "sendTransactionReviewSaveDialog"
-        title: qsTr("Save transaction as PSBT")
+        title: signerResultToken.length ? qsTr("Export unverified signer result") : qsTr("Save transaction as PSBT")
         fileMode: AppFileDialog.SaveFile
         currentFolder: "file://" + ApplicationModels.walletController.homePath()
         defaultSuffix: "psbt"
         nameFilters: [qsTr("Partially Signed Bitcoin Transactions (*.psbt)"), qsTr("All files (*)")]
         property var targetWallet: null
+        property string signerResultToken: ""
         onAccepted: {
             const target = targetWallet
+            const token = signerResultToken
             targetWallet = null
-            if (target && target === root.wallet) root.savePsbt(selectedFile.toString())
+            signerResultToken = ""
+            if (target && target === root.wallet) root.savePsbt(selectedFile.toString(), token)
         }
-        onRejected: targetWallet = null
+        onRejected: { targetWallet = null; signerResultToken = "" }
     }
 
     Instantiator {
@@ -483,6 +504,16 @@ Page {
                     height: 46
                     text: qsTr("Save transaction")
                     onClicked: root.startSavePsbt()
+                }
+                NeutralButton {
+                    objectName: "sendTransactionReviewExportUnverifiedSignerButton"
+                    visible: root.wallet && root.wallet.signerUnverifiedResultToken.length > 0
+                    enabled: root.wallet && !!root.transaction && !root.sending && !root.sendBusy && !root.wallet.psbtActionBusy
+                    buttonSize: NeutralButton.Large
+                    width: parent.width
+                    height: 46
+                    text: qsTr("Export unverified signer result")
+                    onClicked: root.startSaveUnverifiedSignerResult()
                 }
                 NeutralButton {
                     objectName: "sendTransactionReviewSignOnlyButton"

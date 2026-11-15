@@ -552,6 +552,24 @@ TestCase {
         compare(findRow(other, "single").dateTimeLabel, "Sep 14, 10:03 PM")
     }
 
+    function test_detail_date_uses_the_same_locale_clock_convention_data() {
+        return [{tag: "german-24-hour", locale: "de_DE", marker: "14.09."}, {tag: "us-12-hour", locale: "en_US", marker: "/14/"}]
+    }
+    function test_detail_date_uses_the_same_locale_clock_convention(data) {
+        const previous = testSetup.localeName()
+        testSetup.setLocale(data.locale)
+        try {
+            const page = createPage()
+            mouseClick(findChild(findRow(page, "single"), "activityRowOpenButton"))
+            tryCompare(page, "depth", 2)
+            const text = findChild(page.currentItem, "transactionSummarySubtitle")
+            verify(text !== null)
+            verify(text.text.indexOf(data.marker) >= 0, text.text)
+            verify(text.text.indexOf(data.locale === "de_DE" ? "22:03" : "10:03") >= 0, text.text)
+            compare(/(?:AM|PM)/.test(text.text), data.locale === "en_US")
+        } finally { testSetup.setLocale(previous) }
+    }
+
     function test_parent_navigation_uses_wallet_total_and_updates_live() {
         const page = createPage()
         const batch = findRow(page, "batch")
@@ -938,6 +956,102 @@ TestCase {
         tryCompare(proxy, "dateFilter", ActivityFilterProxyModel.CustomRange)
         verify(button.active)
         compare(button.text, "Date")
+    }
+
+    function test_open_amount_range_keeps_committed_values_when_history_maximum_changes() {
+        const page = createPage()
+        const proxy = findChild(page, "activityFilterProxyModel")
+        verify(proxy.setAmountRange(100, 500))
+        mouseClick(findChild(page, "activityAmountFilterButton"))
+        const popup = findChild(page, "activityAmountFilterPopup")
+        tryCompare(popup, "opened", true)
+        const slider = findChild(page, "activityAmountRangeSlider")
+        compare(Math.round(slider.lowerValue), 100)
+        compare(Math.round(slider.upperValue), 500)
+        const next = rows()
+        next[6].netAmountSat = 500000000
+        testTransactionActivityModel.setRows(next)
+        tryCompare(slider, "maxValue", 500000000)
+        compare(Math.round(slider.lowerValue), 100)
+        compare(Math.round(slider.upperValue), 500)
+        compare(proxy.minAmount, 100)
+        compare(proxy.maxAmount, 500)
+        compare(popup.opened, true)
+    }
+    function test_open_amount_range_retains_lower_only_boundary_after_maximum_shrinks() {
+        const page = createPage()
+        const proxy = findChild(page, "activityFilterProxyModel")
+        verify(proxy.setAmountRange(800, -1))
+        mouseClick(findChild(page, "activityAmountFilterButton"))
+        const popup = findChild(page, "activityAmountFilterPopup")
+        tryCompare(popup, "opened", true)
+        const slider = findChild(page, "activityAmountRangeSlider")
+        testTransactionActivityModel.setRows([row({netAmountSat: 500})])
+        tryCompare(proxy, "availableMaxAmount", 500)
+        compare(slider.maxValue, 800)
+        compare(slider.lowerValue, 800)
+        compare(slider.upperValue, 800)
+        compare(proxy.minAmount, 800)
+        compare(proxy.maxAmount, -1)
+    }
+    function test_request_only_history_exposes_a_reachable_amount_range() {
+        const page = createPage()
+        testTransactionActivityModel.setRows([row({activityId: "request:only", txid: "", requestId: "only", isPendingRequest: true, isPending: true, netAmountSat: 9000})])
+        const proxy = findChild(page, "activityFilterProxyModel")
+        tryCompare(proxy, "availableMaxAmount", 9000)
+        mouseClick(findChild(page, "activityAmountFilterButton"))
+        const popup = findChild(page, "activityAmountFilterPopup")
+        tryCompare(popup, "opened", true)
+        const slider = findChild(page, "activityAmountRangeSlider")
+        verify(slider.enabled)
+        const handle = slider.second.handle
+        const start = handle.mapToItem(slider, handle.width / 2, handle.height / 2)
+        mouseDrag(slider, start.x, start.y, -slider.width / 2, 0)
+        verify(proxy.maxAmount > 0 && proxy.maxAmount < 9000)
+        compare(proxy.pendingBalanceSat, 0)
+        compare(proxy.count, 0)
+    }
+    function test_date_reset_clears_a_preset_without_touching_other_filters() {
+        const page = createPage()
+        const proxy = findChild(page, "activityFilterProxyModel")
+        proxy.searchText = "original"
+        proxy.typeFilters = [ActivityFilterProxyModel.Received]
+        verify(proxy.setAmountRange(100, 500))
+        proxy.dateFilter = ActivityFilterProxyModel.ThisWeek
+        mouseClick(findChild(page, "activityDateFilterButton"))
+        const popup = findChild(page, "activityDateFilterPopup")
+        tryCompare(popup, "opened", true)
+        mouseClick(findChild(popup.contentItem, "activityDateCustomRange"))
+        const reset = findChild(page, "activityDateRangeReset")
+        tryCompare(reset, "visible", true)
+        verify(reset.enabled)
+        mouseClick(reset)
+        compare(proxy.dateFilter, ActivityFilterProxyModel.DateAll)
+        compare(proxy.searchText, "original")
+        compare(proxy.typeFilters.length, 1)
+        compare(proxy.typeFilters[0], ActivityFilterProxyModel.Received)
+        compare(proxy.minAmount, 100)
+        compare(proxy.maxAmount, 500)
+        compare(reset.enabled, false)
+    }
+    function test_two_live_grouping_views_and_reopen_keep_the_last_explicit_choice() {
+        const first = createPage()
+        const second = createPage()
+        first.visible = false
+        chooseGrouping(second, "activityGroupDay")
+        tryCompare(findChild(first, "activityFilterProxyModel"), "groupBy", ActivityFilterProxyModel.Day)
+        first.visible = true
+        second.visible = false
+        chooseGrouping(first, "activityGroupMonth")
+        tryCompare(findChild(second, "activityFilterProxyModel"), "groupBy", ActivityFilterProxyModel.Month)
+        second.visible = true
+        first.visible = false
+        chooseGrouping(second, "activityGroupMonth")
+        first.destroy()
+        second.destroy()
+        wait(0)
+        const reopened = createPage()
+        tryCompare(findChild(reopened, "activityFilterProxyModel"), "groupBy", ActivityFilterProxyModel.Month)
     }
 
     function test_amount_slider_updates_live_and_resets() {

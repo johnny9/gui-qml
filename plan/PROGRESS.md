@@ -1,5 +1,13 @@
 # Implementation progress
 
+Current correctness follow-up (2026-11-15): the R24 contributed-signature audit
+reproduced the same unfinished-signature installation gap in local SignOnly and
+standalone PSBT Sign. The R21/R22 signing-result components are reopened while
+shared typed validity/quarantine handling is propagated. Their previously
+qualified export/admission behavior retains its evidence; whole-order completion
+must not be inferred from those earlier receipts. See
+[the follow-up record](SIGNATURE_CONTRIBUTION_FOLLOWUP_20261115.md).
+
 The [approved cadence](QT6_VALIDATION_CADENCE_20261114.md) separates implementation
 progress from final qualification. The copied CSV registers in `tracking/`
 retain their historical provenance; this file records later branch-local
@@ -24,14 +32,14 @@ progress without changing shared finding or schedule registers.
 | R33 | Focused checkpoint integrated at3806a197:272 distinct worker Qt bodies plus2process scenarios with explicit source carry. Merged246 bodies,12pinnedstatic,app/QMLlint and startup failure/recovery pass;30scopes reconciled, R42 pending |
 | R20 | Focused conditional checkpoint integrated at644abba:139worker distinct bodies; merged387-body/31-static gate, app/QML lint and2IPC process scenarios pass. Receipt reason precision is user-deferred upstream; no disabled/rejected/relay inference. R42 pending |
 | R21 | Focused checkpoint integrated atffe3637d:270 R21 bodies plus122 R29 composition bodies pass (392 distinct combined);16 pinned static entries,app/QML lint pass. Scope095 held; R24 lifecycle and R42 remain open |
-| R24 | Immutable signer approval owner integrated at0224c4c0:196 composed Native/QML/Core bodies,11 pinned static entries, app/QML lint and4 actual signer/shutdown process cases pass. Original-session, partial/error/verification and held-device outcomes are covered. Final order acceptance waits for reopened R22; inherited R09 device timeout/lock limits and R42 remain explicit |
-| R22 | Reopened after the9c71709 checkpoint: two new overwrite-confirmation retirement schedules lack a terminal receipt. The worker is repairing Native phase-aware retirement while preserving accepted fresh-path saves; prior21+23 cases and merged294-body gate remain historical evidence, not acceptance of this gap |
+| R24 | Immutable signer approval owner integrated at0224c4c0:196 composed bodies,11 pinned static entries, app/QML lint and4 actual process cases pass. A focused audit of unfinalized partial-signature contributions remains pending; the current verifier checks finalized inputs only. This is a source observation, not yet a controlled failure. R09 device limits/R42 remain explicit |
+| R22 | Focused acceptance restored at e3508980: Native phase-aware prompt retirement uses reserved capacity and preserves fresh-path/admitted writes. All158 composed backup/save/signer cases,1Core save/sign/broadcast case and3 actual process cases pass;12 static plus app/QML lint pass. Expanded Opening class is57/59:both preference failures reproduce unchanged at accepted0224 and remain explicit debt |
 | R30 | Focused conditional checkpoint integrated at9c71709:317 current worker bodies plus explicit earlier-source carries, original025 parent failure and independent QR decoding; merged294-body/20-static/lint/QML and2actualIPC pass. Capability007 stays user-deferred upstream; R42 pending |
 | R34 | Focused checkpoint integrated at644abba:119worker Qt bodies plus3X11 geometry scenarios; merged387-body/31-static gate and2IPC scenarios pass. Five scopes reconciled, known Qt/upstream limits retained; R42 pending |
-| R35 | Focused behavior/static green at deliverye12365c8:149 distinct Linux bodies,8 Mac QML,additional Native variant and3 process scenarios. Root discovered unchanged private proposed-directory inspector; affected acceptance/integration held pending user decision |
+| R35 | Earlier149 Linux bodies/8 Mac QML/static/process evidence retained. Public-only headless directory helper feasibility now passes10 real controls with unchanged parent/targets; user requested this app solution. Production adapter, timing/process coverage and final integration remain pending; no private exception/Core change |
 | R31 | Focused checkpoint integrated at6200e8c6:196 current Native/QML/Core bodies plus52 byte-verified earlier-source carries and the original two-process restart scenario pass. Pinned15-entry tidy, app/QML lint and original reorg parent failure recorded; R42 pending |
 | R36 | Independent original071 exit-status slice integrated at032f374f:37 Native bodies and2 actual process checks pass, including real Core failure returning exit1. Pinned static and app/QML lint pass. Whole M19/M20/M21 extraction and the R35 prerequisite remain open |
-| R23 | Public Node admission-read adapter integrated at51c40864:29 focused bodies and11 pinned static entries plus app lint pass. Combined626 distinct passing identities use explicit source carries; final R23 acceptance waits for the reopened R22 prerequisite. No required Core API gap |
+| R23 | Focused acceptance satisfied with R22 restored at e3508980. Public Node admission-read adapter at51c40864 has29 passing bodies/11 static entries/app lint. Combined626 distinct passing identities use explicit source carries; no required Core API gap. R42 remains open |
 | R25–R27, R32, R37–R40 | Authorized according to actual prerequisites; remaining implementation/gates pending; R26 initial Domain decisions unvalidated, R32 and broader R36 implementation active |
 | R41 | Cleanup pending |
 | R42 | Final coverage, full suites/matrices, native Windows and sanitizers pending |

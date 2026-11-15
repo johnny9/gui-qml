@@ -9,6 +9,7 @@
 #include <qml/walletrequests.h>
 #include <qml/secretinput.h>
 #include <qml/psbtpolicy.h>
+#include <qml/psbtsignatures.h>
 #include <atomic>
 
 namespace walletsend {
@@ -110,7 +111,7 @@ private:
 } // namespace walletsend
 
 namespace walletsigning {
-enum class Error { None, InvalidFee, ChangedTransaction, SignerNotFound, SignerFailed, Fill, Failed, Uncertain, UnverifiedInputs, InvalidSignature };
+enum class Error { None, InvalidFee, ChangedTransaction, SignerNotFound, SignerFailed, Fill, Failed, Uncertain, UnverifiedInputs, InvalidSignature, UnverifiedSignatures };
 struct Request {
     CTransactionRef reviewed;
     std::shared_ptr<const PartiallySignedTransaction> document;
@@ -122,6 +123,10 @@ struct Result {
     Error error{Error::None};
     std::optional<common::PSBTError> fill_error{};
     std::shared_ptr<const PartiallySignedTransaction> document{};
+    // Recoverable bytes are separate from the approved review. Unknown
+    // contributions may be exported explicitly, never installed or submitted.
+    std::shared_ptr<const PartiallySignedTransaction> quarantined_document{};
+    psbtsignatures::Status signature_status{psbtsignatures::Status::Unknown};
     CTransactionRef signed_transaction{};
     bool partial{false};
 };
@@ -130,7 +135,7 @@ Result Approve(interfaces::Wallet& wallet, const Request& request, std::shared_p
 // accepted work does not need new allocation admission after shutdown closes.
 Result ApproveInto(interfaces::Wallet& wallet, const Request& request, std::shared_ptr<Result> output);
 
-enum class ApprovalPhase { Idle, Preparing, WaitingDevice, Verifying, Complete, Partial, Failed, Cancelling, Closed, Uncertain };
+enum class ApprovalPhase { Idle, Preparing, WaitingDevice, Verifying, Complete, Partial, Failed, Cancelling, Closed, Uncertain, Unverified };
 struct ApprovalSnapshot {
     uint64_t sequence{0}, attempt_id{0}, attempt_review{0}, attempt_view{0};
     uint64_t current_review{0}, current_view{0};
