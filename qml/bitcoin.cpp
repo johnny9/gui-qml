@@ -94,6 +94,7 @@
 #include <qml/models/walletlistmodel.h>
 #include <qml/models/walletselectionmodel.h>
 #include <qml/models/walletcreationmodel.h>
+#include <qml/models/walletoperationpresentationmodel.h>
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/walletqmlmodeltransaction.h>
 #include <qml/walletqmlcontroller.h>
@@ -361,6 +362,8 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<WalletCreationModel>("org.bitcoincore.qt", 1, 0, "WalletCreationModel", "Owned by a creation form");
     qmlRegisterUncreatableType<WalletCreationText>("org.bitcoincore.qt", 1, 0, "WalletCreationText", "Owned by a creation form");
     qmlRegisterUncreatableType<WalletOperationModel>("org.bitcoincore.qt", 1, 0, "WalletOperationModel", "Owned by an immutable wallet operation");
+    qmlRegisterUncreatableType<WalletOperationPrompt>("org.bitcoincore.qt", 1, 0, "WalletOperationPrompt", "Owned by an immutable wallet operation");
+    qmlRegisterType<WalletOperationPresentationModel>("org.bitcoincore.qt", 1, 0, "WalletOperationPresentationModel");
     qRegisterMetaType<WalletOperationError>(); qRegisterMetaType<WalletOperationResult>(); qRegisterMetaType<WalletCreationReceipt>();
     qmlRegisterUncreatableType<WalletProvisioningCheck>("org.bitcoincore.qt", 1, 0, "WalletProvisioningCheck", "Owned by the wallet controller");
     qmlRegisterUncreatableType<WalletSelectionModel>("org.bitcoincore.qt", 1, 0, "WalletSelectionModel", "Owned by a window");
@@ -403,6 +406,8 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletCreationModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletCreationText", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletOperationModel", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletOperationPrompt", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletOperationPresentationModel", "Wallet support is not compiled");
 #endif
 
     registered = true;

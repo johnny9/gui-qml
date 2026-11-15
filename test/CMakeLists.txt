@@ -236,6 +236,9 @@ add_executable(bitcoinqml_qmltests
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/signerdiscovery.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/signerconfiguration.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/signerdiscoverymodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/walletcreation.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/walletoperationpresentationmodel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/walletoperationpresentationmodel.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/flowpresentation.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/monospaceoutputmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/monospaceoutputmodel.h

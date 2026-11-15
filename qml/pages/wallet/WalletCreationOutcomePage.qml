@@ -13,18 +13,47 @@ OnboardingView {
     showNavigationBar: false
     usesSharedNavigation: true
     navigationBackEnabled: false
-    heading: operation.phase === WalletOperationModel.Uncertain ? qsTr("Check the wallet creation outcome") : qsTr("Wallet creation needs attention")
+    heading: operation.kind === WalletOperationModel.Create ? (operation.phase === WalletOperationModel.Uncertain ? qsTr("Check the wallet creation outcome") : qsTr("Wallet creation needs attention")) : operation.errorTitle
     subheading: operation.error.message
     showBackButton: false
     showCloseButton: false
-    primaryButtonText: operation.canReconcile ? qsTr("Reconcile created wallet") : ""
+    primaryButtonText: operation.canReconcile ? qsTr("Reconcile original wallet result") : ""
     primaryButtonEnabled: operation.canReconcile
     secondaryButtonText: qsTr("Done")
     secondaryButtonObjectName: "walletCreationOutcomeDoneButton"
     signal done()
+    signal openRequested(WalletQmlModel wallet)
     onPrimaryClicked: operation.reconcile()
     onSecondaryClicked: root.done()
     childView: ColumnLayout {
+        TextButton {
+            objectName: "walletOperationOpenOriginalResultButton"
+            Layout.fillWidth: true
+            visible: root.operation.canOpenResult
+            text: qsTr("Open original wallet result")
+            onClicked: root.openRequested(root.operation.resultWallet)
+        }
+        Repeater {
+            model: root.operation.resultWallets
+            delegate: TextButton {
+                required property WalletQmlModel modelData
+                Layout.fillWidth: true
+                text: qsTr("Open %1").arg(modelData.displayName)
+                visible: modelData !== root.operation.resultWallet
+                enabled: modelData.available
+                onClicked: root.openRequested(modelData)
+            }
+        }
+        ListView {
+            id: details
+            Layout.fillWidth: true
+            Layout.preferredHeight: count > 0 ? 120 : 0
+            model: root.operation.errorDetails
+            clip: true
+            reuseItems: true
+            cacheBuffer: 0
+            delegate: CoreText { required property string content; width: details.width; text: content; textFormat: Text.PlainText; wrapMode: Text.WordWrap }
+        }
         CoreText {
             objectName: "walletCreationRecoveryText"
             Layout.fillWidth: true

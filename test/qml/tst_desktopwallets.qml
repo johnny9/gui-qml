@@ -11,6 +11,7 @@ import "../../qml/controls"
 import "../../qml/pages/wallet"
 
 TestCase {
+    id: testCase
     name: "DesktopWallets"
     when: windowShown
     visible: true
@@ -125,14 +126,17 @@ TestCase {
     }
 
     function test_migration_error_uses_typed_original_wallet_notice() {
+        walletController.holdMigration = true
         const page = createDesktopWallets()
         walletController.walletMigrationRequired("legacy-original")
-        const popup = findChild(page, "walletMigrationPopup")
+        const original = walletController.lastMigration
+        verify(original !== null)
+        walletController.requestMigrationPassphrase("Prepared short message")
+        tryVerify(function() { return testSetup.findVisualDescendant(testCase.Window.window, "walletMigrationPassphrasePopup") !== null })
+        const popup = testSetup.findVisualDescendant(testCase.Window.window, "walletMigrationPassphrasePopup")
         verify(popup !== null)
         tryCompare(popup, "opened", true)
-        walletController.walletMigrationError = "Complete original details"
-        walletController.walletMigrationErrorNotice("legacy-original", 9, false, "Prepared short message")
-        const text = findChild(page, "walletMigrationErrorText")
+        const text = findChild(popup.contentItem, "walletMigrationPassphraseErrorText")
         verify(text !== null)
         compare(text.text, "Prepared short message")
         const details = popup.errorDetailsModel
@@ -141,6 +145,64 @@ TestCase {
         walletController.walletMigrationErrorNotice("another-wallet", 10, true, "Unrelated short message")
         compare(text.text, "Prepared short message")
         compare(popup.errorDetailsModel, details)
+        compare(original.error.message, "Prepared short message")
+    }
+
+    function test_stale_prompt_cannot_authorize_a_successor_data() {
+        return [{tag: "confirm", passphrase: false}, {tag: "passphrase", passphrase: true}]
+    }
+    function test_stale_prompt_cannot_authorize_a_successor(data) {
+        walletController.holdMigration = true
+        const page = createDesktopWallets()
+        walletController.walletMigrationRequired("original-wallet")
+        const original = walletController.lastMigration
+        const confirmation = original.prompt
+        if (data.passphrase) {
+            verify(confirmation.answer(confirmation.promptId, WalletOperationPrompt.Confirm).acceptedForDelivery)
+            walletController.requestMigrationPassphrase()
+        }
+        const prompt = original.prompt
+        walletController.walletMigrationRequired("successor-wallet")
+        const successor = walletController.lastMigration
+        verify(successor !== original)
+        const receipt = prompt.dismiss(prompt.promptId)
+        verify(receipt.acceptedForDelivery)
+        tryCompare(original, "phase", WalletOperationModel.Cancelled)
+        const stale = prompt.submitSecret(prompt.promptId, "old original password")
+        verify(!stale.acceptedForDelivery)
+        compare(successor.phase, WalletOperationModel.AwaitingConfirmation)
+        compare(successor.targetWalletId, "successor-wallet")
+        compare(walletController.selectedWallet, testWalletModel)
+    }
+    function test_migration_result_does_not_select_before_explicit_open() {
+        walletController.holdMigration = true
+        const page = createDesktopWallets()
+        walletController.walletMigrationRequired("legacy-original")
+        const operation = walletController.lastMigration
+        const prompt = operation.prompt
+        verify(prompt.answer(prompt.promptId, WalletOperationPrompt.Confirm).acceptedForDelivery)
+        walletController.setOpenWallets([testWalletModel, testSecondWalletModel])
+        walletController.openedWallet = testSecondWalletModel
+        walletController.finishMigration()
+        tryVerify(function() { return testSetup.findVisualDescendant(testCase.Window.window, "walletMigrationResultPopup") !== null })
+        const popup = testSetup.findVisualDescendant(testCase.Window.window, "walletMigrationResultPopup")
+        verify(popup !== null)
+        tryCompare(popup, "opened", true)
+        compare(operation.resultWallet, testSecondWalletModel)
+        compare(walletController.selectedWallet, testWalletModel)
+        const button = findChild(popup.contentItem, "walletMigrationOpenResultButton")
+        verify(button !== null)
+        const retired = testSetup.watchDestruction(popup)
+        try {
+            verify(retired.count > 0)
+            mouseClick(button)
+            tryCompare(walletController, "selectedWallet", testSecondWalletModel)
+            // Dismissing the owned result removes its immutable delegate.
+            // Observe actual teardown rather than querying a deleted wrapper.
+            tryCompare(retired, "pending", 0)
+        } finally {
+            testSetup.releaseDestructionWatch(retired)
+        }
     }
 
     function test_leaving_peers_tab_stops_refresh() {

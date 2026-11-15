@@ -12,13 +12,14 @@ OnboardingView {
     objectName: "walletImportErrorPage"
     showNavigationBar: false
     usesSharedNavigation: true
+    required property WalletOperationModel operation
     property bool modalView: false
     signal cancel()
     signal retryRequested()
 
     title: ""
-    heading: ApplicationModels.walletController.walletImportErrorTitle
-    subheading: ApplicationModels.walletController.walletImportErrorDescription
+    heading: root.operation.errorTitle
+    subheading: root.operation.errorDescription
     headingObjectName: "importWalletErrorTitle"
     subheadingObjectName: "importWalletErrorDescription"
     maximumContentWidth: 800
@@ -57,7 +58,7 @@ OnboardingView {
             clip: true
             reuseItems: true
             cacheBuffer: 0
-            model: ApplicationModels.walletController.walletImportErrorHelpModel
+            model: root.operation.errorDetails
             delegate: CoreText {
                 required property string content
                 width: errorDetails.width
@@ -71,17 +72,16 @@ OnboardingView {
         }
         CoreText {
             Layout.fillWidth: true
-            visible: ApplicationModels.walletController.walletImportErrorProjectionError.length > 0
-            text: ApplicationModels.walletController.walletImportErrorProjectionError
-            font: Theme.text.caption.font
-            color: Theme.color.neutral6
+            text: root.operation.error.recovery
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
         }
-        TextButton {
-            objectName: "importWalletRetryErrorDetails"
-            visible: ApplicationModels.walletController.walletImportErrorRetryAvailable
-            enabled: !ApplicationModels.walletController.walletImportErrorPending
-            text: qsTr("Show error details again")
-            onClicked: ApplicationModels.walletController.retryWalletImportErrorPresentation()
+        CoreText {
+            Layout.fillWidth: true
+            text: root.operation.result.recoveryPaths.join("\n")
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
         }
+        WalletOperationWarnings { Layout.fillWidth: true; operation: root.operation }
     }
 }

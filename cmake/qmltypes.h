@@ -50,6 +50,7 @@
 #include <qml/models/signerdiscoverymodel.h>
 #include <qml/models/walletselectionmodel.h>
 #include <qml/models/walletcreationmodel.h>
+#include <qml/models/walletoperationpresentationmodel.h>
 #include <qml/models/transaction.h>
 #include <qml/models/transactionactivitymodel.h>
 #include <qml/models/walletlistmodel.h>
@@ -209,6 +210,8 @@ struct SignerDiscoveryModelForeign { Q_GADGET QML_FOREIGN(SignerDiscoveryModel) 
 struct SignerDiscoveryErrorForeign { Q_GADGET QML_FOREIGN(SignerDiscoveryError) QML_NAMED_ELEMENT(SignerDiscoveryError) QML_UNCREATABLE("Error value") };
 struct WalletCreationTextForeign { Q_GADGET QML_FOREIGN(WalletCreationText) QML_NAMED_ELEMENT(WalletCreationText) QML_UNCREATABLE("Owned by a creation form") };
 struct WalletOperationModelForeign { Q_GADGET QML_FOREIGN(WalletOperationModel) QML_NAMED_ELEMENT(WalletOperationModel) QML_UNCREATABLE("Owned by an immutable operation") };
+struct WalletOperationPromptForeign { Q_GADGET QML_FOREIGN(WalletOperationPrompt) QML_NAMED_ELEMENT(WalletOperationPrompt) QML_UNCREATABLE("Owned by an immutable operation") };
+struct WalletOperationPresentationModelForeign { Q_GADGET QML_FOREIGN(WalletOperationPresentationModel) QML_NAMED_ELEMENT(WalletOperationPresentationModel) };
 struct WalletOperationErrorForeign { Q_GADGET QML_FOREIGN(WalletOperationError) QML_ANONYMOUS };
 struct WalletOperationResultForeign { Q_GADGET QML_FOREIGN(WalletOperationResult) QML_ANONYMOUS };
 struct WalletCreationReceiptForeign { Q_GADGET QML_FOREIGN(WalletCreationReceipt) QML_ANONYMOUS };

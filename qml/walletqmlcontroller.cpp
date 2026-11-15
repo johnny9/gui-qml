@@ -229,31 +229,6 @@ QString ResolveManagedWalletReference(interfaces::Node& node, const QString& pat
     return load_target;
 }
 
-QString InferRestoreWalletName(const QString& normalized_path)
-{
-    const QFileInfo selected_path(normalized_path);
-    if (!selected_path.exists() || selected_path.isDir()) {
-        return {};
-    }
-
-    QString wallet_name;
-    QString file_name = selected_path.fileName();
-
-    if (file_name.compare("wallet.dat", Qt::CaseInsensitive) == 0) {
-        wallet_name = selected_path.dir().dirName();
-    } else if (file_name.toLower().endsWith(".legacy.bak")) {
-        wallet_name = file_name.left(file_name.size() - QString(".legacy.bak").size());
-    } else {
-        wallet_name = selected_path.completeBaseName();
-    }
-
-    if (wallet_name.isEmpty()) {
-        wallet_name = QStringLiteral("restored-wallet");
-    }
-    return wallet_name;
-}
-
-
 
 
 } // namespace
@@ -308,6 +283,8 @@ WalletQmlController::WalletOperationState WalletQmlController::walletOperationSt
 {
     if (m_creation) {
         switch (m_creation->phase()) {
+        case WalletOperationModel::AwaitingConfirmation: return WalletOperationState::WalletOperationNeedsMigration;
+        case WalletOperationModel::AwaitingPassphrase: return WalletOperationState::WalletOperationNeedsPassphrase;
         case WalletOperationModel::Succeeded: return WalletOperationState::WalletOperationSucceeded;
         case WalletOperationModel::Partial: return WalletOperationState::WalletOperationIncomplete;
         case WalletOperationModel::Uncertain: return WalletOperationState::WalletOperationUncertain;
@@ -489,7 +466,10 @@ void WalletQmlController::publishWalletCommand(quint64 id)
         if (observer && !m_shutting_down && id == m_command_id) setWalletLoadWarnings(warning);
         if (observer && !m_shutting_down && id == m_command_id) setWalletLoadInProgress(false);
         if (observer && !m_shutting_down && id == m_command_id) {
-            if (observed && observed->opening()->identity() == resolution->opening && observed == reconciledOpenWallet(*result->value)) Q_EMIT walletLoadSucceeded(observed);
+            if (observed && observed->opening()->identity() == resolution->opening && observed == reconciledOpenWallet(*result->value)) {
+                offerWalletLoadWarnings(result->value->name, warning);
+                if (observer) Q_EMIT walletLoadSucceeded(observed);
+            }
             else adoptionUnavailable(true);
         }
     } else if (failed_open && !resolution) {
@@ -1001,6 +981,10 @@ void WalletQmlController::closeAdmission()
     m_migration_required_details.setValue({}, {}, true); m_migration_passphrase_details.setValue({}, {}, true);
     m_wallet_migration_error.clear(); m_migration_error_owner.reset();
     m_shutting_down = true; m_names_ready->store(false);
+    // The compatibility facade lends this one current operation's text model.
+    // Close that bounded projection synchronously; the registry still retires
+    // every other retained form in its ordinary bounded shutdown batches.
+    if (m_creation) m_creation->closeAdmission();
     m_wallet_load_in_progress = false; m_wallet_migration_in_progress = false;
     m_command_state = WalletOperationState::WalletOperationClosed;
     m_registry->closeAdmission();
@@ -1138,12 +1122,35 @@ void WalletQmlController::trackCreation(WalletOperationModel* operation)
         if (m_creation_error_data != error) { m_creation_error_data = error; Q_EMIT walletCreateErrorChanged(); if (!guard) return; Q_EMIT walletLoadErrorChanged(); if (!guard) return; }
         if (m_creation_warning_data != warning) { m_creation_warning_data = warning; Q_EMIT walletLoadWarningsChanged(); if (!guard) return; }
         const bool busy = walletLoadInProgress();
-        if (std::exchange(m_creation_busy, busy) != busy) Q_EMIT walletLoadInProgressChanged();
+        if (std::exchange(m_creation_busy, busy) != busy) { Q_EMIT walletLoadInProgressChanged(); if (!guard) return; }
+        if (original->kind() == WalletOperationModel::Restore) Q_EMIT walletImportErrorChanged();
+        if (!guard) return;
+        if (original->kind() == WalletOperationModel::Migrate) {
+            Q_EMIT walletMigrationErrorChanged(); if (!guard) return;
+            Q_EMIT walletMigrationInProgressChanged(); if (!guard) return;
+            if (original->phase() == WalletOperationModel::AwaitingPassphrase) Q_EMIT walletMigrationPassphraseRequired(original->targetWalletId());
+        }
     });
     connect(operation, &WalletOperationModel::finished, this, [this, original] {
         if (!original || m_shutting_down || m_creation != original) return;
         // Admission remains held through these reentrant terminal observers.
         // Selection is an independent explicit user intent.
+        const QPointer<WalletQmlController> guard{this};
+        if (original->kind() == WalletOperationModel::Restore) {
+            if (original->phase() == WalletOperationModel::Succeeded) {
+                setLastImportedWalletInfo(original->targetWalletId(), original->keyScheme());
+                if (guard) Q_EMIT walletImportSucceeded(original->resultWallet());
+            }
+            return;
+        }
+        if (original->kind() == WalletOperationModel::Migrate) {
+            if (original->phase() == WalletOperationModel::Succeeded) Q_EMIT walletMigrationSucceeded();
+            else {
+                Q_EMIT walletMigrationErrorNotice(original->targetWalletId(), original->sequence(), false, original->error().message);
+                if (guard) Q_EMIT walletMigrationFailed();
+            }
+            return;
+        }
         if (original->phase() == WalletOperationModel::Succeeded && original->canOpenResult()) {
             if (original->creationKind() == walletcreation::Kind::ExternalSigner) Q_EMIT walletLoadSucceeded(original->resultWallet());
             else Q_EMIT walletCreateSucceeded(original->resultWallet());
@@ -1205,17 +1212,42 @@ void WalletQmlController::createWatchOnlyWallet(const QString& name, const QStri
     startCreation(WalletCreationModel::WatchOnly, name, xpub, {});
 }
 
+WalletOperationModel* WalletQmlController::startRestoration(walletrestoration::Request request)
+{
+    const QPointer<WalletQmlController> guard{this};
+    if (!m_initialized || m_initialization_failed || m_shutting_down) request.transport_error = {QStringLiteral("Unavailable"), walletDiscoveryError(), {}, {}};
+    const bool previous_busy = walletLoadInProgress();
+    const auto operation = QPointer<WalletOperationModel>{WalletOperationModel::Make(creationServices().operation, std::move(request))};
+    if (!guard) { if (operation) operation->deleteLater(); return nullptr; }
+    if (!operation->acceptedForDelivery()) {
+        if (!previous_busy) {
+            m_creation = operation; Q_EMIT walletOperationChanged(); if (!guard || !operation) return nullptr;
+            Q_EMIT walletLoadErrorChanged(); if (!guard || !operation) return nullptr;
+            Q_EMIT walletImportErrorChanged(); if (!guard || !operation) return nullptr;
+            if (operation->kind() == WalletOperationModel::Migrate) { Q_EMIT walletMigrationErrorChanged(); if (guard) Q_EMIT walletMigrationFailed(); }
+        }
+        return operation;
+    }
+    trackCreation(operation); if (guard && operation) operation->start();
+    return operation;
+}
+WalletOperationModel* WalletQmlController::restore(const QUrl& source)
+{
+    walletrestoration::Request request; request.kind = walletrestoration::Kind::Restore; request.source = source.toString(QUrl::FullyEncoded);
+    return startRestoration(std::move(request));
+}
+WalletOperationModel* WalletQmlController::restoreLocalFile(const QString& path) { return restore(QUrl::fromLocalFile(path)); }
+WalletOperationModel* WalletQmlController::migrate(const QString& wallet_id)
+{
+    walletrestoration::Request request; request.kind = walletrestoration::Kind::Migrate; request.source = wallet_id;
+    const QPointer<WalletQmlController> guard{this}; auto* operation = startRestoration(std::move(request));
+    if (guard && operation && operation->acceptedForDelivery()) Q_EMIT migrationOperationOffered(operation);
+    return operation;
+}
 void WalletQmlController::importWallet(const QString& path)
 {
-    const QPointer<WalletQmlController> observer{this};
-    if (m_admitting_command || m_publishing_command) return;
-    m_admitting_command = true; m_admission_selection_revision = m_selection->revision();
-    const auto admission_guard = qScopeGuard([observer] { if (observer) observer->m_admitting_command = false; });
-    if (!m_initialized) {
-        setWalletLoadError(walletDiscoveryError());
-        return;
-    }
-    startWalletImport(path);
+    walletrestoration::Request request; request.kind = walletrestoration::Kind::Restore; request.source = path;
+    startRestoration(std::move(request));
 }
 
 void WalletQmlController::clearWalletCreateStatus()
@@ -1235,24 +1267,15 @@ void WalletQmlController::clearWalletLoadStatus()
 
 void WalletQmlController::migrateWallet(const QString& path, const QString& passphrase)
 {
-    const QPointer<WalletQmlController> observer{this};
-    if (m_admitting_command || m_publishing_command) return;
-    m_admitting_command = true; m_admission_selection_revision = m_selection->revision();
-    const auto admission_guard = qScopeGuard([observer] { if (observer) observer->m_admitting_command = false; });
-    if (m_shutting_down || m_command_state == WalletOperationState::WalletOperationPending || m_creation_admission->creationPending()) return;
-    if (!m_initialized) {
-        setWalletMigrationError(walletDiscoveryError());
-        return;
+    walletrestoration::Request request; request.kind = walletrestoration::Kind::Migrate; request.source = path; request.confirmed = true;
+    if (!m_initialized || m_initialization_failed || m_shutting_down) request.transport_error = {QStringLiteral("Unavailable"), walletDiscoveryError(), {}, {}};
+    if (path.size() > 32768) request.transport_error = {QStringLiteral("TransportBudget"), tr("Wallet input exceeds the transport budget. No wallet effect was started."), {}, {}};
+    if (!passphrase.isEmpty() && request.transport_error.empty()) {
+        auto input = secretinput::Capture(backgroundScheduler(), passphrase);
+        if (!input) request.transport_error = {QStringLiteral("InputUnavailable"), tr("The password input could not be queued. No wallet update was started."), {}, {}};
+        else request.passphrase = std::move(input.input);
     }
-    auto captured = secretinput::Capture(backgroundScheduler(), passphrase);
-    if (!captured) {
-        const auto revision = setWalletMigrationError(tr("The password input could not be queued. No wallet update was started."));
-        if (!observer || m_shutting_down || revision != m_migration_error_revision) return;
-        Q_EMIT walletMigrationErrorNotice(path, m_migration_error_operation, false, m_migration_error_display);
-        if (observer && !m_shutting_down) Q_EMIT walletMigrationFailed();
-        return;
-    }
-    startWalletMigration(path, {}, std::move(captured.input));
+    startRestoration(std::move(request));
 }
 
 void WalletQmlController::clearWalletMigrationStatus()
@@ -1315,9 +1338,9 @@ void WalletQmlController::requestClosePaymentRequestDetail(WalletQmlModel* walle
     Q_EMIT closePaymentRequestDetailRequested(wallet);
 }
 
-QString WalletQmlController::walletImportErrorTitle() const { return m_import_error_title; }
-QString WalletQmlController::walletImportErrorDescription() const { return m_import_error_description; }
-QString WalletQmlController::walletImportErrorHelpText() const { return m_import_error_help; }
+QString WalletQmlController::walletImportErrorTitle() const { return m_creation && m_creation->kind() == WalletOperationModel::Restore ? m_creation->errorTitle() : m_import_error_title; }
+QString WalletQmlController::walletImportErrorDescription() const { return m_creation && m_creation->kind() == WalletOperationModel::Restore ? m_creation->errorDescription() : m_import_error_description; }
+QString WalletQmlController::walletImportErrorHelpText() const { return m_creation && m_creation->kind() == WalletOperationModel::Restore ? m_creation->errorText() : m_import_error_help; }
 QString WalletQmlController::currentCommandErrorDescription() const
 {
     if (!m_command_receipt) return {};
@@ -1336,43 +1359,7 @@ void WalletQmlController::applyWalletDisplayName(WalletQmlModel* wallet_model) c
     }
     wallet_model->setDisplayName(walletDisplayName(wallet_model->name()));
 }
-void WalletQmlController::startWalletImport(const QString& path)
-{
-    const QPointer<WalletQmlController> admission_observer{this};
-    m_command_requested_target = path;
-    if (m_shutting_down || m_command_state == WalletOperationState::WalletOperationPending || m_creation_admission->creationPending()) return;
-    m_command_state = WalletOperationState::WalletOperationPending;
-    clearWalletMigrationStatus(); if (!admission_observer || m_shutting_down) return; clearWalletLoadStatus(); if (!admission_observer || m_shutting_down) return; clearLastImportedWalletInfo(); if (!admission_observer || m_shutting_down) return;
-    setWalletLoadInProgress(true); if (!admission_observer || m_shutting_down) return;
-    submitWalletCommand([node = &m_node, path] {
-        CommandResult out;
-        const auto normalized = NormalizeWalletPath(path);
-        if (normalized.isEmpty()) { out.error = tr("Choose a wallet backup file."); return out; }
-        if (!QFileInfo::exists(normalized)) { out.error = tr("The selected wallet path does not exist."); return out; }
-        const auto name = InferRestoreWalletName(normalized);
-        std::vector<bilingual_str> warnings;
-        auto wallet = node->walletLoader().restoreWallet(fs::PathFromString(normalized.toStdString()), name.toStdString(), warnings, true);
-        out.warnings = JoinWarnings(warnings);
-        if (!wallet) out.error = QString::fromStdString(util::ErrorString(wallet).translated);
-        else out.wallet = std::move(*wallet);
-        describeCommandWallet(out, name, QString::fromStdString(node->walletLoader().getWalletDir()));
-        return out;
-    }, [this](const CommandResult& out) {
-        const QPointer<WalletQmlController> guard{this};
-        setWalletLoadInProgress(false); if (!guard) return;
-        setWalletLoadWarnings(out.warnings); if (!guard) return;
-        if (!out.has_wallet || out.incomplete) { commitWalletCommandOutcome(); setWalletLoadError(out.error.isEmpty() ? tr("Wallet import failed.") : out.error); return; }
-        setLastImportedWalletInfo(out.name, out.key_scheme); if (!guard) return;
-        auto* wallet = adoptWalletModel(out.walletForAdoption(), out.name); if (!guard || !wallet) return;
-        commitWalletCommandOutcome();
-        Q_EMIT walletImportSucceeded(wallet);
-    }, [this](std::exception_ptr failure) {
-        const QPointer<WalletQmlController> guard{this};
-        setWalletLoadInProgress(false);
-        if (guard) setWalletLoadError(NotStarted(failure) ? tr("Wallet import could not be queued. No wallet was restored.")
-            : tr("Wallet import outcome is uncertain. Check the wallet directory before retrying."));
-    }, CommandPayload({static_cast<size_t>(path.size()) * sizeof(QChar)}));
-}
+void WalletQmlController::startWalletImport(const QString& path) { importWallet(path); }
 
 QString WalletQmlController::walletDiscoveryError() const
 {
@@ -1652,7 +1639,10 @@ void WalletQmlController::startWalletLoad(const QString& path, const QString& wa
             Q_EMIT walletLoadStateChanged(path, WalletListModel::LoadState::LoadError, error); return;
         }
         auto* wallet = adoptWalletModel(out.walletForAdoption(), out.name);
-        if (guard && wallet) { commitWalletCommandOutcome(); Q_EMIT walletLoadSucceeded(wallet); }
+        if (guard && wallet) {
+            commitWalletCommandOutcome(); offerWalletLoadWarnings(out.name, out.warnings);
+            if (guard) Q_EMIT walletLoadSucceeded(wallet);
+        }
     }, [this, path](std::exception_ptr failure) {
         const QPointer<WalletQmlController> guard{this};
         setWalletLoadInProgress(false); if (!guard) return;
@@ -1665,55 +1655,10 @@ void WalletQmlController::startWalletLoad(const QString& path, const QString& wa
 
 void WalletQmlController::startWalletMigration(const QString& path, SecureString passphrase, secretinput::Captured captured_passphrase)
 {
-    const QPointer<WalletQmlController> admission_observer{this};
-    m_command_requested_target = path;
-    if (m_shutting_down || m_command_state == WalletOperationState::WalletOperationPending) { QmlUtil::ClearSecureString(passphrase); return; }
-    m_command_state = WalletOperationState::WalletOperationPending;
-    clearWalletLoadStatus(); if (!admission_observer || m_shutting_down) return; clearWalletMigrationStatus(); if (!admission_observer || m_shutting_down) return; setWalletMigrationInProgress(true); if (!admission_observer || m_shutting_down) return;
-    const size_t payload_bytes = CommandPayload({secretinput::Bytes(captured_passphrase), passphrase.capacity(),
-        static_cast<size_t>(path.size()) * sizeof(QChar)});
-    submitWalletCommand([node = &m_node, path, passphrase = std::move(passphrase), captured_passphrase = std::move(captured_passphrase)]() mutable {
-        const auto clear_secret = qScopeGuard([&] { QmlUtil::ClearSecureString(passphrase); });
-        CommandResult out;
-        if (path.trimmed().isEmpty()) { out.error = tr("Choose a wallet to update."); return out; }
-        try {
-            if (captured_passphrase) {
-                passphrase = secretinput::Materialize(captured_passphrase);
-                captured_passphrase.reset();
-            }
-            out.reference = ResolveManagedWalletReference(*node, path);
-            if (out.reference.isEmpty()) { out.error = tr("The selected wallet is not available in the wallet directory."); return out; }
-            if (passphrase.empty() && node->walletLoader().isEncrypted(out.reference.toStdString())) { out.needs_passphrase = true; return out; }
-        } catch (...) { out.error = tr("Wallet migration details could not be checked. No migration was started."); return out; }
-        auto result = node->walletLoader().migrateWallet(out.reference.toStdString(), passphrase, true);
-        if (!result) { out.error = QString::fromStdString(util::ErrorString(result).translated); if (out.error.isEmpty()) out.error = tr("Wallet update failed."); }
-        else { out.effect_succeeded = true; out.wallet = std::move(result->wallet); }
-        describeCommandWallet(out, out.reference, QString::fromStdString(node->walletLoader().getWalletDir()));
-        return out;
-    }, [this, path](const CommandResult& out) {
-        const QPointer<WalletQmlController> guard{this};
-        setWalletMigrationInProgress(false); if (!guard) return;
-        if (out.needs_passphrase) { commitWalletCommandOutcome(); Q_EMIT walletMigrationPassphraseRequired(out.reference); return; }
-        if (!out.error.isEmpty()) { commitWalletCommandOutcome(); const auto revision = setWalletMigrationError(out.error); if (!guard || m_shutting_down || revision != m_migration_error_revision) return;
-            Q_EMIT walletMigrationErrorNotice(path, m_migration_error_operation, m_migration_error_needs_passphrase, m_migration_error_display);
-            if (guard && !m_shutting_down) Q_EMIT walletMigrationFailed();
-            return; }
-        if (out.has_wallet) {
-            auto* adopted = adoptWalletModel(out.walletForAdoption(), out.name);
-            if (!guard || !adopted) return;
-        }
-        commitWalletCommandOutcome();
-        clearWalletMigrationStatus(); if (guard) Q_EMIT walletMigrationSucceeded();
-    }, [this, path](std::exception_ptr failure) {
-        const QPointer<WalletQmlController> guard{this};
-        setWalletMigrationInProgress(false); if (!guard) return;
-        const auto revision = setWalletMigrationError(NotStarted(failure)
-            ? tr("Wallet update could not be queued. No wallet update was started.")
-            : tr("Wallet update outcome is uncertain. Check the wallet directory before retrying."));
-        if (!guard || m_shutting_down || revision != m_migration_error_revision) return;
-        Q_EMIT walletMigrationErrorNotice(path, m_migration_error_operation, false, m_migration_error_display);
-        if (guard && !m_shutting_down) Q_EMIT walletMigrationFailed();
-    }, payload_bytes);
+    walletrestoration::Request request; request.kind = walletrestoration::Kind::Migrate; request.source = path; request.confirmed = true;
+    if (captured_passphrase) request.passphrase = std::move(captured_passphrase);
+    else if (!passphrase.empty()) request.transport_error = {QStringLiteral("UnsupportedTransport"), tr("Submit migration credentials through the captured input interface."), {}, {}};
+    QmlUtil::ClearSecureString(passphrase); startRestoration(std::move(request));
 }
 
 void WalletQmlController::setWalletCreateError(const QString& error)
@@ -1904,6 +1849,18 @@ void WalletQmlController::publishImportErrorProjection()
     Q_EMIT walletImportErrorChanged();
 }
 
+void WalletQmlController::offerWalletLoadWarnings(const QString& wallet, const QString& warnings)
+{
+    if (warnings.isEmpty() || !m_command_owner || m_shutting_down) return;
+    const QPointer<WalletQmlController> guard{this};
+    auto* notice = WalletOperationModel::OpenNotice(creationServices().operation, m_command_id, wallet, warnings, m_command_owner, m_result_wallet);
+    if (!guard) { notice->deleteLater(); return; }
+    const QPointer<WalletOperationModel> original{notice};
+    m_registry->registerForm(notice, [original] { if (original) original->closeAdmission(); });
+    connect(notice, &QObject::destroyed, this, [this, notice] { m_registry->forgetForm(notice); });
+    Q_EMIT walletLoadWarningsOffered(notice);
+}
+
 void WalletQmlController::setWalletLoadWarnings(const QString& warnings)
 {
     if (m_wallet_load_warnings != warnings) {
@@ -1924,6 +1881,7 @@ void WalletQmlController::setWalletMigrationInProgress(bool in_progress)
 
 QAbstractItemModel* WalletQmlController::captureMigrationErrorDetails(quint64 operation, int slot)
 {
+    if (m_creation && m_creation->kind() == WalletOperationModel::Migrate && operation == m_creation->sequence() && (slot == 0 || slot == 1)) return m_creation->errorDetails();
     if (m_shutting_down || operation != m_migration_error_operation || (slot != 0 && slot != 1)) return nullptr;
     const auto revision = m_migration_error_revision;
     auto* lines = slot == 0 ? &m_migration_required_details : &m_migration_passphrase_details;

@@ -19,6 +19,7 @@
 #include <QScopeGuard>
 #include <QTimer>
 #include <QFile>
+#include <QDir>
 #include <QFileInfo>
 #include <QPointer>
 #include <QSignalSpy>
@@ -105,6 +106,117 @@ public:
     explicit WalletIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
 
 private Q_SLOTS:
+    void restoredModernNamesKeepTheirExactDatabaseIdentity_data()
+    {
+        QTest::addColumn<QString>("target");
+        QTest::newRow("modern-legacy-suffix") << QStringLiteral("Treasury.legacy");
+        QTest::newRow("ordinary-suffix-control") << QStringLiteral("Treasury.archive");
+        QTest::newRow("significant-space-import") << QStringLiteral("Savings ");
+        QTest::newRow("encoded-file-url") << QStringLiteral("Trésor #1%20");
+    }
+    void restoredModernNamesKeepTheirExactDatabaseIdentity()
+    {
+        QFETCH(QString, target);
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller);
+        auto* source = qmltest::CreateWallet(m_app, "source-original"); QVERIFY(source);
+        const auto address = qmltest::NewAddress(m_app, source->name());
+        QTemporaryDir directory; QVERIFY(directory.isValid()); const auto backup = directory.filePath(target + QStringLiteral(".bak"));
+        UniValue backup_request{UniValue::VARR}; backup_request.push_back(backup.toStdString()); qmltest::Rpc(m_app, "backupwallet", backup_request, source->name()); const auto original_bytes = BackupBytes(backup);
+        QPointer<WalletQmlModel> original{source}; controller->closeWallet(source->name()); QTRY_VERIFY(original.isNull());
+        const auto unrelated_name = target.startsWith("Treasury") ? QStringLiteral("Treasury") : QStringLiteral("Savings");
+        auto* unrelated = qmltest::CreateWallet(m_app, unrelated_name); QVERIFY(unrelated); const auto unrelated_address = qmltest::NewAddress(m_app, unrelated_name);
+        auto* operation = controller->restore(QUrl::fromLocalFile(backup)); QVERIFY(operation); QTRY_VERIFY_WITH_TIMEOUT(operation->terminal(), 30'000);
+        QCOMPARE(operation->phase(), WalletOperationModel::Succeeded); QCOMPARE(operation->targetWalletId(), target); QCOMPARE(operation->result().wallet_id, target);
+        auto* restored = qmltest::WaitForOpenWallet(m_app, target); QVERIFY(restored); QCOMPARE(operation->resultWallet(), restored); QCOMPARE(controller->selectedWallet(), unrelated); QVERIFY(operation->canOpenResult());
+        UniValue info{UniValue::VARR}; info.push_back(address.toStdString()); QVERIFY(qmltest::Rpc(m_app, "getaddressinfo", info, target).find_value("ismine").get_bool()); QVERIFY(!qmltest::Rpc(m_app, "getaddressinfo", info, unrelated_name).find_value("ismine").get_bool());
+        UniValue other{UniValue::VARR}; other.push_back(unrelated_address.toStdString()); QVERIFY(!qmltest::Rpc(m_app, "getaddressinfo", other, target).find_value("ismine").get_bool()); QCOMPARE(BackupBytes(backup), original_bytes);
+        QVERIFY(restored->displayName() != unrelated->displayName()); QVERIFY(controller->setWalletDisplayName(target, "Restored original alias")); QTRY_VERIFY(!controller->walletDisplayNameWritePending()); QVERIFY(controller->walletDisplayNameWriteSucceeded()); QTRY_COMPARE(restored->displayName(), QStringLiteral("Restored original alias")); QVERIFY(unrelated->displayName() != restored->displayName());
+        QVERIFY(controller->selectWallet(operation->resultWallet())); QCOMPARE(controller->selectedWallet(), restored);
+    }
+
+    void restoreRejectsInvalidAndDuplicateBackupsWithoutFilenameClassification()
+    {
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller);
+        QTemporaryDir directory; QVERIFY(directory.isValid()); const auto invalid = directory.filePath("invalid_migration.bak"); QFile invalid_file{invalid}; QVERIFY(invalid_file.open(QIODevice::WriteOnly)); QCOMPARE(invalid_file.write("not a wallet backup"), qint64{19}); invalid_file.close(); const auto invalid_bytes = BackupBytes(invalid);
+        auto* failed = controller->restore(QUrl::fromLocalFile(invalid)); QVERIFY(failed); QTRY_VERIFY(failed->terminal()); QCOMPARE(failed->phase(), WalletOperationModel::Failed); QCOMPARE(failed->result().effect, WalletOperationResult::NoEffect); QCOMPARE(BackupBytes(invalid), invalid_bytes); QVERIFY(!controller->walletForName("invalid_migration"));
+        auto* wallet = qmltest::CreateWallet(m_app, "audit_migration_73"); QVERIFY(wallet); const auto address = qmltest::NewAddress(m_app, wallet->name()); const auto backup = directory.filePath("audit_migration_73.bak"); UniValue request{UniValue::VARR}; request.push_back(backup.toStdString()); qmltest::Rpc(m_app, "backupwallet", request, wallet->name()); const auto valid_bytes = BackupBytes(backup);
+        QPointer<WalletQmlModel> original{wallet}; controller->closeWallet(wallet->name()); QTRY_VERIFY(original.isNull());
+        auto* duplicate = controller->restore(QUrl::fromLocalFile(backup)); QVERIFY(duplicate); QTRY_VERIFY(duplicate->terminal()); QCOMPARE(duplicate->phase(), WalletOperationModel::Failed); QCOMPARE(duplicate->error().code, QStringLiteral("TargetExists")); QVERIFY(!duplicate->errorTitle().contains("migrat", Qt::CaseInsensitive)); QCOMPARE(duplicate->result().effect, WalletOperationResult::NoEffect); QCOMPARE(BackupBytes(backup), valid_bytes);
+        const auto corrected = directory.filePath("restored-control.bak"); QVERIFY(QFile::copy(backup, corrected)); auto* restored = controller->restore(QUrl::fromLocalFile(corrected)); QVERIFY(restored); QTRY_VERIFY_WITH_TIMEOUT(restored->terminal(), 30'000); QCOMPARE(restored->phase(), WalletOperationModel::Succeeded);
+        UniValue info{UniValue::VARR}; info.push_back(address.toStdString()); QVERIFY(qmltest::Rpc(m_app, "getaddressinfo", info, "restored-control").find_value("ismine").get_bool()); QCOMPARE(BackupBytes(backup), valid_bytes);
+    }
+
+    void restoreSplitKeepsStorageWhenStartupSettingsAreDisabled()
+    {
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller);
+        qmltest::Rpc(m_app, "createwallet", qmltest::Json("{\"wallet_name\":\"nosettings-source\",\"load_on_startup\":null}"));
+        auto* source = qmltest::WaitForOpenWallet(m_app, "nosettings-source"); QVERIFY(source); const auto address = qmltest::NewAddress(m_app, source->name());
+        QTemporaryDir directory; QVERIFY(directory.isValid()); const auto backup = directory.filePath("nosettings-restored.bak"); UniValue request{UniValue::VARR}; request.push_back(backup.toStdString()); qmltest::Rpc(m_app, "backupwallet", request, source->name()); const auto bytes = BackupBytes(backup);
+        QPointer<WalletQmlModel> original{source}; controller->closeWallet(source->name()); QTRY_VERIFY(original.isNull());
+        // Pinned Core already converts disabled startup settings into a
+        // warning. Preserve that independent public-RPC compatibility control;
+        // manual old-implementation exception tests cover the split's safety.
+        const auto wallet_directory = qmltest::Call(m_app, [](interfaces::Node* node) { return QString::fromStdString(node->walletLoader().getWalletDir()); });
+        UniValue control{UniValue::VARR}; control.push_back("rpc-settings-control"); control.push_back(backup.toStdString()); control.push_back(true);
+        const auto control_result = qmltest::Rpc(m_app, "restorewallet", control);
+        QCOMPARE(QString::fromStdString(control_result.find_value("name").get_str()), QStringLiteral("rpc-settings-control"));
+        QVERIFY(control_result.find_value("warnings").write().find("startup setting could not be updated") != std::string::npos);
+        QCOMPARE(BackupBytes(backup), bytes); QVERIFY(QFileInfo::exists(QDir(wallet_directory).filePath("rpc-settings-control/wallet.dat")));
+        const auto loaded = qmltest::Rpc(m_app, "listwallets");
+        for (const auto& name : loaded.getValues()) if (name.get_str() == "rpc-settings-control") { UniValue unload{UniValue::VARR}; unload.push_back("rpc-settings-control"); qmltest::Rpc(m_app, "unloadwallet", unload); }
+        QTRY_VERIFY(!controller->walletForName("rpc-settings-control"));
+        const QPointer<WalletQmlModel> selected_before{controller->selectedWallet()};
+        auto* operation = controller->restore(QUrl::fromLocalFile(backup)); QVERIFY(operation); QTRY_VERIFY_WITH_TIMEOUT(operation->terminal(), 30'000);
+        QCOMPARE(operation->phase(), WalletOperationModel::Succeeded); QVERIFY(operation->warningText().contains("startup setting could not be updated")); QVERIFY(operation->canOpenResult()); QCOMPARE(controller->selectedWallet(), selected_before.data());
+
+        const auto restored_file = QDir(wallet_directory).filePath("nosettings-restored/wallet.dat"); QVERIFY(QFileInfo::exists(restored_file)); QCOMPARE(BackupBytes(backup), bytes);
+        UniValue info{UniValue::VARR}; info.push_back(address.toStdString()); QVERIFY(qmltest::Rpc(m_app, "getaddressinfo", info, "nosettings-restored").find_value("ismine").get_bool());
+        QPointer<WalletQmlModel> result{operation->resultWallet()}; controller->closeWallet("nosettings-restored"); QTRY_VERIFY(result.isNull()); QVERIFY(QFileInfo::exists(restored_file)); QCOMPARE(BackupBytes(backup), bytes);
+    }
+
+    void openedWalletWarningsRetainTheExactOriginalTarget()
+    {
+        // SQLite's VFS rejects the former >1024-byte fixture path before any
+        // GUI operation. A supported nested, spaced and percent-bearing ID
+        // still distinguishes the exact original target from a display label.
+        const QString original_name = QStringLiteral("nested original/Treasury #1%20");
+        auto* original = qmltest::CreateWallet(m_app, original_name); QVERIFY(original);
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller); QPointer<WalletQmlModel> closed{original}; controller->closeWallet(original_name); QTRY_VERIFY(closed.isNull());
+        auto* standby = qmltest::CreateWallet(m_app, "open-warning-standby"); QVERIFY(standby);
+        QSignalSpy offered{controller, &WalletQmlController::walletLoadWarningsOffered}; controller->setSelectedWallet(original_name, "sqlite");
+        QTRY_COMPARE(offered.count(), 1); auto* operation = qvariant_cast<WalletOperationModel*>(offered.front().front()); QVERIFY(operation); QCOMPARE(operation->kind(), WalletOperationModel::Open); QCOMPARE(operation->targetWalletId(), original_name); QCOMPARE(operation->result().wallet_id, original_name);
+        QCOMPARE(operation->phase(), WalletOperationModel::Succeeded); QVERIFY(operation->warningText().contains("fallbackfee")); QVERIFY(operation->canOpenResult()); QCOMPARE(controller->selectedWallet(), standby);
+        QVERIFY(qmltest::WaitForVisible(m_app, "walletMigrationResultPopup")); auto* warnings = qmltest::Find(m_app, "walletCreationWarnings"); QVERIFY(warnings); QVERIFY(warnings->property("visible").toBool()); QVERIFY(warnings->property("text").toString().contains("fallbackfee"));
+        QVERIFY(qmltest::Click(m_app, "walletMigrationOpenResultButton")); QTRY_COMPARE(controller->selectedWallet(), operation->resultWallet()); QCOMPARE(controller->selectedWallet()->name(), original_name);
+    }
+
+    void restoreWarningsRemainOnTheInitiatingOwnedResult()
+    {
+        auto* source = qmltest::CreateWallet(m_app, "warning-source"); QVERIFY(source); const auto address = qmltest::NewAddress(m_app, source->name());
+        QTemporaryDir directory; QVERIFY(directory.isValid()); const auto backup = directory.filePath("warning-restored.bak"); UniValue request{UniValue::VARR}; request.push_back(backup.toStdString()); qmltest::Rpc(m_app, "backupwallet", request, source->name());
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller); QPointer<WalletQmlModel> original{source}; controller->closeWallet(source->name()); QTRY_VERIFY(original.isNull());
+        auto* standby = qmltest::CreateWallet(m_app, "warning-standby"); QVERIFY(standby);
+        QVERIFY(qmltest::Click(m_app, "walletBadge")); QVERIFY(qmltest::WaitForVisible(m_app, "walletSelectPopup")); QVERIFY(qmltest::Click(m_app, "walletSelectAddWalletButton")); QVERIFY(qmltest::WaitForVisible(m_app, "createWalletWizard"));
+        auto* import_path = qmltest::Find(m_app, "importWalletPathField"); QVERIFY(import_path); QVERIFY(import_path->setProperty("text", backup)); QVERIFY(qmltest::Click(m_app, "walletTypeImport")); QVERIFY(qmltest::WaitForVisible(m_app, "importWalletSuccessPage"));
+        auto* operation = controller->creationOperation(); QVERIFY(operation); QCOMPARE(operation->kind(), WalletOperationModel::Restore); QCOMPARE(operation->phase(), WalletOperationModel::Succeeded); QVERIFY(operation->warningText().contains("fallbackfee"));
+        auto* warnings = qmltest::Find(m_app, "walletCreationWarnings"); QVERIFY(warnings); QVERIFY(warnings->property("visible").toBool()); QVERIFY(warnings->property("text").toString().contains("fallbackfee")); QCOMPARE(controller->selectedWallet(), standby);
+        UniValue info{UniValue::VARR}; info.push_back(address.toStdString()); QVERIFY(qmltest::Rpc(m_app, "getaddressinfo", info, "warning-restored").find_value("ismine").get_bool()); QVERIFY(qmltest::Click(m_app, "importWalletSuccessOverviewButton")); QTRY_COMPARE(controller->selectedWallet(), operation->resultWallet());
+    }
+
+    void prunedValidBackupKeepsItsFilesAndReportsTheActualReason()
+    {
+        auto* source = qmltest::CreateWallet(m_app, "prune-source"); QVERIFY(source); const auto address = qmltest::NewAddress(m_app, source->name());
+        auto mine = [&](int blocks) { UniValue request{UniValue::VARR}; request.push_back(blocks); request.push_back(address.toStdString()); qmltest::Rpc(m_app, "generatetoaddress", request); };
+        mine(106); QTemporaryDir directory; QVERIFY(directory.isValid()); const auto backup = directory.filePath("old-pruned.bak"); UniValue request{UniValue::VARR}; request.push_back(backup.toStdString()); qmltest::Rpc(m_app, "backupwallet", request, source->name()); const auto original_bytes = BackupBytes(backup);
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller); QPointer<WalletQmlModel> original{source}; controller->closeWallet(source->name()); QTRY_VERIFY(original.isNull()); mine(600);
+        UniValue prune{UniValue::VARR}; prune.push_back(400); qmltest::Rpc(m_app, "pruneblockchain", prune); QVERIFY(qmltest::Rpc(m_app, "getblockchaininfo").find_value("pruneheight").getInt<int>() > 106);
+        UniValue rpc_restore{UniValue::VARR}; rpc_restore.push_back("rpc-prune-control"); rpc_restore.push_back(backup.toStdString()); QString rpc_reason; try { qmltest::Rpc(m_app, "restorewallet", rpc_restore); } catch (const std::runtime_error& error) { rpc_reason = QString::fromUtf8(error.what()); } QVERIFY2(rpc_reason.contains("Prune:"), qPrintable(rpc_reason)); QCOMPARE(BackupBytes(backup), original_bytes);
+        auto* operation = controller->restore(QUrl::fromLocalFile(backup)); QVERIFY(operation); QTRY_VERIFY_WITH_TIMEOUT(operation->terminal(), 30'000); QCOMPARE(operation->phase(), WalletOperationModel::Partial); QCOMPARE(operation->error().code, QStringLiteral("PrunedDataUnavailable")); QVERIFY(operation->errorText().contains("-reindex")); QVERIFY(operation->canReconcile()); QCOMPARE(BackupBytes(backup), original_bytes);
+        const auto wallet_directory = qmltest::Call(m_app, [](interfaces::Node* node) { return QString::fromStdString(node->walletLoader().getWalletDir()); }); QVERIFY(QFileInfo::exists(QDir(wallet_directory).filePath("old-pruned/wallet.dat")));
+        auto* fresh = qmltest::CreateWallet(m_app, "fresh-source"); QVERIFY(fresh); const auto fresh_backup = directory.filePath("fresh-control.bak"); UniValue fresh_request{UniValue::VARR}; fresh_request.push_back(fresh_backup.toStdString()); qmltest::Rpc(m_app, "backupwallet", fresh_request, fresh->name()); QPointer<WalletQmlModel> fresh_original{fresh}; controller->closeWallet(fresh->name()); QTRY_VERIFY(fresh_original.isNull());
+        auto* control = controller->restore(QUrl::fromLocalFile(fresh_backup)); QVERIFY(control); QTRY_VERIFY_WITH_TIMEOUT(control->terminal(), 30'000); QCOMPARE(control->phase(), WalletOperationModel::Succeeded); QVERIFY(control->canOpenResult()); QCOMPARE(BackupBytes(backup), original_bytes);
+    }
+
     void createdWalletUnloadedBeforeGuiPublicationKeepsTheViewAlive()
     {
         QVERIFY(qmltest::CreateWallet(m_app, "unload-standby"));
@@ -1261,7 +1373,10 @@ private Q_SLOTS:
 
 QStringList WalletTestArguments(const QString& selector)
 {
-    return selector == QLatin1String("creationWarningsAppearOnTheInitiatingSuccessfulResult") ? QStringList{QStringLiteral("-fallbackfee=0.1")} : QStringList{};
+    if (selector == QLatin1String("creationWarningsAppearOnTheInitiatingSuccessfulResult") || selector == QLatin1String("restoreWarningsRemainOnTheInitiatingOwnedResult") || selector == QLatin1String("openedWalletWarningsRetainTheExactOriginalTarget")) return {QStringLiteral("-fallbackfee=0.1")};
+    if (selector == QLatin1String("restoreSplitKeepsStorageWhenStartupSettingsAreDisabled")) return {QStringLiteral("-nosettings")};
+    if (selector == QLatin1String("prunedValidBackupKeepsItsFilesAndReportsTheActualReason")) return {QStringLiteral("-prune=1"), QStringLiteral("-fastprune")};
+    return {};
 }
 
 std::unique_ptr<QObject> CreateWalletTests(BitcoinQmlApplication& app, WalletMode)

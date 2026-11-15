@@ -837,13 +837,28 @@ std::shared_ptr<walletpublication::Ticket> WalletRegistry::reserveCreation(const
 walletpublication::Result WalletRegistry::publishCreation(const std::shared_ptr<walletpublication::Ticket>& opaque,
     std::shared_ptr<interfaces::Wallet> wallet, const QString& wallet_id, walletopening::NativeEvents observation)
 {
+    return publishWithLifetime(opaque, std::move(wallet), wallet_id, std::move(observation), {});
+}
+walletpublication::Result WalletRegistry::publishWithLifetime(const std::shared_ptr<walletpublication::Ticket>& opaque,
+    std::shared_ptr<interfaces::Wallet> wallet, const QString& wallet_id, walletopening::NativeEvents observation, std::shared_ptr<walletpublication::Release> cell)
+{
     const auto lifetime = shared_from_this();
     const auto ticket = std::dynamic_pointer_cast<RegistryCreationTicket>(opaque);
     if (!ticket || ticket->owner.lock().get() != this || !m_host->owner || m_host->stopping() || m_adoption_depth) return {};
+    // Notification-first adoption is already guarded by the aggregate token.
+    // Attach the exact cell before releasing that aggregate, even if this
+    // opening closed reentrantly before result publication.
+    if (cell) {
+        const auto binding = ticket->origin->bindings.find(wallet_id);
+        if (binding != ticket->origin->bindings.end()) retainResult(binding->second->opening->facade, cell);
+    }
     if (ticket->observation->failed() || (m_command_origin && m_command_origin != ticket->origin)) return {};
     m_command_origin = ticket->origin;
     const auto previous = exchangePublishingOrigin(ticket->origin);
     const auto restore = qScopeGuard([lifetime, previous] { lifetime->exchangePublishingOrigin(previous); });
+    const auto original_lifetime = ticket->origin->result_lifetime;
+    if (cell) ticket->origin->result_lifetime = cell;
+    const auto restore_lifetime = qScopeGuard([ticket, original_lifetime] { ticket->origin->result_lifetime = original_lifetime; });
     auto* exact = adoptWallet(std::move(wallet), wallet_id, ticket->origin, 0, std::move(observation));
     if (exact && exact->available() && containsExact(exact)) return {exact, walletpublication::Availability::Available, {}};
     const auto binding = ticket->origin->bindings.find(wallet_id);

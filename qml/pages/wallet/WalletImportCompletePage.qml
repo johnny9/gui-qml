@@ -13,6 +13,7 @@ OnboardingView {
     objectName: "importWalletSuccessPage"
     showNavigationBar: false
     usesSharedNavigation: true
+    required property WalletOperationModel operation
     signal done()
 
     title: ""
@@ -22,7 +23,7 @@ OnboardingView {
     showBackButton: false
     showCloseButton: false
     primaryButtonText: ""
-    secondaryButtonText: qsTr("Go to wallet")
+    secondaryButtonText: root.operation.canOpenResult ? qsTr("Go to wallet") : qsTr("Done")
     secondaryButtonObjectName: "importWalletSuccessOverviewButton"
     onSecondaryClicked: root.done()
 
@@ -49,8 +50,7 @@ OnboardingView {
             }
             value: CoreText {
                 objectName: "importWalletSuccessWalletName"
-                text: ApplicationModels.walletController.lastImportedWalletName.length > 0
-                    ? ApplicationModels.walletController.lastImportedWalletName : qsTr("Unknown")
+                text: root.operation.resultWallet ? root.operation.resultWallet.displayName : root.operation.targetWalletId.length > 0 ? root.operation.targetWalletId : qsTr("Default wallet")
                 color: Theme.color.neutral9
                 font: Theme.text.subheading.font
                 wrap: true
@@ -77,13 +77,14 @@ OnboardingView {
             }
             value: CoreText {
                 objectName: "importWalletSuccessKeyScheme"
-                text: ApplicationModels.walletController.lastImportedWalletKeyScheme.length > 0
-                    ? ApplicationModels.walletController.lastImportedWalletKeyScheme : qsTr("Unknown")
+                text: root.operation.keyScheme.length > 0 ? root.operation.keyScheme : qsTr("Unknown")
                 color: Theme.color.neutral9
                 font: Theme.text.subheading.font
                 wrap: true
                 horizontalAlignment: Text.AlignRight
             }
         }
+        WalletOperationWarnings { Layout.fillWidth: true; operation: root.operation }
+        CoreText { Layout.fillWidth: true; text: root.operation.result.recoveryPaths.join("\n"); textFormat: Text.PlainText; wrapMode: Text.WordWrap }
     }
 }

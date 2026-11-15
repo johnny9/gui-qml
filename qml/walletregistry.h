@@ -178,6 +178,8 @@ public:
     std::shared_ptr<walletpublication::Ticket> reserveCreation(const QString& operation_id) override;
     walletpublication::Result publishCreation(const std::shared_ptr<walletpublication::Ticket>& ticket,
         std::shared_ptr<interfaces::Wallet> wallet, const QString& wallet_id, walletopening::NativeEvents observation) override;
+    walletpublication::Result publishWithLifetime(const std::shared_ptr<walletpublication::Ticket>& ticket, std::shared_ptr<interfaces::Wallet> wallet,
+        const QString& wallet_id, walletopening::NativeEvents observation, std::shared_ptr<walletpublication::Release> cell) override;
     void finishCreation(const std::shared_ptr<walletpublication::Ticket>& ticket) override;
     WalletQmlModel* walletForName(const QString& name) const;
     WalletQmlModel* firstAvailable(WalletQmlModel* except = nullptr) const;

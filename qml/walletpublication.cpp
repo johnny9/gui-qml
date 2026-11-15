@@ -12,17 +12,21 @@ bool NativeObservation::capture(std::weak_ptr<interfaces::Wallet> wallet, std::s
     if (m_entries.size() == 64) { m_failed = true; return false; }
     m_entries.push_back({std::move(wallet), std::move(unloaded), std::move(observation), ingress}); return true;
 }
-walletopening::NativeEvents NativeObservation::resolve(const QString& id, const std::function<QString(interfaces::Wallet&)>& read_name) const
+NativeObservation::Observed NativeObservation::find(const QString& id, const std::function<QString(interfaces::Wallet&)>& read_name) const
 {
     std::vector<Entry> entries;
     { std::lock_guard lock{m_mutex}; entries = m_entries; }
-    const Entry* first{nullptr};
+    Observed first; uint64_t sequence{0};
     for (const auto& entry : entries) {
-        if (const auto wallet = entry.wallet.lock()) {
-            if (read_name(*wallet) == id && (!first || entry.ingress < first->ingress)) first = &entry;
+        if (auto wallet = entry.wallet.lock(); wallet && read_name(*wallet) == id && (!first.wallet || entry.ingress < sequence)) {
+            sequence = entry.ingress; first = {std::move(wallet), {m_clock, entry.unloaded, entry.observation}};
         }
     }
-    return first ? walletopening::NativeEvents{m_clock, first->unloaded, first->observation} : walletopening::NativeEvents{};
+    return first;
+}
+walletopening::NativeEvents NativeObservation::resolve(const QString& id, const std::function<QString(interfaces::Wallet&)>& read_name) const
+{
+    return find(id, read_name).events;
 }
 void Release::whenReleased(std::function<void()> callback)
 {

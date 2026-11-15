@@ -61,7 +61,7 @@ struct WalletOperationResult {
     Q_PROPERTY(bool outcomeKnown MEMBER outcome_known)
     Q_PROPERTY(bool warningsTruncated MEMBER warnings_truncated)
 public:
-    enum Effect { NoEffect, WalletCreated, SetupIncomplete, PublicationUnavailable, PossibleEffect };
+    enum Effect { NoEffect, WalletCreated, SetupIncomplete, PublicationUnavailable, PossibleEffect, WalletRestored, WalletMigrated, BackupCopied, WalletOpened };
     Q_ENUM(Effect)
     QString result_id, wallet_id;
     QStringList auxiliary_wallet_ids, warnings, recovery_paths;
@@ -74,7 +74,7 @@ namespace walletcreation {
 Q_NAMESPACE
 enum class Kind { Software, WatchOnly, ExternalSigner };
 Q_ENUM_NS(Kind)
-enum class Phase { Requested, Validating, Creating, SettingUp, Publishing, Succeeded, Failed, Partial, Uncertain, Rejected, Cancelled };
+enum class Phase { Requested, Validating, Creating, SettingUp, Publishing, Succeeded, Failed, Partial, Uncertain, Rejected, Cancelled, AwaitingConfirmation, AwaitingPassphrase };
 Q_ENUM_NS(Phase)
 bool Busy(Phase phase);
 bool Terminal(Phase phase);
@@ -140,6 +140,8 @@ struct Frame {
     quint64 revision{0};
     Phase phase{Phase::Requested};
     QString target_id, key_scheme, error_text, warning_text;
+    QString prompt_id, error_title, error_description, rejected_command;
+    WalletOperationError command_error;
     WalletOperationError error;
     WalletOperationResult result;
     bool publication_requested{false}, outcome_known{false};
@@ -156,23 +158,50 @@ struct Services {
     std::shared_ptr<WalletNameRegistry> open_names;
     std::shared_ptr<std::atomic_bool> initialized, shutdown;
 };
+// Common value/effect contract. Creation and restore/migration remain separate
+// Native owners; a GUI projection cannot execute or inspect their Core work.
+class OperationOwner {
+public:
+    virtual ~OperationOwner() = default;
+    virtual void start() = 0;
+    virtual void cancel() = 0;
+    virtual void detach() = 0;
+    virtual Frame snapshot() const = 0;
+    virtual QString errorText() const = 0;
+    virtual QString warningText() const = 0;
+    virtual walletopening::NativeEvents observationForPublication() const = 0;
+    virtual std::shared_ptr<interfaces::Wallet> walletForPublication() const = 0;
+    virtual void publicationConsumed(walletpublication::Availability availability, QString error) = 0;
+    virtual void reconcilePublication() = 0;
+    virtual bool reconcileNeedsTicket() const { return false; }
+    virtual void reconcileWithPorts(std::shared_ptr<walletpublication::Release>, std::shared_ptr<walletpublication::NativeObservation>) { reconcilePublication(); }
+    virtual size_t publicationCount() const { return 1; }
+    virtual QString publicationName(size_t) const { return snapshot().target_id; }
+    virtual bool publicationPrimary(size_t index) const { return index == 0; }
+    virtual std::shared_ptr<interfaces::Wallet> publicationWallet(size_t) const { return walletForPublication(); }
+    virtual walletopening::NativeEvents publicationObservation(size_t) const { return observationForPublication(); }
+    virtual std::shared_ptr<walletpublication::Release> publicationRelease(size_t) const { return {}; }
+    virtual void publicationsConsumed(std::vector<walletpublication::Availability> values, QString error) { publicationConsumed(values.empty() ? walletpublication::Availability::Unavailable : values.front(), std::move(error)); }
+    virtual bool reconcileAvailable() const { const auto events = observationForPublication(); return bool(walletForPublication()) && !(events.unloaded && events.unloaded->load()); }
+    virtual void answer(QString, QString, std::shared_ptr<walletpublication::Release>, std::shared_ptr<walletpublication::NativeObservation>, secretinput::Captured) {}
+};
 // Domain/Core owner; no GUI object, registry, publisher or selection dependency.
-class Owner final : public std::enable_shared_from_this<Owner> {
+class Owner final : public OperationOwner, public std::enable_shared_from_this<Owner> {
 public:
     using Notify = std::function<void()>;
     static std::shared_ptr<Owner> Make(Services services, Request request, Notify notify, std::shared_ptr<walletpublication::Release> release, std::shared_ptr<walletpublication::NativeObservation> observation);
-    ~Owner();
-    void start();
+    ~Owner() override;
+    void start() override;
     void preparePublication(std::shared_ptr<walletpublication::Release> release);
-    void publicationConsumed(walletpublication::Availability availability, QString error);
-    void cancel();
-    void detach();
-    Frame snapshot() const;
-    QString errorText() const;
-    QString warningText() const;
-    walletopening::NativeEvents observationForPublication() const;
-    void reconcilePublication();
-    std::shared_ptr<interfaces::Wallet> walletForPublication() const;
+    void publicationConsumed(walletpublication::Availability availability, QString error) override;
+    void cancel() override;
+    void detach() override;
+    Frame snapshot() const override;
+    QString errorText() const override;
+    QString warningText() const override;
+    walletopening::NativeEvents observationForPublication() const override;
+    void reconcilePublication() override;
+    std::shared_ptr<interfaces::Wallet> walletForPublication() const override;
     quint64 id() const { return m_request.id; }
     bool encrypted() const { return m_request.kind == Kind::Software && m_request.encrypt; }
     Kind kind() const { return m_request.kind; }

@@ -41,7 +41,7 @@ size_t Bytes(const Request& request)
 }
 }
 bool Busy(Phase phase) { return phase == Phase::Requested || phase == Phase::Validating || phase == Phase::Creating || phase == Phase::SettingUp || phase == Phase::Publishing; }
-bool Terminal(Phase phase) { return !Busy(phase); }
+bool Terminal(Phase phase) { return !Busy(phase) && phase != Phase::AwaitingConfirmation && phase != Phase::AwaitingPassphrase; }
 quint64 Admission::allocate()
 {
     auto id = m_sequence.load();

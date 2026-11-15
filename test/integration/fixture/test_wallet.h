@@ -11,6 +11,8 @@
 #include <script/descriptor.h>
 #include <consensus/amount.h>
 
+#include <QUrl>
+
 #include <stdexcept>
 
 namespace qmltest {
@@ -19,7 +21,7 @@ inline UniValue Rpc(BitcoinQmlApplication& app, const std::string& method,
 {
     try {
         return Call(app, &interfaces::Node::executeRpc, method, params.isNull() ? UniValue{UniValue::VARR} : params,
-                    wallet.isEmpty() ? std::string{} : "/wallet/" + wallet.toStdString());
+                    wallet.isEmpty() ? std::string{} : "/wallet/" + QUrl::toPercentEncoding(wallet).toStdString());
     } catch (const UniValue& error) {
         throw std::runtime_error{"RPC " + method + " failed: " + error.write()};
     }

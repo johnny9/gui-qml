@@ -18,7 +18,6 @@ Page {
     objectName: "desktopWalletsPage"
     background: null
 
-    property string pendingMigrationPath: ""
     // The wallet shown in the window. Wallet pages never look this up
     // themselves; each WalletView gets its wallet when it is created.
     readonly property var activeWallet: ApplicationModels.walletController.isWalletLoaded
@@ -197,43 +196,10 @@ Page {
             loadErrorPopup.preparedMessage = description
             loadErrorPopup.open()
         }
-        function onWalletMigrationRequired(path) {
-            root.pendingMigrationPath = path
-            migrationRequiredPopup.errorText = ""
-            migrationRequiredPopup.open()
-        }
-        function onWalletMigrationPassphraseRequired(path) {
-            root.pendingMigrationPath = path
-            migrationRequiredPopup.close()
-            migrationPassphrasePopup.busy = false
-            migrationPassphrasePopup.errorText = ""
-            migrationPassphrasePopup.open()
-        }
-        function onWalletMigrationSucceeded() {
-            root.pendingMigrationPath = ""
-            migrationRequiredPopup.close()
-            migrationPassphrasePopup.close()
-        }
-        function onWalletMigrationErrorNotice(name, operation, needsPassphrase, description) {
-            if (root.pendingMigrationPath.length === 0 || name !== root.pendingMigrationPath) {
-                return
-            }
-            if (needsPassphrase) {
-                const showPassphraseError = migrationPassphrasePopup.opened
-                migrationRequiredPopup.close()
-                migrationPassphrasePopup.busy = false
-                migrationPassphrasePopup.errorText = showPassphraseError ? description : ""
-                migrationPassphrasePopup.errorDetailsModel = ApplicationModels.walletController.captureMigrationErrorDetails(operation, 1)
-                migrationPassphrasePopup.open()
-            } else {
-                migrationPassphrasePopup.busy = false
-                migrationPassphrasePopup.close()
-                migrationRequiredPopup.busy = false
-                migrationRequiredPopup.errorText = description
-                migrationRequiredPopup.errorDetailsModel = ApplicationModels.walletController.captureMigrationErrorDetails(operation, 0)
-                migrationRequiredPopup.open()
-            }
-        }
+        function onWalletLoadWarningsOffered(operation) { migrationPresentations.offer(operation) }
+        function onWalletMigrationRequired(path) { ApplicationModels.walletController.migrate(path) }
+        function onMigrationOperationOffered(operation) { migrationPresentations.offer(operation) }
+
     }
 
     header: NavigationBar2 {
@@ -508,41 +474,23 @@ Page {
         }
     }
 
-    WalletMigrationPopup {
-        id: migrationRequiredPopup
-        parent: Overlay.overlay
-        width: Math.min(420, root.width - 40)
-        popupObjectName: "walletMigrationPopup"
-        errorTextObjectName: "walletMigrationErrorText"
-        cancelButtonObjectName: "walletMigrationCancelButton"
-        confirmButtonObjectName: "walletMigrationConfirmButton"
-        descriptionText: qsTr("This wallet uses a legacy format and needs to be updated before it can be opened.")
-        busy: ApplicationModels.walletController.walletMigrationInProgress
-        onConfirmed: {
-            migrationRequiredPopup.errorText = ""
-            migrationRequiredPopup.close()
-            ApplicationModels.walletController.migrateWallet(root.pendingMigrationPath, "")
+    WalletOperationPresentationModel { id: migrationPresentations }
+    CoreText {
+        anchors.bottom: parent.bottom
+        width: parent.width
+        text: migrationPresentations.error.message
+        visible: text.length > 0
+        wrapMode: Text.WordWrap
+        color: Theme.color.red
+    }
+    Repeater {
+        model: migrationPresentations
+        delegate: WalletOperationDialog {
+            presenter: migrationPresentations
+            maximumWidth: Math.min(420, root.width - 40)
         }
     }
 
-    WalletPassphrasePopup {
-        id: migrationPassphrasePopup
-        parent: Overlay.overlay
-        width: Math.min(420, root.width - 40)
-        popupObjectName: "walletMigrationPassphrasePopup"
-        passphraseFieldObjectName: "walletMigrationPassphraseField"
-        errorTextObjectName: "walletMigrationPassphraseErrorText"
-        cancelButtonObjectName: "walletMigrationPassphraseCancelButton"
-        confirmButtonObjectName: "walletMigrationPassphraseConfirmButton"
-        titleText: qsTr("Enter wallet password")
-        descriptionText: qsTr("Enter the wallet password to complete the legacy wallet update.")
-        confirmText: qsTr("Unlock and update")
-        busyConfirmText: qsTr("Updating...")
-        onSubmitted: (passphrase) => {
-            migrationPassphrasePopup.busy = true
-            ApplicationModels.walletController.migrateWallet(root.pendingMigrationPath, passphrase)
-        }
-    }
 
     AlertPopup {
         id: loadErrorPopup

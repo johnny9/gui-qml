@@ -46,6 +46,7 @@ TestCase {
         testSetup.failOnWarnings()
         walletController.reset()
         walletController.initialized = true
+        walletController.setSelectedWalletObject(testWalletModel)
     }
 
     property real savedWindowWidth: 0
@@ -460,15 +461,15 @@ TestCase {
 
     function test_import_choice_uses_onboarding_error_and_complete_pages() {
         const flow = createFlow()
-        flow.importingWallet = true
-        walletController.walletLoadError = "Data is not in recognized format."
+        walletController.nextRestoreError = "Data is not in recognized format."
+        flow.importFile("/tmp/invalid-wallet.bak")
         tryVerify(function() { return findChild(flow, "walletImportErrorPage") !== null })
         const errorPage = findChild(flow, "walletImportErrorPage")
         compare(findChild(errorPage, "importWalletErrorView").visible, true)
         compare(findChild(errorPage, "importWalletErrorTitle").text,
-            walletController.walletImportErrorTitle)
+            flow.operation.errorTitle)
         compare(findChild(errorPage, "importWalletErrorDescription").text,
-            walletController.walletImportErrorDescription)
+            flow.operation.errorDescription)
 
         walletController.lastImportedWalletName = "Imported wallet"
         walletController.lastImportedWalletKeyScheme = "Single-key"
@@ -482,7 +483,7 @@ TestCase {
         compare(infoSection.showBackground, true)
         compare(infoSection.isOnSurface, true)
         compare(infoSection.showGradientBorder, false)
-        compare(findChild(complete, "importWalletSuccessWalletName").text, "Imported wallet")
+        compare(findChild(complete, "importWalletSuccessWalletName").text, testWalletModel.displayName)
         compare(findChild(complete, "importWalletSuccessKeyScheme").text, "Single-key")
         compare(complete.primaryButton.visible, false)
         compare(complete.secondaryButton.buttonSize, NeutralButton.Large)
@@ -543,8 +544,7 @@ TestCase {
 
             walletController.setOpenWallets([testWalletModel, testSecondWalletModel])
             flow = createFlow()
-            flow.importingWallet = true
-            walletController.importWallet("/tmp/imported.bak")
+            flow.importFile("/tmp/imported.bak")
             tryVerify(function() { return findChild(flow, "importWalletSuccessPage") !== null })
             closed = false
             flow.finished.connect(function(openActivity, wallet) { closed = !openActivity && wallet === null })
@@ -602,4 +602,69 @@ TestCase {
         compare(flow.importingWallet, false)
         compare(findChild(flow, "importWalletSuccessPage"), null)
     }
+    function test_restore_keeps_original_source_while_held_data() {
+        return [{tag: "spaces", path: "/tmp/Savings .bak"}, {tag: "literal-percent", path: "/tmp/Savings%20.legacy.bak"}, {tag: "unicode", path: "/tmp/Trésor #1.bak"}]
+    }
+    function test_restore_keeps_original_source_while_held(data) {
+        walletController.holdRestore = true
+        const flow = createFlow()
+        flow.importFile(data.path)
+        const original = flow.operation
+        verify(original !== null)
+        compare(original.kind, WalletOperationModel.Restore)
+        verify(flow.importingWallet)
+        compare(walletController.lastRestoreSource, data.path)
+        flow.importFile("/tmp/replacement.bak")
+        compare(walletController.restoreCalls, 1)
+        compare(flow.operation, original)
+        walletController.setSelectedWalletObject(testSecondWalletModel)
+        walletController.finishRestore()
+        tryCompare(original, "phase", WalletOperationModel.Succeeded)
+        compare(flow.operation, original)
+        compare(walletController.lastRestoreSource, data.path)
+        compare(walletController.selectedWallet, testSecondWalletModel)
+    }
+    function test_restore_failure_and_warnings_belong_to_original_operation() {
+        walletController.holdRestore = true
+        walletController.nextRestoreWarnings = "Original fallback fee warning"
+        const flow = createFlow()
+        flow.importFile("/tmp/audit_migration_73.bak")
+        const original = flow.operation
+        walletController.finishRestore("A wallet database already exists at the destination")
+        tryCompare(flow.currentItem, "objectName", "walletImportErrorPage")
+        const title = findChild(flow.currentItem, "importWalletErrorTitle").text
+        walletController.walletLoadError = "Unrelated legacy wallet"
+        walletController.walletLoadErrorChanged()
+        compare(flow.operation, original)
+        compare(findChild(flow.currentItem, "importWalletErrorTitle").text, title)
+        compare(original.error.message, "A wallet database already exists at the destination")
+        compare(original.result.warnings[0], "Original fallback fee warning")
+    }
+    function test_detached_restore_does_not_select_its_successor() {
+        walletController.holdRestore = true
+        const flow = flowComponent.createObject(this)
+        verify(flow !== null)
+        flow.importFile("/tmp/original.bak")
+        const original = flow.operation
+        flow.destroy()
+        walletController.setSelectedWalletObject(testSecondWalletModel)
+        walletController.finishRestore()
+        tryCompare(original, "phase", WalletOperationModel.Succeeded)
+        compare(walletController.selectedWallet, testSecondWalletModel)
+        compare(walletController.restoreCalls, 1)
+    }
+    function test_partial_restore_never_restarts_the_copy() {
+        walletController.holdRestore = true
+        const flow = createFlow()
+        flow.importFile("/tmp/original.bak")
+        const original = flow.operation
+        walletController.finishRestore("Prune: required blocks unavailable", true)
+        tryCompare(flow.currentItem, "objectName", "walletCreationOutcomePage")
+        compare(original.phase, WalletOperationModel.Partial)
+        verify(findChild(flow.currentItem, "walletCreationRecoveryPaths").text.length > 0)
+        findChild(flow.currentItem, "walletCreationOutcomeDoneButton").clicked()
+        compare(walletController.restoreCalls, 1)
+        compare(flow.operation, original)
+    }
+
 }

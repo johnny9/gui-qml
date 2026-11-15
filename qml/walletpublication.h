@@ -35,6 +35,10 @@ class NativeObservation final {
 public:
     explicit NativeObservation(std::shared_ptr<walletopening::NativeEventClock> clock) : m_clock(std::move(clock)) { m_entries.reserve(64); }
     bool capture(std::weak_ptr<interfaces::Wallet> wallet, std::shared_ptr<std::atomic<uint64_t>> unloaded, std::shared_ptr<const void> observation, uint64_t ingress);
+    struct Observed { std::shared_ptr<interfaces::Wallet> wallet; walletopening::NativeEvents events; };
+    // Native-only recovery of the original notification handle after a known
+    // late Core persistence error, never a name-based getter or GUI call.
+    Observed find(const QString& id, const std::function<QString(interfaces::Wallet&)>& read_name) const;
     walletopening::NativeEvents resolve(const QString& id, const std::function<QString(interfaces::Wallet&)>& read_name) const;
     void fail() { m_failed = true; }
     bool failed() const { return m_failed.load(); }
@@ -66,6 +70,8 @@ public:
     virtual std::shared_ptr<Ticket> reserveCreation(const QString& operation_id) = 0;
     virtual Result publishCreation(const std::shared_ptr<Ticket>& ticket,
         std::shared_ptr<interfaces::Wallet> wallet, const QString& wallet_id, walletopening::NativeEvents observation) = 0;
+    virtual Result publishWithLifetime(const std::shared_ptr<Ticket>& ticket,
+        std::shared_ptr<interfaces::Wallet> wallet, const QString& id, walletopening::NativeEvents observation, std::shared_ptr<Release>) { return publishCreation(ticket, std::move(wallet), id, std::move(observation)); }
     virtual void finishCreation(const std::shared_ptr<Ticket>& ticket) = 0;
     virtual bool containsExact(WalletQmlModel* wallet) const = 0;
 };
