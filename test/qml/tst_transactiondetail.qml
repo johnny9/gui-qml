@@ -144,6 +144,31 @@ TestCase {
         tryCompare(overlay, "visible", false)
     }
 
+    function test_wallet_unavailability_retires_the_owned_password_and_review() {
+        testBumpModel.requireUnlock = true
+        const page = createDetail()
+        findChild(page, "speedUpBanner").primaryClicked()
+        const overlay = findChild(page, "speedUpOverlay")
+        tryCompare(overlay, "opened", true)
+        tryCompare(overlay, "readyToConfirm", true)
+        findChild(overlay, "updateTransactionButton").clicked()
+        const popup = findChild(overlay, "speedUpPassphrasePopup")
+        tryCompare(popup, "opened", true)
+        testWalletModel.available = false
+        tryCompare(popup, "visible", false)
+        tryCompare(overlay, "visible", false)
+        testWalletModel.available = true
+    }
+    function test_other_transaction_retires_the_original_review() {
+        const page = createDetail()
+        findChild(page, "speedUpBanner").primaryClicked()
+        const overlay = findChild(page, "speedUpOverlay")
+        tryCompare(overlay, "readyToConfirm", true)
+        page.transactionId = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        tryCompare(overlay, "visible", false)
+        compare(testBumpModel.state, BumpTransactionModel.Idle)
+    }
+
     function createDetail(data, properties) {
         const value = data || transaction()
         if (value.flow) value.flow = testSetup.prepareTransactionFlow(value.flow)
