@@ -11,7 +11,8 @@ import threading
 import time
 from pathlib import Path
 from qml_driver import QmlDriverError
-from qml_process_checks import check_gui_exit
+from qml_process_checks import check_gui_exit, unexpected_gui_stderr
+from qml_wallet_test_lib import RPC_PASS, RPC_USER, rpc_call, wait_for_rpc
 from qml_scenarios import (
     gui_process,
     run_scenarios,
@@ -46,6 +47,74 @@ def bridge_smoke():
                 assert any(message in str(error).lower() for message in messages), str(error)
             else:
                 raise AssertionError("The bridge must report an invalid request")
+
+
+def runtime_block_write_failure_exit_status():
+    """A real Core AbortNode failure must survive normal GUI teardown."""
+    harness = QmlTestHarness(extra_args=["-disablewallet", f"-rpcuser={RPC_USER}", f"-rpcpassword={RPC_PASS}"])
+    modes = {}
+    result = {}
+    worker = None
+
+    def restore_modes():
+        for path, mode in modes.items():
+            if path.exists():
+                path.chmod(mode)
+
+    def generate():
+        try:
+            result["value"] = rpc_call(harness.rpc_port, "generatetodescriptor", [1, "raw(51)"])
+        except Exception as error:
+            result["error"] = str(error)
+
+    try:
+        harness.start()
+        gui = harness.driver
+        assert_node_shell_visible(gui)
+        wait_for_rpc(harness.rpc_port)
+        assert rpc_call(harness.rpc_port, "getblockchaininfo")["chain"] == "regtest"
+        blocks = Path(harness.datadir) / "regtest" / "blocks"
+        files = sorted(blocks.glob("blk*.dat"))
+        assert files, "Initialized Core must own a real block file before the permission barrier"
+        for path in [blocks, *files]:
+            modes[path] = path.stat().st_mode & 0o777
+            path.chmod(0o555 if path.is_dir() else 0o444)
+        try:
+            with files[0].open("r+b"):
+                pass
+        except PermissionError:
+            pass
+        else:
+            raise AssertionError("Environment did not enforce the disposable block-file permission barrier")
+        worker = threading.Thread(target=generate, name="runtime-fatal-rpc")
+        worker.start()
+        gui.wait_for_property("nodeRuntimeDialog", "opened", True, timeout_ms=30000)
+        message = gui.get_property("nodeRuntimeDialogMessage", "text")
+        assert "Failed to write block." in message, message
+        # Core has already failed. Restore the disposable files before release,
+        # so ordinary teardown cannot add a second unrelated storage failure.
+        restore_modes()
+        try:
+            gui.click("nodeRuntimeDialogButtonOk")
+        except ConnectionError:
+            pass  # Core may close the bridge before the reply reaches us.
+        harness.process.wait(timeout=30)
+        worker.join(timeout=10)
+        assert not worker.is_alive(), "The original public RPC continuation did not finish"
+        stdout, stderr = harness.process.communicate()
+        text = stderr.decode("utf8", errors="replace")
+        print("Runtime storage-failure stdout:\n" + stdout.decode("utf8", errors="replace"), flush=True)
+        print("Runtime storage-failure stderr:\n" + text, flush=True)
+        print(f"R36_RUNTIME_FATAL app_exit={harness.process.returncode} rpc={result!r}", flush=True)
+        assert harness.process.returncode == 1, (harness.process.returncode, text)
+        unexpected = unexpected_gui_stderr(text, socket_path=harness.socket_path)
+        assert unexpected and all("Failed to write block." in line for line in unexpected), unexpected
+    finally:
+        restore_modes()
+        harness.stop()
+        if worker is not None:
+            worker.join(timeout=10)
+            assert not worker.is_alive(), "Core RPC remained blocked after shutdown"
 
 
 def onboarding_smoke():
@@ -366,6 +435,7 @@ def reset_onboarding_connection():
 if __name__ == "__main__":
     raise SystemExit(run_scenarios('GUI startup and configuration process scenarios', [
         scenario("bridge-protocol", 1, bridge_smoke),
+        scenario("runtime-block-write-failure-exit-status", 4, runtime_block_write_failure_exit_status),
         scenario("onboarding", 2, onboarding_smoke),
         scenario("blocked-startup-finish", 2, run_case, "finish"),
         scenario("blocked-startup-quit", 2, run_case, "quit"),

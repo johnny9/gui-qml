@@ -136,6 +136,42 @@ class NodeModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void manualQueuedNetworkIntentYieldsToLaterBackendObservation() {
+        struct NetworkNode final : MockNode {
+            std::function<void(bool)> set_active;
+            void setNetworkActive(bool value) override { set_active(value); }
+        } node;
+        MempoolState mempool;ConfigureNodeModelDefaults(node);ConfigureMempoolGetters(node,mempool);
+        ManualRoutedExecution transport;std::deque<std::function<void()>> gui;
+        std::map<NodeModel::Poll,std::function<void()>> deadlines;
+        NodeModel::Services services;services.execution={transport.scheduler,[&](auto turn){gui.push_back(std::move(turn));}};
+        services.schedule=[&](auto poll,auto,auto turn){deadlines[poll]=std::move(turn);};
+        services.cancel=[&](auto poll){deadlines.erase(poll);};
+        services.wall_seconds=[]{return int64_t{1700000000};};services.monotonic_milliseconds=[]{return int64_t{0};};
+        bool active=true;std::vector<bool> writes;
+        interfaces::Node::NotifyNetworkActiveChangedFn network_changed;
+        node.handle_notify_network_active_changed_fn=[&](auto callback){network_changed=std::move(callback);return MakeNoopHandler();};
+        node.get_network_active_fn=[&]{return active;};
+        node.set_active=[&](bool value){writes.push_back(value);if(active!=value){active=value;if(network_changed)network_changed(value);}};
+        auto model=std::make_unique<NodeModel>(node,true,std::move(services));
+        const auto settle=[&]{for(int turn=0;turn<1024;++turn){if(transport.stepNext())continue;if(!gui.empty()){auto next=std::move(gui.front());gui.pop_front();next();continue;}return true;}return false;};
+        const auto cleanup=qScopeGuard([&]{if(model)model->beginShutdown();model.reset();settle();});
+        QVERIFY(settle());QVERIFY(model->networkActionReady());QVERIFY(network_changed);QVERIFY(!model->pause());
+        model->setPause(true);QVERIFY(transport.step(execution::Lane::Core));
+        QCOMPARE(writes,std::vector<bool>{false});QVERIFY(model->networkActionPending());
+        // Resume is a new GUI intent while the first Domain/GUI outcome is held.
+        model->setPause(false);
+        // Actual public backend transitions model RPC's later Resume, then Pause.
+        // Core emits no notification for an unchanged value, so both are needed.
+        node.setNetworkActive(true);node.setNetworkActive(false);
+        QVERIFY(settle());QCOMPARE(writes,std::vector<bool>({false,true,false}));
+        QVERIFY(!active);QVERIFY(model->pause());QVERIFY(!model->networkActionPending());
+        // Only a fresh explicit command may override the newer observation.
+        model->setPause(false);QVERIFY(settle());QVERIFY(active);QVERIFY(!model->pause());
+        QCOMPARE(writes,std::vector<bool>({false,true,false,true}));
+        model->beginShutdown();QVERIFY(settle());QVERIFY(model->isDrained());
+        model.reset();QVERIFY(settle());QVERIFY(transport.quiescent());
+    }
     void longNativeStartupWarningHasFullDetailsAndDoesNotHoldShutdown_data() {
         QTest::addColumn<bool>("close_first");
         QTest::newRow("publish-full-details") << false; QTest::newRow("close-before-publication") << true;
