@@ -2966,7 +2966,7 @@ void WalletQmlModel::publishApproval(walletsigning::ApprovalSnapshot snapshot)
         m_current_transaction_can_send = false;
         m_current_transaction_can_broadcast = false;
         if (value.error != walletsigning::Error::UnverifiedSignatures)
-            m_approval_error += tr(" An unverified result is available for export. The reviewed transaction is unchanged.");
+            m_approval_error += QLatin1Char(' ') + tr("An unverified result is available for export. The reviewed transaction is unchanged.");
     }
     const QPointer<WalletQmlModel> observer{this};
     if (!m_approval_error.isEmpty()) {

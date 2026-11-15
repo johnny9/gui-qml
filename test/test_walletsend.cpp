@@ -517,8 +517,37 @@ private Q_SLOTS:
         QCOMPARE(psbtsignatures::VerifyPartialInputs(partial), kind == 0 ? psbtsignatures::Status::Valid
             : kind == 1 || kind == 3 ? psbtsignatures::Status::Invalid : psbtsignatures::Status::Unknown);
         QCOMPARE(psbtwork::SerializeRaw(partial), bytes);
-        CMutableTransaction extracted;
-        QVERIFY(!FinalizeAndExtractPSBT(partial, extracted));
+        if (kind == 0) {
+            CMutableTransaction extracted;
+            QVERIFY(!FinalizeAndExtractPSBT(partial, extracted));
+        }
+    }
+    void unfinishedLegacySignatureValueVerification_data()
+    {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("valid") << 0;
+        QTest::newRow("corrupt") << 1;
+        QTest::newRow("missing-prevout") << 2;
+    }
+    void unfinishedLegacySignatureValueVerification()
+    {
+        QFETCH(int, kind);
+        ECC_Context ecc;
+        auto document = psbtfeefixture::Legacy(2, false);
+        auto completed = document;
+        CMutableTransaction transaction;
+        QVERIFY(FinalizeAndExtractPSBT(completed, transaction));
+        for (size_t i = 0; i < document.inputs.size(); ++i) {
+            auto& input = document.inputs[i];
+            const auto data = DataFromTransaction(transaction, i, input.non_witness_utxo->vout[input.GetOutPoint().n]);
+            input.final_script_sig.clear();
+            input.partial_sigs = data.signatures;
+            QVERIFY(!input.partial_sigs.empty());
+        }
+        if (kind == 1) document.inputs[0].partial_sigs.begin()->second.second[5] ^= 1;
+        if (kind == 2) document.inputs[0].non_witness_utxo.reset();
+        QCOMPARE(psbtsignatures::VerifyPartialInputs(document), kind == 0 ? psbtsignatures::Status::Valid
+            : kind == 1 ? psbtsignatures::Status::Invalid : psbtsignatures::Status::Unknown);
     }
     void unfinishedTaprootSignatureValueVerification_data()
     {
