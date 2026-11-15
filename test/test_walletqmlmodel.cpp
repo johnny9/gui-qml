@@ -3832,7 +3832,7 @@ private Q_SLOTS:
         const auto retained_hash = model->currentTransaction()->getWtx()->GetHash();
         const auto outcome=model->sendOperation()->result();QVERIFY(outcome);QCOMPARE(outcome->error,walletsend::Error::InvalidFee);
         QCOMPARE(outcome->candidate_txid,unsigned_document.GetUnsignedTx()->GetHash());
-        QCOMPARE(outcome->candidate_wtxid,unsigned_document.GetUnsignedTx()->GetWitnessHash());
+        QCOMPARE(outcome->candidate_wtxid,CTransaction{*unsigned_document.GetUnsignedTx()}.GetWitnessHash());
         model.reset();
         QCOMPARE(outcome->error,walletsend::Error::InvalidFee);
         QCOMPARE(outcome->candidate_txid,retained_hash);

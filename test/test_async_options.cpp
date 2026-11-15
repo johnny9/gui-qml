@@ -31,9 +31,9 @@ const TranslateFn G_TRANSLATION_FUN{nullptr};
 #endif
 
 namespace {
-struct ReleaseSemaphore {
+struct ScopedSemaphoreRelease {
     QSemaphore& semaphore;
-    ~ReleaseSemaphore() { semaphore.release(); }
+    ~ScopedSemaphoreRelease() { semaphore.release(); }
 };
 
 bool SettleManualOptions(ManualRoutedExecution& transport,std::deque<std::function<void()>>& gui)
@@ -117,7 +117,7 @@ private Q_SLOTS:
             return fixture.args.GetPersistentSetting(name);
         };
         OptionsQmlModel model(fixture.node, fixture.args);
-        ReleaseSemaphore release{gate};
+        ScopedSemaphoreRelease release{gate};
         QTRY_VERIFY(entered.load());
         QVERIFY(!model.settingsReady());
         int heartbeats{0};
@@ -211,7 +211,7 @@ private Q_SLOTS:
             gate.acquire();
         };
         OptionsQmlModel model(fixture.node, fixture.args);
-        ReleaseSemaphore release{gate};
+        ScopedSemaphoreRelease release{gate};
         QTRY_VERIFY(model.settingsReady());
         const bool initial = model.natpmp();
         model.setNatpmp(!initial);
@@ -253,7 +253,7 @@ private Q_SLOTS:
             if (++calls == 1) gate.acquire();
         };
         OptionsQmlModel model(fixture.node, fixture.args);
-        ReleaseSemaphore release{gate};
+        ScopedSemaphoreRelease release{gate};
         QTRY_VERIFY(model.settingsReady());
         const bool initial = model.natpmp();
         model.setNatpmp(!initial);
