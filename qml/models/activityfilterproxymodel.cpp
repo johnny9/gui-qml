@@ -708,8 +708,12 @@ quint64 ActivityFilterProxyModel::startExport(const QString& path, std::shared_p
     const auto files = provider ? provider->activityFiles() : activityexport::Files{};
     if (files.inspect && files.install) {
         if (m_export_operation) m_export_operation->deleteLater();
+        // Reserving Native ownership may reenter close through an injected
+        // scheduler. Attach the child only after the observer survives it.
         auto* operation = new ActivityExportOperation({path, snapshot, unit}, files,
-            {m_execution.scheduler, m_services.execution.post}, m_services.write, this);
+            {m_execution.scheduler, m_services.execution.post}, m_services.write);
+        if (!observer || observer->m_closed) { delete operation; return 0; }
+        operation->setParent(this);
         m_export_operation = operation; m_export_error.clear(); m_exported_path.clear();
         auto finished = std::make_shared<bool>(false);
         connect(operation, &ActivityExportOperation::changed, this, [observer, original = QPointer<ActivityExportOperation>{operation}, ticket, finished] {

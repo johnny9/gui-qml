@@ -139,8 +139,13 @@ private Q_SLOTS:
     void closedOrdinaryAdmissionRefusesANewExportWithoutAFileEffect()
     {
         QTemporaryDir directory; QVERIFY(directory.isValid()); Fixture f;
-        ActivityExportOperation operation{{directory.filePath("closed.csv"), Source(), 0}, f.files(), f.execution(), ActivityFilterProxyModel::WriteCsv};
-        f.commands.scheduler->closeOrdinaryAdmission(); QVERIFY(!operation.start()); f.commands.drain(); f.publish(); QCOMPARE(f.inspected, 0); QCOMPARE(f.installed, 0); QVERIFY(!operation.saved()); QVERIFY(operation.resultPresent());
+        auto source = Source(); const std::weak_ptr<const activityview::Snapshot> frame{source->snapshot};
+        ActivityExportOperation operation{{directory.filePath("closed.csv"), source, 0}, f.files(), f.execution(), ActivityFilterProxyModel::WriteCsv};
+        source.reset(); f.commands.scheduler->closeOrdinaryAdmission(); QVERIFY(!operation.start());
+        QVERIFY(!frame.expired()); // Rejection cannot free the original large value on GUI.
+        f.commands.drain(); f.publish(); QCOMPARE(f.inspected, 0); QCOMPARE(f.installed, 0); QVERIFY(!operation.saved()); QVERIFY(operation.resultPresent());
+        QVERIFY2(frame.expired(), "Rejected CSV frame must retire on Native while the failed projection remains alive");
+        QCOMPARE(f.commands.scheduler->pending(), size_t{0}); QCOMPARE(operation.snapshotRevision(), QStringLiteral("71"));
     }
     void competingConsentCommandsHaveOneOrderedNativeOutcome_data()
     {

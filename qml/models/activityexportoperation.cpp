@@ -7,6 +7,25 @@
 
 #include <QUuid>
 
+#include <mutex>
+#include <utility>
+
+namespace {
+struct ExportSource {
+    mutable std::mutex mutex;
+    std::shared_ptr<activityexport::Request> retained;
+    std::shared_ptr<activityexport::Request> hold() const {
+        std::lock_guard lock{mutex}; return retained;
+    }
+    void clear() {
+        std::shared_ptr<activityexport::Request> retired;
+        { std::lock_guard lock{mutex}; retired = std::move(retained); }
+        // Drop the reserved alias, never the large request itself on GUI.
+        retired.reset();
+    }
+};
+} // namespace
+
 ActivityExportOperation::ActivityExportOperation(activityexport::Request request, activityexport::Files files,
     execution::SnapshotServices execution, std::function<activityexport::Result(const activityexport::Request&)> writer, QObject* parent)
     : QObject(parent), m_id(QUuid::createUuid().toString(QUuid::WithoutBraces)),
@@ -17,9 +36,11 @@ ActivityExportOperation::ActivityExportOperation(activityexport::Request request
     }
     // Reserve before capturing the potentially large immutable frame. Aliases
     // may disappear on GUI; the original request is destroyed on Cleanup.
-    auto source = execution::RetainValues<activityexport::Request>(execution.scheduler,
+    auto retained = execution::RetainValues<activityexport::Request>(execution.scheduler,
         [&request] { return std::make_unique<activityexport::Request>(std::move(request)); });
-    if (!source) { m_error = tr("Activity export cleanup capacity is unavailable."); return; }
+    if (!retained) { m_error = tr("Activity export cleanup capacity is unavailable."); return; }
+    const auto path = retained->path;
+    auto source = std::make_shared<ExportSource>(); source->retained = std::move(retained);
     backup::Services services;
     services.scheduler = execution.scheduler; services.post = execution.post;
     services.available = files.available; services.wallet_name = [] { return std::string{"activity"}; };
@@ -27,18 +48,21 @@ ActivityExportOperation::ActivityExportOperation(activityexport::Request request
         return inspect(QString::fromUtf8(raw.data(), static_cast<qsizetype>(raw.size())));
     };
     services.write = [source, files, writer](const backup::Proposal& target, bool approved) {
-        return files.install(target, approved, [source, writer](const std::string& stage) {
-            auto original = *source;
+        const auto original_source = source->hold();
+        if (!original_source) return backup::WriteResult{backup::Error::Transport};
+        return files.install(target, approved, [original_source, writer](const std::string& stage) {
+            auto original = *original_source;
             original.path = QString::fromUtf8(stage.data(), static_cast<qsizetype>(stage.size()));
             return writer(original).saved;
         });
     };
     services.outcome = [source, outcome = files.outcome, id = m_id, revision = m_revision, unit = m_unit](backup::Snapshot state) {
-        source->snapshot.reset(); // Native terminal consumption releases the large frame, even with GUI delivery held.
+        source->clear(); // Native retirement does not wait for GUI delivery or projection destruction.
         if (outcome) outcome({id, revision, QString::fromUtf8(state.target.path.data(), static_cast<qsizetype>(state.target.path.size())), unit,
             state.phase, state.error, true, state.phase == backup::Phase::Succeeded, state.error >= backup::Error::None && state.error <= backup::Error::Transport && state.error != backup::Error::Unknown});
     };
-    m_policy = new BackupFileOperation(source->path, std::move(services), this);
+    services.abandon = [source] { source->clear(); };
+    m_policy = new BackupFileOperation(path, std::move(services), this);
     connect(m_policy, &BackupFileOperation::changed, this, &ActivityExportOperation::changed);
 }
 ActivityExportOperation::~ActivityExportOperation() { retire(); }
