@@ -472,6 +472,49 @@ private Q_SLOTS:
         }
         importer.closeAdmission(); commands.drain();
     }
+    void fullOrdinaryBudgetCannotStrandRetainedTypedSourceFacades_data() {
+        QTest::addColumn<bool>("operation_first");
+        QTest::newRow("operation-then-factory") << true;
+        QTest::newRow("factory-then-operation") << false;
+    }
+    void fullOrdinaryBudgetCannotStrandRetainedTypedSourceFacades() {
+        QFETCH(bool, operation_first);
+        auto limits = execution::Limits::Bounded(); limits.ordinary.tasks = 8;
+        ManualRoutedExecution commands{limits}; std::deque<std::function<void()>> gui;
+        const auto drain = [&] {
+            do {
+                commands.drain();
+                while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+            } while (!commands.queuedIdle() || !commands.activeIdle());
+        };
+        BitcoinUriModel importer; QObject view;
+        importer.setServices({commands.scheduler, [&](auto turn) { gui.push_back(std::move(turn)); }});
+        auto* operation = importer.requestImport({paymentimport::Input::Kind::Text, Uri()}, {}, &view); QVERIFY(operation);
+        drain(); QCOMPARE(operation->state(), PaymentImportOperation::State::Inspecting);
+        for (size_t index{0}; index < limits.ordinary.tasks; ++index)
+            QVERIFY(execution::Submit(*commands.scheduler, [] {}, [] {}, {}, {execution::Lane::Domain, 1024}));
+        QVERIFY(!execution::Submit(*commands.scheduler, [] {}, [] {}, {}, {execution::Lane::Domain, 1024}));
+        if (operation_first) { operation->closeAdmission(); importer.closeAdmission(); }
+        else { importer.closeAdmission(); operation->closeAdmission(); }
+        drain();
+        QCOMPARE(commands.scheduler->pending(), size_t{0});
+        QVERIFY(operation); // Both Qt facades deliberately remain alive.
+    }
+    void closeWithFullOrdinaryBudgetKeepsOriginalOwnerUntilDomainRetirement() {
+        auto limits = execution::Limits::Bounded(); limits.ordinary.tasks = 8;
+        ManualRoutedExecution commands{limits}; paymentimport::Snapshot observed; int retired{0};
+        paymentimport::Services services; services.scheduler = commands.scheduler;
+        auto owner = paymentimport::Owner::Create(88, std::move(services), [&](auto value) { observed = std::move(value); }, [&](auto) { ++retired; });
+        QVERIFY(owner); QVERIFY(owner->inspect({paymentimport::Input::Kind::Text, Uri()})); commands.drain();
+        QCOMPARE(observed.phase, paymentimport::Phase::Inspecting);
+        for (size_t index{0}; index < limits.ordinary.tasks; ++index)
+            QVERIFY(execution::Submit(*commands.scheduler, [] {}, [] {}, {}, {execution::Lane::Domain, 1024}));
+        QVERIFY(!execution::Submit(*commands.scheduler, [] {}, [] {}, {}, {execution::Lane::Domain, 1024}));
+        const auto first = owner->close(); QVERIFY(first); const auto repeated = owner->close(); QVERIFY(repeated); QCOMPARE(first.id, repeated.id);
+        const std::weak_ptr<paymentimport::Owner> original{owner}; owner.reset();
+        commands.drain(); QCOMPARE(observed.phase, paymentimport::Phase::Closed); QCOMPARE(retired, 1); QVERIFY(original.expired());
+        observed = {}; commands.drain(); QCOMPARE(commands.scheduler->pending(), size_t{0});
+    }
     void realThreadSourceReadAndDomainDecisionsStayOutsideGui() {
         BackendExecutor executor{execution::Limits::Bounded()};
         std::atomic<QThread*> native{nullptr}, domain{nullptr};
