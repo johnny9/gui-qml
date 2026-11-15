@@ -526,8 +526,10 @@ void Owner::closeOnDomain()
     auto& state = *m_state;
     state.closing = true;
     if (state.result && state.result->presentation_allowed) state.result->presentation_allowed->store(false);
-    if (state.flow.child() && state.target && state.target->retire)
-        state.target->retire({m_identity, state.flow.child()->id}, *state.flow.child());
+    if (state.flow.child() && state.target && state.target->retire) {
+        try { state.target->retire({m_identity, state.flow.child()->id}, *state.flow.child()); }
+        catch (...) { /* An admitted child still belongs to its original query. */ }
+    }
     state.flow.close();
     if (state.flow.child()) { state.flow.acknowledgmentLost(*state.flow.child()); query(); }
     cancelObsolete(); publish();

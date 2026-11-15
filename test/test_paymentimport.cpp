@@ -527,6 +527,16 @@ private Q_SLOTS:
         const std::weak_ptr<paymentimport::Owner> original{owner}; owner.reset();
         unused.drain(); QVERIFY(original.expired()); QCOMPARE(unused.scheduler->pending(), size_t{0});
     }
+    void throwingRetireKeepsOriginalChildOutcomeAndDoesNotDispatchAgain() {
+        Fixture f; f.inspect(); f.lose_reply = true;
+        QVERIFY(f.owner->apply()); f.drain(); QCOMPARE(f.writes, 1);
+        int retire_calls{0};
+        f.port->retire = [&](auto, auto) { ++retire_calls; throw std::runtime_error{"Retirement transport failed"}; };
+        QVERIFY(f.owner->close()); f.drain();
+        QCOMPARE(retire_calls, 1); QCOMPARE(f.queries, 1); QCOMPARE(f.writes, 1); QCOMPARE(f.dispatches, 1);
+        QCOMPARE(f.snapshot.phase, paymentimport::Phase::Closed); QCOMPARE(f.retired, 1);
+        QVERIFY(f.snapshot.result); QCOMPARE(f.snapshot.result->outcome, paymentimport::Outcome::Applied);
+    }
     void realThreadSourceReadAndDomainDecisionsStayOutsideGui() {
         BackendExecutor executor{execution::Limits::Bounded()};
         std::atomic<QThread*> native{nullptr}, domain{nullptr};
