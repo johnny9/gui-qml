@@ -19,7 +19,14 @@ struct SignVerifyMessageModel::AddressChecks {
 };
 
 SignVerifyMessageModel::SignVerifyMessageModel(interfaces::Wallet* wallet, QObject* parent)
-    : QObject(parent), m_wallet(wallet), m_address_input(std::make_shared<AddressInput>()) {}
+    : QObject(parent), m_wallet(wallet), m_address_input(std::make_shared<AddressInput>())
+{
+    connect(&m_address_input_text, &TextEditInput::edited, this, &SignVerifyMessageModel::setSigningAddress);
+    connect(&m_message_input_text, &TextEditInput::edited, this, &SignVerifyMessageModel::setSigningMessage);
+    connect(&m_verify_address_input_text, &TextEditInput::edited, this, &SignVerifyMessageModel::setVerificationAddress);
+    connect(&m_verify_message_input_text, &TextEditInput::edited, this, &SignVerifyMessageModel::setVerificationMessage);
+    connect(&m_verify_signature_input_text, &TextEditInput::edited, this, &SignVerifyMessageModel::setVerificationSignature);
+}
 
 void SignVerifyMessageModel::setOpening(std::shared_ptr<walletopening::Session> opening, execution::SnapshotServices services)
 {
@@ -45,6 +52,11 @@ void SignVerifyMessageModel::closeAdmission()
     if (m_address_query) m_address_query->close();
     m_signing_state = SigningClosed;
     m_verification_state = VerificationClosed;
+    const QPointer<SignVerifyMessageModel> guard{this};
+    for (auto* input : {&m_address_input_text, &m_message_input_text, &m_verify_address_input_text, &m_verify_message_input_text, &m_verify_signature_input_text}) {
+        input->setAvailable(false); if (!guard) return;
+    }
+    if (m_prompt) m_prompt->project(false, false, {});
 }
 void SignVerifyMessageModel::retryPublications()
 {
@@ -67,7 +79,7 @@ void SignVerifyMessageModel::setSecurityStateChangedFn(SecurityStateChangedFn fn
 void SignVerifyMessageModel::invalidateSigning()
 {
     ++m_sign_revision;
-    m_signature.clear(); m_signing_error.clear(); m_signing_needs_unlock = false;
+    m_signature.clear(); m_signing_error.clear(); m_signing_needs_unlock = false; m_error = {};
     m_signing_state = m_sign_active ? SigningDiscarding : SigningIdle;
 }
 void SignVerifyMessageModel::invalidateVerification()
@@ -77,17 +89,115 @@ void SignVerifyMessageModel::invalidateVerification()
 }
 bool SignVerifyMessageModel::notifySigning()
 {
+    if (m_closed) return false;
     const QPointer<SignVerifyMessageModel> guard{this};
+    m_error.message = m_signing_error;
+    updateSigningPrompt(); if (!guard) return false;
     Q_EMIT signingErrorChanged(); if (!guard) return false;
     Q_EMIT signingNeedsUnlockChanged(); if (!guard) return false;
     Q_EMIT signatureChanged(); if (!guard) return false;
-    Q_EMIT signingStateChanged(); return bool(guard);
+    Q_EMIT signingStateChanged(); if (!guard) return false;
+    Q_EMIT capabilitiesChanged(); return bool(guard);
+}
+bool SignVerifyMessageModel::notifyVerification()
+{
+    if (m_closed) return false;
+    const QPointer<SignVerifyMessageModel> guard{this};
+    Q_EMIT verificationChanged(); if (!guard) return false;
+    Q_EMIT capabilitiesChanged(); return bool(guard);
+}
+MessageSigningError SignVerifyMessageModel::error() const
+{
+    return m_closed ? MessageSigningError{MessageSigningError::Closed, tr("This wallet opening has closed.")} : m_error;
+}
+MessageVerificationSnapshot SignVerifyMessageModel::verification() const
+{
+    MessageVerificationSnapshot result;
+    result.operationId = m_verify_id ? QString::number(m_verify_id) : QString{};
+    result.outcomeKnown = m_verification_state == VerificationValid || m_verification_state == VerificationInvalid || m_verification_state == VerificationFailed;
+    result.valid = m_verification_state == VerificationValid;
+    switch (m_verification_state) {
+    case VerificationIdle: result.state = MessageVerificationSnapshot::Empty; break;
+    case VerificationPending: case VerificationDiscarding: result.state = MessageVerificationSnapshot::Pending; break;
+    case VerificationValid: result.state = MessageVerificationSnapshot::Valid; break;
+    case VerificationInvalid: result.state = MessageVerificationSnapshot::Invalid; break;
+    case VerificationFailed: result.state = MessageVerificationSnapshot::Failed; break;
+    case VerificationClosed: result.state = MessageVerificationSnapshot::Closed; break;
+    }
+    return result;
+}
+void SignVerifyMessageModel::cancel()
+{
+    if (m_closed) return;
+    ++m_sign_revision; m_signing_error.clear(); m_signing_needs_unlock = false; m_error = {};
+    m_signing_state = m_sign_active ? SigningDiscarding : m_signature.isEmpty() ? SigningIdle : SigningSucceeded;
+    invalidateVerification();
+    if (notifySigning()) notifyVerification();
+}
+QString SignVerifyMessageModel::sign()
+{
+    const QPointer<SignVerifyMessageModel> observer{this};
+    const auto id = requestSignMessage(m_address_input_text.text(), m_message_input_text.text());
+    if (id) return QString::number(id);
+    if (observer) Q_EMIT commandRejected(QUuid::createUuid().toString(QUuid::WithoutBraces),
+        (MessageSigningError{m_closed ? MessageSigningError::Closed : MessageSigningError::Refused,
+            m_closed ? tr("This wallet opening has closed.") : tr("The signing request could not be admitted.")}));
+    return {};
+}
+QString SignVerifyMessageModel::verify(const QString& signature)
+{
+    const QPointer<SignVerifyMessageModel> observer{this};
+    const auto id = signature.size() <= 32768 ? requestVerifyMessage(m_verify_address_input_text.text(), m_verify_message_input_text.text(), signature) : 0;
+    if (id) return QString::number(id);
+    if (observer) Q_EMIT commandRejected(QUuid::createUuid().toString(QUuid::WithoutBraces),
+        (MessageSigningError{m_closed ? MessageSigningError::Closed : MessageSigningError::Refused,
+            m_closed ? tr("This wallet opening has closed.") : tr("The verification request could not be admitted.")}));
+    return {};
+}
+void SignVerifyMessageModel::retireSigningPrompt()
+{
+    auto* prompt = std::exchange(m_prompt, nullptr);
+    if (!prompt) return;
+    const QPointer<SignVerifyMessageModel> guard{this};
+    prompt->project(false, false, {});
+    if (!guard) return;
+    prompt->deleteLater(); Q_EMIT signingPromptChanged();
+}
+void SignVerifyMessageModel::updateSigningPrompt()
+{
+    if (m_prompt && (m_closed || m_prompt_revision != m_sign_revision || (!m_signing_needs_unlock && !m_sign_active))) {
+        retireSigningPrompt(); return;
+    }
+    if (!m_prompt && m_signing_needs_unlock) {
+        const QPointer<SignVerifyMessageModel> observer{this};
+        const auto revision = m_sign_revision;
+        const auto address = m_sign_address, message = m_sign_message;
+        m_prompt = new MessageSigningPrompt([observer, revision, address, message](const QString& secret) {
+            return observer && !observer->m_closed && observer->m_sign_revision == revision
+                ? observer->requestSignMessageWithPassphrase(address, message, secret) : 0;
+        }, [observer, revision] {
+            if (observer && !observer->m_closed && observer->m_sign_revision == revision) observer->cancelSigningPrompt();
+        }, this);
+        m_prompt_revision = revision;
+        const QPointer<SignVerifyMessageModel> guard{this};
+        m_prompt->project(true, m_sign_active, m_signing_error);
+        if (guard) Q_EMIT signingPromptChanged();
+    } else if (m_prompt) m_prompt->project(true, m_sign_active, m_signing_error);
+}
+void SignVerifyMessageModel::cancelSigningPrompt()
+{
+    if (m_closed || !m_prompt) return;
+    ++m_sign_revision;
+    m_signing_error.clear(); m_signing_needs_unlock = false; m_error = {};
+    m_signing_state = m_sign_active ? SigningDiscarding : m_signature.isEmpty() ? SigningIdle : SigningSucceeded;
+    notifySigning();
 }
 void SignVerifyMessageModel::setSigningAddress(const QString& value)
 {
     if (m_closed || m_sign_address == value) return;
     m_sign_address = value; invalidateSigning();
     const QPointer<SignVerifyMessageModel> guard{this};
+    m_address_input_text.project(value); if (!guard || m_closed) return;
     requestAddressValidation(); if (!guard) return;
     if (notifySigning()) Q_EMIT inputsChanged();
 }
@@ -95,6 +205,8 @@ void SignVerifyMessageModel::setSigningMessage(const QString& value)
 {
     if (m_closed || m_sign_message == value) return;
     m_sign_message = value; invalidateSigning();
+    const QPointer<SignVerifyMessageModel> guard{this};
+    m_message_input_text.project(value); if (!guard || m_closed) return;
     if (notifySigning()) Q_EMIT inputsChanged();
 }
 void SignVerifyMessageModel::setVerificationAddress(const QString& value)
@@ -102,22 +214,25 @@ void SignVerifyMessageModel::setVerificationAddress(const QString& value)
     if (m_closed || m_verify_address == value) return;
     m_verify_address = value; invalidateVerification();
     const QPointer<SignVerifyMessageModel> guard{this};
+    m_verify_address_input_text.project(value); if (!guard || m_closed) return;
     requestAddressValidation(); if (!guard) return;
-    Q_EMIT verificationChanged(); if (guard) Q_EMIT inputsChanged();
+    notifyVerification(); if (guard) Q_EMIT inputsChanged();
 }
 void SignVerifyMessageModel::setVerificationMessage(const QString& value)
 {
     if (m_closed || m_verify_message == value) return;
     m_verify_message = value; invalidateVerification();
     const QPointer<SignVerifyMessageModel> guard{this};
-    Q_EMIT verificationChanged(); if (guard) Q_EMIT inputsChanged();
+    m_verify_message_input_text.project(value); if (!guard || m_closed) return;
+    notifyVerification(); if (guard) Q_EMIT inputsChanged();
 }
 void SignVerifyMessageModel::setVerificationSignature(const QString& value)
 {
     if (m_closed || m_verify_signature == value) return;
     m_verify_signature = value; invalidateVerification();
     const QPointer<SignVerifyMessageModel> guard{this};
-    Q_EMIT verificationChanged(); if (guard) Q_EMIT inputsChanged();
+    m_verify_signature_input_text.project(value); if (!guard || m_closed) return;
+    notifyVerification(); if (guard) Q_EMIT inputsChanged();
 }
 void SignVerifyMessageModel::requestAddressValidation()
 {
@@ -125,7 +240,8 @@ void SignVerifyMessageModel::requestAddressValidation()
     m_sign_address_valid = m_verify_address_valid = false;
     m_address_pending = bool(m_address_query);
     if (m_address_query) m_address_query->request();
-    Q_EMIT addressValidationChanged();
+    const QPointer<SignVerifyMessageModel> guard{this};
+    Q_EMIT addressValidationChanged(); if (guard && !m_closed) Q_EMIT capabilitiesChanged();
 }
 void SignVerifyMessageModel::publishAddressValidation()
 {
@@ -135,7 +251,8 @@ void SignVerifyMessageModel::publishAddressValidation()
     m_address_pending = false;
     m_sign_address_valid = result->snapshot && result->snapshot->sign;
     m_verify_address_valid = result->snapshot && result->snapshot->verify;
-    Q_EMIT addressValidationChanged();
+    const QPointer<SignVerifyMessageModel> guard{this};
+    Q_EMIT addressValidationChanged(); if (guard && !m_closed) Q_EMIT capabilitiesChanged();
 }
 bool SignVerifyMessageModel::isLegacyP2PKHAddress(const QString& address) const
 {
@@ -170,7 +287,7 @@ quint64 SignVerifyMessageModel::sign(std::optional<SecureString> passphrase, sec
     if (!m_wallet && !m_opening) {
         const auto revision = ++m_sign_revision;
         m_signing_state = SigningFailed;
-        m_signing_error = tr("No wallet is selected.");
+        m_signing_error = tr("No wallet is selected."); m_error = {MessageSigningError::Refused, m_signing_error};
         m_signing_needs_unlock = false;
         m_signature.clear();
         const QPointer<SignVerifyMessageModel> observer{this};
@@ -192,17 +309,17 @@ quint64 SignVerifyMessageModel::sign(std::optional<SecureString> passphrase, sec
     auto request = std::make_shared<walletmessage::SignRequest>(walletmessage::SignRequest{m_sign_address, m_sign_message, std::move(passphrase), std::move(captured)});
     auto operation = std::make_shared<execution::OwnedCommand<walletmessage::SignResult>>(m_services.scheduler,
         [post = m_services.post, observer, id, revision] { post([observer, id, revision] { if (observer) observer->publishSigning(id, revision); }); });
-    const auto bytes = (static_cast<size_t>(m_sign_address.size()) + m_sign_message.size()) * sizeof(QChar) + 4096
+    const auto bytes = (static_cast<size_t>(m_sign_address.size()) + m_sign_message.size()) * 8 + 16384
         + secretinput::Bytes(request->captured_passphrase) + (request->passphrase ? request->passphrase->capacity() : 0);
     if (!operation->startWith([opening = m_opening, action, request, bytes](auto done, auto failed) {
         return opening->perform(action, [request](interfaces::Wallet& wallet) { return walletmessage::Sign(wallet, std::move(*request)); }, std::move(done), std::move(failed), bytes);
     })) {
         m_signing_state = SigningFailed; m_signature.clear(); m_signing_needs_unlock = false;
-        m_signing_error = tr("The signing request could not be queued."); notifySigning(); return 0;
+        m_signing_error = tr("The signing request could not be queued."); m_error = {MessageSigningError::Refused, m_signing_error}; notifySigning(); return 0;
     }
     m_sign_id = id; m_sign_operation_revision = revision;
     m_sign_operation = std::move(operation);
-    m_sign_active = true; m_signing_state = SigningPending; m_signature.clear(); m_signing_error.clear(); m_signing_needs_unlock = false;
+    m_sign_active = true; m_signing_state = SigningPending; m_signing_error.clear(); m_signing_needs_unlock = false; m_error = {};
     notifySigning();
     return id;
 }
@@ -213,12 +330,12 @@ void SignVerifyMessageModel::publishSigning(quint64 id, quint64 revision)
     if (!result) return;
     m_sign_active = false;
     if (m_closed) return;
-    if (revision != m_sign_revision) { m_signing_state = SigningIdle; notifySigning(); return; }
+    if (revision != m_sign_revision) { m_signing_state = m_signature.isEmpty() ? SigningIdle : SigningSucceeded; notifySigning(); return; }
     auto value = result->value.value_or(walletmessage::SignResult{});
     if (result->error) value.error = walletmessage::Error::Uncertain;
     m_signing_needs_unlock = value.error == walletmessage::Error::NeedsUnlock || value.error == walletmessage::Error::IncorrectPassphrase;
     m_signing_error = value.message;
-    m_signature.clear();
+    m_error.code = static_cast<MessageSigningError::Code>(value.error);
     switch (value.error) {
     case walletmessage::Error::None: m_signature = value.signature; m_signing_state = SigningSucceeded; break;
     case walletmessage::Error::NeedsUnlock: m_signing_state = SigningNeedsUnlock; m_signing_error = tr("Enter your wallet password to sign this message."); break;
@@ -247,15 +364,15 @@ quint64 SignVerifyMessageModel::requestVerifyMessage(const QString& address, con
     const auto id = m_verify_id + 1, revision = m_verify_revision;
     auto operation = std::make_shared<execution::OwnedCommand<walletmessage::VerifyResult>>(m_services.scheduler,
         [post = m_services.post, guard, id, revision] { post([guard, id, revision] { if (guard) guard->publishVerification(id, revision); }); });
-    const auto bytes = (static_cast<size_t>(address.size()) + message.size() + signature.size()) * sizeof(QChar) + 1024;
+    const auto bytes = (static_cast<size_t>(address.size()) + message.size() + signature.size()) * 8 + 4096;
     if (!operation->start([address, message, signature] { return walletmessage::Verify(address, message, signature); },
         {execution::Lane::Domain, bytes, {}, execution::WorkClass::Observation})) {
-        m_verification_state = VerificationFailed; Q_EMIT verificationChanged(); return 0;
+        m_verification_state = VerificationFailed; notifyVerification(); return 0;
     }
     m_verify_id = id; m_verify_operation_revision = revision;
     m_verify_operation = std::move(operation);
     m_verify_active = true; m_verification_state = VerificationPending;
-    Q_EMIT verificationChanged();
+    notifyVerification();
     return id;
 }
 void SignVerifyMessageModel::publishVerification(quint64 id, quint64 revision)
@@ -268,7 +385,7 @@ void SignVerifyMessageModel::publishVerification(quint64 id, quint64 revision)
     if (revision != m_verify_revision) m_verification_state = VerificationIdle;
     else if (result->error || !result->value || result->value->failed) m_verification_state = VerificationFailed;
     else m_verification_state = result->value->valid ? VerificationValid : VerificationInvalid;
-    Q_EMIT verificationChanged();
+    notifyVerification();
 }
 QString SignVerifyMessageModel::verificationText() const
 {
@@ -277,14 +394,18 @@ QString SignVerifyMessageModel::verificationText() const
     if (m_verification_state == VerificationFailed) return tr("Message verification could not be completed.");
     return {};
 }
-void SignVerifyMessageModel::clear() { const QPointer<SignVerifyMessageModel> guard{this}; clearSigningStatus(); if (guard) clearVerification(); }
+void SignVerifyMessageModel::clear()
+{
+    if (m_sign_active) { Q_EMIT commandRejected(QUuid::createUuid().toString(QUuid::WithoutBraces), (MessageSigningError{MessageSigningError::Refused, tr("Signing is still in progress.")})); return; }
+    const QPointer<SignVerifyMessageModel> guard{this}; clearSigningStatus(); if (guard) clearVerification();
+}
 void SignVerifyMessageModel::clearSigningStatus()
 {
-    if (m_closed) return;
+    if (m_closed || m_sign_active) return;
     invalidateSigning(); notifySigning();
 }
 void SignVerifyMessageModel::clearVerification()
 {
     if (m_closed) return;
-    invalidateVerification(); Q_EMIT verificationChanged();
+    invalidateVerification(); notifyVerification();
 }

@@ -5,12 +5,15 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import org.bitcoincore.qt 1.0
 
 LabeledField {
     id: root
 
     property string fieldObjectName: ""
     property alias text: input.text
+    readonly property alias exactText: exactDocument.text
+    readonly property alias exactTextValid: exactDocument.valid
     property alias placeholderText: input.placeholderText
     property alias readOnly: input.readOnly
     property alias inputMethodHints: input.inputMethodHints
@@ -27,6 +30,8 @@ LabeledField {
 
     signal textEdited(string text)
 
+    ExactTextDocument { id: exactDocument; document: input.textDocument }
+
     TextArea {
         id: input
         objectName: root.fieldObjectName.length > 0
@@ -35,6 +40,7 @@ LabeledField {
         Layout.fillWidth: true
         Layout.preferredHeight: root.fieldHeight
         enabled: root.enabled
+        textFormat: TextEdit.PlainText
         color: root.fieldTextColor
         placeholderTextColor: root.placeholderColor
         font: root.fieldTextStyle.font
@@ -54,6 +60,6 @@ LabeledField {
             border.color: root.focusBorderColor
         }
 
-        onTextChanged: root.textEdited(text)
+        onTextChanged: if (length <= 32768) root.textEdited(text)
     }
 }

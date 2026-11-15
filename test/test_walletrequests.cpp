@@ -1442,6 +1442,58 @@ private Q_SLOTS:
         const auto saved = Decode({f.wallet->stored.at("34")}).entries.front(); QCOMPARE(saved.recipient.noteSelf, std::string{"renamed"});
         QCOMPARE(saved.recipient.label, std::string{"public"}); QCOMPARE(saved.recipient.message, std::string{"message"});
     }
+    void resultNotificationFailureDoesNotHoldTheOriginalActionOrErasePersistence()
+    {
+        Fixture f; f.load(0);
+        const auto admitted = f.store->submitResult(Create(), [](const Result&) { throw std::runtime_error{"Rejected result transport"}; });
+        QVERIFY(admitted); f.commands.drain();
+        const auto result = admitted.operation->result(); QVERIFY(result); QVERIFY(result->request_saved); QVERIFY(result->publication_failed);
+        QCOMPARE(f.wallet->writes, 1);
+        f.store->close(); f.opening->retire(); f.client.reset(); f.commands.drain(); f.retirement.drain();
+        QVERIFY(f.commands.quiescent()); QVERIFY(f.retirement.quiescent());
+    }
+    void editorPreconditionChecksTheActualPublicLabelBeforeAnyWrite()
+    {
+        Fixture f; f.load(70); Command command; command.kind = Kind::Label;
+        command.address = Address(); command.label = "my edit"; command.expected_label = "private";
+        int completed{0}; std::optional<Result> receipt;
+        const auto admitted = f.store->submitResult(command, [&](const Result& value) { ++completed; receipt = value; });
+        QVERIFY(admitted); while (f.commands.step(Lane::Domain)) {}
+        f.wallet->label = "external";
+        f.commands.drain(); QCOMPARE(completed, 1); QVERIFY(receipt);
+        QCOMPARE(receipt->error, Error::Changed); QCOMPARE(receipt->current_label, std::optional<QString>{"external"});
+        QVERIFY(!receipt->label_saved); QCOMPARE(f.wallet->label_writes, 0); QCOMPARE(f.wallet->writes, 0);
+        QCOMPARE(f.wallet->label, std::string{"external"});
+        const auto stored = Decode({f.wallet->stored.at("1")}).entries.front();
+        QCOMPARE(stored.recipient.noteSelf, std::string{"private"}); QCOMPARE(stored.recipient.label, std::string{"public"});
+        command.expected_label = "external";
+        const auto retry = f.settle(command); QVERIFY(retry->result()->label_saved);
+        QCOMPARE(f.wallet->label_writes, 1); QCOMPARE(f.wallet->writes, 70); QCOMPARE(f.wallet->label, std::string{"my edit"});
+    }
+    void untouchedCreatePrefillUsesCurrentMetadataWithoutWritingItBack_data()
+    {
+        QTest::addColumn<QString>("current"); QTest::addColumn<bool>("touched");
+        QTest::newRow("external-rename") << QString{"Landlord"} << false;
+        QTest::newRow("external-clear") << QString{} << false;
+        QTest::newRow("deliberate-edit") << QString{"Landlord"} << true;
+        QTest::newRow("deliberate-clear") << QString{"Landlord"} << true;
+    }
+    void untouchedCreatePrefillUsesCurrentMetadataWithoutWritingItBack()
+    {
+        QFETCH(QString, current); QFETCH(bool, touched); Fixture f; f.load(0);
+        auto command = Create(); command.draft.note = QByteArray{QTest::currentDataTag()} == QByteArray{"deliberate-clear"} ? QString{} : QString{"Rent"};
+        command.preserve_current_note = !touched;
+        const auto operation = f.store->submit(command); QVERIFY(operation);
+        f.wallet->label = current.toStdString();
+        f.commands.drain(); QVERIFY(operation.operation->result()->request_saved);
+        const auto saved = Decode({f.wallet->stored.at("1")}).entries.front();
+        const auto expected = touched ? command.draft.note : current;
+        QCOMPARE(QString::fromStdString(saved.recipient.noteSelf), expected);
+        const bool writes_label = touched && !command.draft.note.isEmpty();
+        QCOMPARE(QString::fromStdString(f.wallet->label), writes_label ? expected : current);
+        QCOMPARE(f.wallet->label_writes, writes_label ? 1 : 0); QCOMPARE(f.wallet->writes, 1);
+        QCOMPARE(saved.recipient.label, std::string{"public"}); QCOMPARE(saved.recipient.message, std::string{"message"});
+    }
     void uncertainMutationFencesFurtherWritesUntilExplicitReload()
     {
         Fixture f; f.load(); const auto prior = f.record(); f.wallet->throw_write = 1;

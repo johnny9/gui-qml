@@ -8,6 +8,7 @@
 #include <qml/models/backuppolicyoperation.h>
 #include <qml/models/psbtfeeservices.h>
 #include <qml/models/addresslistmodel.h>
+#include <qml/models/texteditsessionmodel.h>
 #include <qml/backendexecutor.h>
 #include <qml/reviewowner.h>
 #include <qml/walletopening.h>
@@ -385,6 +386,7 @@ public:
     void removeWallet();
 
     ReceiveRequestOperation* setAddressLabel(const QString& address, const QString& label);
+    TextEditSessionModel* editAddressLabel(const QString& address, QObject* parent);
     // Write a label to the address book only, without touching any payment
     // request saved for the address. This is the request-save direction: a
     // request's label is its own, so saving one request must not rewrite the
@@ -757,6 +759,23 @@ private:
     std::shared_ptr<std::atomic<bool>> m_unload_requested{std::make_shared<std::atomic<bool>>(false)};
     int m_display_unit{0};
     PsbtQmlModel* m_imported_psbt_model{nullptr};
+};
+
+/** Wallet association for the shared text editor; persistence remains behind
+ * its original-opening ports, never a later global wallet selection. */
+class AddressLabelEditorModel final : public TextEditSessionModel {
+    Q_OBJECT
+    Q_PROPERTY(WalletQmlModel* wallet READ wallet NOTIFY walletChanged)
+public:
+    AddressLabelEditorModel(WalletQmlModel* wallet, QString address, Ports ports, QObject* parent)
+        : TextEditSessionModel(std::move(address), std::move(ports), parent), m_wallet(wallet) {
+        if (wallet) connect(wallet, &QObject::destroyed, this, [this] { Q_EMIT walletChanged(); });
+    }
+    WalletQmlModel* wallet() const { return m_wallet; }
+Q_SIGNALS:
+    void walletChanged();
+private:
+    const QPointer<WalletQmlModel> m_wallet;
 };
 
 #endif // BITCOIN_QML_MODELS_WALLETQMLMODEL_H

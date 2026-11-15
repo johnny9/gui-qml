@@ -24,6 +24,7 @@ size_t Bytes(const Command& command)
                             &command.draft.message, &command.draft.note, &command.draft.address_type}) {
         size += static_cast<size_t>(text->size()) * sizeof(QChar);
     }
+    if (command.expected_label) size += static_cast<size_t>(command.expected_label->size()) * sizeof(QChar);
     size += static_cast<size_t>(command.sent_labels.size()) * (sizeof(QString) * 2 + 32);
     if (command.secret) size += command.secret->size();
     size += secretinput::Bytes(command.captured_secret);
@@ -50,7 +51,10 @@ void Operation::complete(Result result)
         if (m_result) return;
         m_result = std::move(result);
     }
-    if (m_notify) m_notify();
+    try { if (m_result_notify) m_result_notify(*m_result); }
+    catch (...) { std::lock_guard lock{m_mutex}; m_result->publication_failed = true; }
+    try { if (m_notify) m_notify(); }
+    catch (...) { std::lock_guard lock{m_mutex}; m_result->publication_failed = true; }
 }
 
 struct Store::Effect {
@@ -67,6 +71,7 @@ struct Store::Effect {
     std::string label_note;
     int64_t label_cursor{0};
     std::optional<std::pair<CTxDestination, QString>> label;
+    std::optional<QString> expected_label;
     Result result;
 };
 
@@ -120,6 +125,13 @@ Admission Store::submit(Command command, Notify complete)
     return submitImpl(std::move(command), std::move(complete), {});
 }
 
+Admission Store::submitResult(Command command, std::function<void(const Result&)> complete, std::shared_ptr<const walletopening::Session::Action> action)
+{
+    if (command.kind == Kind::SentLabels) return {{}, execution::Rejection::Invalid};
+    if (action && (command.kind != Kind::Label || action->identity() != m_opening->identity())) return {{}, execution::Rejection::Invalid};
+    return submitImpl(std::move(command), {}, std::move(action), std::move(complete));
+}
+
 Admission Store::submitSentLabels(std::shared_ptr<const walletopening::Session::Action> action,
                                  const Txid& transaction, QMap<QString, QString> labels, Notify complete)
 {
@@ -128,7 +140,7 @@ Admission Store::submitSentLabels(std::shared_ptr<const walletopening::Session::
     return submitImpl(std::move(command), std::move(complete), std::move(action));
 }
 
-Admission Store::submitImpl(Command command, Notify complete, std::shared_ptr<const walletopening::Session::Action> action)
+Admission Store::submitImpl(Command command, Notify complete, std::shared_ptr<const walletopening::Session::Action> action, std::function<void(const Result&)> result_notify)
 {
     const auto wipe_rejected = qScopeGuard([&command] { clearSecret(command.secret); });
     if (command.secret_capture_error != secretinput::Error::None) return {{}, execution::Rejection::Capacity};
@@ -157,7 +169,7 @@ Admission Store::submitImpl(Command command, Notify complete, std::shared_ptr<co
                 command.kind == Kind::Create, command.kind == Kind::SelectAddress});
             m_latest_address_intent[command.view] = token;
         }
-        operation = std::make_shared<Operation>(m_opening->identity(), token, command.kind, std::move(complete), std::move(intent));
+        operation = std::make_shared<Operation>(m_opening->identity(), token, command.kind, std::move(complete), std::move(intent), std::move(result_notify));
         m_queue.push_back({std::move(command), operation, action, bytes});
         m_bytes += bytes;
     }
@@ -284,6 +296,29 @@ void Store::planMutation(Queued queued)
     }
     if (command.kind != Kind::Erase && (!m_receipts_ready || !m_ready() ||
         m_checked_revision.load() != m_opening->transactionRevision())) { reject(Error::Checking); return; }
+    if (command.kind == Kind::Create && command.preserve_current_note) {
+        auto original = std::make_shared<Queued>(std::move(queued));
+        original->command.preserve_current_note = false;
+        const auto self = shared_from_this();
+        const auto admitted = m_opening->perform(original->action, [address = original->command.draft.address](interfaces::Wallet& wallet) -> std::optional<QString> {
+            const auto destination = DecodeDestination(address.toStdString());
+            std::string label;
+            if (!IsValidDestination(destination) || !wallet.getAddress(destination, &label, nullptr) || label.size() > 65536) return {};
+            auto note = QString::fromStdString(label);
+            if (note.size() > 32768) return {};
+            return note;
+        }, [self, original](std::optional<QString> note) {
+            if (!note) { self->fail(original->operation, Error::Invalid); return; }
+            original->command.draft.note = *note;
+            if (Bytes(original->command) > MAX_COMMAND_BYTES) { self->fail(original->operation, Error::Rejected); return; }
+            const auto& address = original->command.draft.address;
+            const auto previous = self->m_labels.find(address);
+            if (previous == self->m_labels.end() || previous->second != *note) { self->m_labels[address] = *note; ++self->m_revision; }
+            self->planMutation(std::move(*original));
+        }, [self, original](std::exception_ptr) { self->fail(original->operation, Error::Persistence); }, 262144);
+        if (!admitted) fail(original->operation, Error::Rejected);
+        return;
+    }
     auto effect = std::make_shared<Effect>();
     effect->operation = queued.operation; effect->action = std::move(queued.action); effect->kind = command.kind;
     effect->result.address = std::move(queued.prepared_address);
@@ -292,6 +327,7 @@ void Store::planMutation(Queued queued)
         const auto destination = DecodeDestination(command.address.toStdString());
         if (!IsValidDestination(destination)) { reject(Error::Invalid); return; }
         effect->label = {destination, command.label};
+        effect->expected_label = command.expected_label;
         effect->label_stream = true; effect->label_address = command.address; effect->label_note = command.label.toStdString();
         m_mutating.store(true); publishMetadata(m_persistence_error);
         scheduleLabel(effect); return;
@@ -563,6 +599,7 @@ void Store::execute(std::shared_ptr<Effect> effect)
     if (!effect->label_stream) effect->result.records_total = effect->writes.size();
     struct Native {
         std::vector<size_t> saved;
+        std::optional<QString> current_label;
         bool label_saved{false};
         bool reservation_released{false};
         Error error{Error::None};
@@ -571,6 +608,8 @@ void Store::execute(std::shared_ptr<Effect> effect)
     const size_t end = std::min(effect->offset + WRITE_BATCH, effect->writes.size());
     size_t payload_bytes{256};
     for (size_t index{effect->offset}; index < end; ++index) payload_bytes += effect->writes[index].blob.size() * 2 + sizeof(Effect::Write);
+    if (effect->label) payload_bytes += static_cast<size_t>(effect->label->second.size()) * 8 + 512;
+    if (effect->expected_label) payload_bytes += static_cast<size_t>(effect->expected_label->size()) * 8;
     const auto admission = m_opening->perform(effect->action, [self, effect, end](interfaces::Wallet& wallet) {
         Native result;
         if (!effect->paid && effect->kind != Kind::Erase && (!self->m_receipts_ready.load() || !self->m_ready() ||
@@ -580,11 +619,19 @@ void Store::execute(std::shared_ptr<Effect> effect)
         }
         auto label = [&] {
             wallet::AddressPurpose purpose{wallet::AddressPurpose::RECEIVE};
-            if (!wallet.getAddress(effect->label->first, nullptr, &purpose) ||
-                !wallet.setAddressBook(effect->label->first, effect->label->second.toStdString(), purpose)) {
+            std::string current;
+            if (!wallet.getAddress(effect->label->first, &current, &purpose)) {
                 result.error = Error::LabelPersistence; return false;
             }
-            result.label_saved = true; return true;
+            if (effect->expected_label && (purpose != wallet::AddressPurpose::RECEIVE || current != effect->expected_label->toStdString())) {
+                if (current.size() <= 32768) result.current_label = QString::fromStdString(current);
+                result.error = Error::Changed; return false;
+            }
+            if (!wallet.setAddressBook(effect->label->first, effect->label->second.toStdString(), purpose)) {
+                result.error = Error::LabelPersistence; return false;
+            }
+            result.label_saved = true;
+            return true;
         };
         try {
             if (effect->consume_address && effect->offset == 0 && self->m_storage.retire &&
@@ -634,6 +681,7 @@ void Store::execute(std::shared_ptr<Effect> effect)
         if ((effect->kind == Kind::Create || effect->kind == Kind::Edit) && !native.saved.empty())
             effect->result.request_saved = true;
         if (native.label_saved) effect->result.label_saved = true;
+        if (native.current_label) effect->result.current_label = std::move(native.current_label);
         if (native.error != Error::None) effect->result.error = native.error;
         if (native.error == Error::Uncertain) {
             self->m_uncertain = true; self->m_paid_action.reset(); self->m_paid_dirty.clear();
@@ -689,11 +737,11 @@ void Store::execute(std::shared_ptr<Effect> effect)
             self->finish(effect->operation, effect->result); return;
         }
         effect->offset = end;
-        if (end < effect->writes.size() && native.error != Error::Uncertain && native.error != Error::Checking &&
+        if (end < effect->writes.size() && native.error != Error::Uncertain && native.error != Error::Checking && native.error != Error::Changed &&
             !(native.error == Error::LabelPersistence && !effect->result.label_saved)) {
             self->execute(effect); return;
         }
-        if (effect->label_stream && native.error != Error::Uncertain && native.error != Error::Checking &&
+        if (effect->label_stream && native.error != Error::Uncertain && native.error != Error::Checking && native.error != Error::Changed &&
             !(native.error == Error::LabelPersistence && !effect->result.label_saved) && !effect->label_exhausted) {
             effect->offset = 0; effect->writes.clear();
             self->scheduleLabel(effect); return;

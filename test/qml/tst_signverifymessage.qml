@@ -55,131 +55,7 @@ TestCase {
         anchors.fill: parent
     }
 
-    QtObject {
-        id: mockSignVerifyModel
-
-        property string signature: ""
-        property string signingError: ""
-        property bool signingNeedsUnlock: false
-        property bool signingBusy: false
-        readonly property bool signingSucceeded: signature.length > 0
-        property string signingAddress: ""
-        property string signingMessage: ""
-        property string verificationAddress: ""
-        property string verificationMessage: ""
-        property string verificationSignature: ""
-        readonly property bool signingAddressValid: signingAddress === "1ValidLegacyAddress"
-        readonly property bool verificationAddressValid: verificationAddress === "1ValidLegacyAddress"
-        readonly property bool addressValidationPending: false
-        property bool verificationBusy: false
-        property bool verificationValid: false
-        property string verificationText: ""
-        property int signRevision: 0
-        property int verifyRevision: 0
-        property int signingId: 0
-        property int verificationId: 0
-        signal signingStateChanged()
-        // Test-local presentation transport. Manual completion is opt-in;
-        // existing tests keep their original asynchronous completion behavior.
-        property bool manualCompletion: false
-        property int signCalls: 0
-        property int passphraseCalls: 0
-        property int verifyCalls: 0
-        property string lastSigningAddress: ""
-        property string lastSigningMessage: ""
-        property string lastPassphrase: ""
-        property var pendingSigning: null
-        property var pendingVerification: null
-        onSigningAddressChanged: clearSigningStatus()
-        onSigningMessageChanged: clearSigningStatus()
-        onVerificationAddressChanged: clearVerification()
-        onVerificationMessageChanged: clearVerification()
-        onVerificationSignatureChanged: clearVerification()
-
-        function clearSigningStatus() {
-            signRevision++
-            signature = ""; signingError = ""; signingNeedsUnlock = false
-        }
-        function clear() {
-            clearSigningStatus()
-            clearVerification()
-        }
-        function clearVerification() {
-            verifyRevision++
-            verificationValid = false; verificationText = ""
-        }
-        function resetForTest() {
-            manualCompletion = false
-            pendingSigning = null; pendingVerification = null
-            signingBusy = false; verificationBusy = false
-            signingAddress = ""; signingMessage = ""
-            verificationAddress = ""; verificationMessage = ""; verificationSignature = ""
-            clear()
-            signCalls = 0; passphraseCalls = 0; verifyCalls = 0
-            lastSigningAddress = ""; lastSigningMessage = ""; lastPassphrase = ""
-        }
-        function queueSigning(address, message) {
-            if (signingBusy) return 0
-            signingBusy = true
-            const id = ++signingId
-            pendingSigning = {id: id, revision: signRevision, address: address, message: message}
-            lastSigningAddress = address
-            lastSigningMessage = message
-            signingStateChanged()
-            if (!manualCompletion) Qt.callLater(function() {
-                if (pendingSigning && pendingSigning.id === id) completeSigningForTest("success", "")
-            })
-            return id
-        }
-        function requestSignMessage(address, message) {
-            signCalls++
-            return queueSigning(address, message)
-        }
-        function requestSignMessageWithPassphrase(address, message, passphrase) {
-            passphraseCalls++
-            lastPassphrase = passphrase
-            return queueSigning(address, message)
-        }
-        function completeSigningForTest(outcome, error) {
-            if (["success", "unlock", "error"].indexOf(outcome) < 0) throw new Error("Unknown signing fixture outcome")
-            const pending = pendingSigning
-            if (!pending) return false
-            pendingSigning = null
-            if (pending.id !== signingId) return false
-            if (pending.revision === signRevision) {
-                signature = outcome === "success" && pending.address === "1ValidLegacyAddress" && pending.message.length > 0 ? "test-signature" : ""
-                signingNeedsUnlock = outcome === "unlock"
-                signingError = error
-            }
-            signingBusy = false
-            signingStateChanged()
-            return true
-        }
-        function requestVerifyMessage(address, message, candidateSignature) {
-            verifyCalls++
-            if (verificationBusy) return 0
-            verificationBusy = true
-            const id = ++verificationId
-            pendingVerification = {id: id, revision: verifyRevision, address: address, message: message, signature: candidateSignature}
-            if (!manualCompletion) Qt.callLater(function() {
-                if (pendingVerification && pendingVerification.id === id) completeVerificationForTest()
-            })
-            return id
-        }
-        function completeVerificationForTest() {
-            const pending = pendingVerification
-            if (!pending) return false
-            pendingVerification = null
-            if (pending.id !== verificationId) return false
-            if (pending.revision === verifyRevision) {
-                verificationValid = pending.address === "1ValidLegacyAddress" && pending.message === "Signed statement" && pending.signature === "test-signature"
-                verificationText = verificationValid ? "Message verified successfully." : "Message verification failed."
-            }
-            verificationBusy = false
-            return true
-        }
-
-    }
+    SignVerifyMessageModel { id: mockSignVerifyModel }
 
     Component {
         id: pageComponent
@@ -284,9 +160,9 @@ TestCase {
         const popup = findChild(page, "signMessagePassphrasePopup")
         tryCompare(popup, "opened", true)
         compare(popup.contextValid, true)
-        compare(popup.context.model, mockSignVerifyModel)
-        compare(popup.context.address, "1ValidLegacyAddress")
-        compare(popup.context.message, "Signed statement")
+        compare(popup.context, mockSignVerifyModel.signingPrompt)
+        compare(mockSignVerifyModel.lastSigningAddress, "1ValidLegacyAddress")
+        compare(mockSignVerifyModel.lastSigningMessage, "Signed statement")
         compare(findChild(page, "signMessageErrorText").visible, false)
         compare(findChild(popup, "signMessagePassphraseErrorText").text, "Wallet password required.")
         return popup
@@ -797,6 +673,64 @@ TestCase {
             compare(popup.visible, false)
             page.visible = true
             compare(popup.visible, false)
+        }
+    }
+
+    function test_native_message_entry_and_copy_preserve_exact_text_data() {
+        return [{tag: "nbsp", value: "Audit\u00a0statement"},
+                {tag: "space-control", value: "Audit statement"},
+                {tag: "unicode-tab-newline", value: "\u00e9\tFirst\nSecond"},
+                {tag: "literal-markup", value: "<b>literal</b> & text"}]
+    }
+    function test_native_message_entry_and_copy_preserve_exact_text(data) {
+        mockSignVerifyModel.manualCompletion = true
+        const page = createControlledPage()
+        const address = findChild(page, "signMessageAddressField")
+        const message = findChild(page, "signMessageMessageField")
+        verify(testSetup.replaceText(address, "1ValidLegacyAddress"))
+        verify(testSetup.replaceText(message, data.value))
+        tryCompare(mockSignVerifyModel.message, "text", data.value)
+        clickVisible(page, "signMessageButton")
+        compare(mockSignVerifyModel.signCalls, 1)
+        compare(mockSignVerifyModel.lastSigningMessage, data.value)
+        verify(mockSignVerifyModel.completeSigningForTest("success", ""))
+        tryCompare(page, "signingComplete", true)
+        Clipboard.currentText = "prior clipboard"
+        clickVisible(page, "signMessageCopyMessageButton")
+        compare(Clipboard.currentText, data.value)
+        compare(mockSignVerifyModel.lastSigningMessage, data.value)
+    }
+
+    function test_exact_native_text_budget_blocks_an_effect_until_corrected_data() {
+        return [{tag: "signing-message", verifyMode: false},
+                {tag: "verification-signature", verifyMode: true}]
+    }
+    function test_exact_native_text_budget_blocks_an_effect_until_corrected(data) {
+        mockSignVerifyModel.manualCompletion = true
+        const page = createControlledPage()
+        if (data.verifyMode) fillVerification(page, "test-signature")
+        else fillSigning(page)
+        const field = findChild(page, data.verifyMode ? "verifyMessageSignatureField" : "signMessageMessageField")
+        const entry = findChild(page, data.verifyMode ? "verifyMessageSignatureEntry" : "signMessageMessageEntry")
+        verify(testSetup.replaceText(field, "x".repeat(32769)))
+        tryCompare(entry, "exactTextValid", false)
+        compare(findChild(page, data.verifyMode ? "verifyMessageButton" : "signMessageButton").enabled, false)
+        if (data.verifyMode) page.submitVerify()
+        else page.submitSign()
+        compare(mockSignVerifyModel.signCalls, 0)
+        compare(mockSignVerifyModel.verifyCalls, 0)
+        verify(testSetup.replaceText(field, data.verifyMode ? "test-signature" : "Corrected message"))
+        tryCompare(entry, "exactTextValid", true)
+        clickVisible(page, data.verifyMode ? "verifyMessageButton" : "signMessageButton")
+        compare(mockSignVerifyModel.signCalls, data.verifyMode ? 0 : 1)
+        compare(mockSignVerifyModel.verifyCalls, data.verifyMode ? 1 : 0)
+        if (data.verifyMode) {
+            verify(mockSignVerifyModel.completeVerificationForTest())
+            compare(page.verifyResultSuccess, true)
+        } else {
+            compare(mockSignVerifyModel.lastSigningMessage, "Corrected message")
+            verify(mockSignVerifyModel.completeSigningForTest("success", ""))
+            compare(page.signingComplete, true)
         }
     }
 

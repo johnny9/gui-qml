@@ -25,6 +25,9 @@
 #include <QGuiApplication>
 #include <QInputMethodEvent>
 #include <QPersistentModelIndex>
+#include <QQmlEngine>
+#include <QQuickItem>
+#include <qml/models/texteditsessionmodel.h>
 #include <qml/models/options_model.h>
 #include <streams.h>
 
@@ -38,7 +41,7 @@ class ReceiveIntegrationTests : public QObject
         QList<QQuickItem*> pending{m_app.window()->contentItem()};
         while (!pending.isEmpty()) {
             auto* item = pending.takeLast();
-            if (item->objectName() == "addressRow" && item->property("address").toString() == address) return item;
+            if (item->isVisible() && item->objectName() == "addressRow" && item->property("address").toString() == address) return item;
             pending.append(item->childItems());
         }
         return nullptr;
@@ -51,6 +54,56 @@ class ReceiveIntegrationTests : public QObject
             if (activity->index(row, 0).data(TransactionActivityModel::TxidRole).toString() == txid) return true;
         }
         return false;
+    }
+
+    bool enterText(QObject* object, const QString& text)
+    {
+        auto* item = qobject_cast<QQuickItem*>(object);
+        if (!item || !item->window()) return false;
+        item->forceActiveFocus();
+        if (!item->hasActiveFocus()) return false;
+        if (!QMetaObject::invokeMethod(item, "selectAll")) return false;
+        QTest::keyClick(item->window(), Qt::Key_Backspace, Qt::NoModifier, 1);
+        QInputMethodEvent edit; edit.setCommitString(text);
+        QCoreApplication::sendEvent(item, &edit); return edit.isAccepted();
+    }
+    QString addressNote(const QString& name, const QString& address)
+    {
+        UniValue parameters{UniValue::VARR}; parameters.push_back(address.toStdString());
+        const auto labels = qmltest::Rpc(m_app, "getaddressinfo", parameters, name).find_value("labels");
+        return labels.empty() ? QString{} : QString::fromStdString(labels[0].get_str());
+    }
+    bool openAddresses()
+    {
+        if (!qmltest::SelectSettings(m_app, "wallet") || !qmltest::Click(m_app, "walletAddressesRow")) return false;
+        auto* page = qmltest::WaitForVisible(m_app, "addressListPage");
+        return page && QTest::qWaitFor([page] {
+            auto* stack = page->property("navigationStack").value<QObject*>();
+            return !stack || !stack->property("busy").toBool();
+        });
+    }
+    bool editorCenterIsHittable(QObject* object)
+    {
+        auto* item = qobject_cast<QQuickItem*>(object);
+        return item && QTest::qWaitFor([item] {
+            if (!item->window() || !item->isVisible() || !item->isEnabled() || item->width() <= 0 || item->height() <= 0) return false;
+            const auto scene = item->mapToScene(item->boundingRect().center());
+            if (!QRectF{0, 0, qreal(item->window()->width()), qreal(item->window()->height())}.contains(scene)) return false;
+            for (auto* parent = item->parentItem(); parent; parent = parent->parentItem())
+                if (parent->clip() && !parent->boundingRect().contains(parent->mapFromScene(scene))) return false;
+            return true;
+        });
+    }
+    bool openMessages()
+    {
+        return qmltest::SelectSettings(m_app, "wallet") && qmltest::Click(m_app, "walletSignVerifyMessageRow") &&
+            qmltest::WaitForVisible(m_app, "signVerifyMessagePage");
+    }
+
+    QString labeledAddress(const QString& name, const QString& label)
+    {
+        UniValue parameters{UniValue::VARR}; parameters.push_back(label.toStdString());
+        return QString::fromStdString(qmltest::Rpc(m_app, "getnewaddress", parameters, name).get_str());
     }
 
 public:
@@ -533,6 +586,275 @@ private Q_SLOTS:
         const auto info = qmltest::Rpc(m_app, "getaddressinfo", qmltest::Json("[\"" + fresh.toStdString() + "\"]"), wallet->name());
         QVERIFY(info.find_value("ismine").get_bool()); QVERIFY(!info.find_value("iswitness").get_bool());
         QCOMPARE(wallet->receiveRequests()->count(), 1); QVERIFY(draft->id().isEmpty());
+    }
+
+    void unchangedAddressDraftCannotHideOrOverwriteAnExternalRelabel()
+    {
+        auto* wallet = qmltest::CreateWallet(m_app, "label-origin"); QVERIFY(wallet);
+        const auto address = labeledAddress(wallet->name(), "Original note");
+        QVERIFY(openAddresses()); QTRY_VERIFY(addressRow(address));
+        auto* field = qmltest::Find(addressRow(address), "addressRowNoteField"); QVERIFY(field);
+        QVERIFY(enterText(field, "Original notex"));
+        QTest::keyClick(m_app.window(), Qt::Key_Backspace, Qt::NoModifier, 1);
+        QCOMPARE(field->property("text").toString(), QStringLiteral("Original note"));
+        QVERIFY(qmltest::Click(qmltest::Find(addressRow(address), "addressRowDetailsButton")));
+        QVERIFY(qmltest::WaitForVisible(m_app, "addressDetailsPopup"));
+        UniValue rename{UniValue::VARR}; rename.push_back(address.toStdString()); rename.push_back("External note");
+        qmltest::Rpc(m_app, "setlabel", rename, wallet->name());
+        auto* addresses = wallet->addressListModel();
+        QTRY_VERIFY([&] {
+            for (int row{0}; row < addresses->count(); ++row)
+                if (addresses->addressAt(row) == address) return addresses->data(addresses->index(row), AddressListModel::LabelRole).toString() == "External note";
+            return false;
+        }());
+        QVERIFY(qmltest::Click(m_app, "addressDetailsCloseButton"));
+        QTRY_VERIFY(!qmltest::Find(m_app, "addressDetailsPopup")->property("visible").toBool());
+        QTRY_VERIFY(addressRow(address)); field = qmltest::Find(addressRow(address), "addressRowNoteField"); QVERIFY(field);
+        const auto rendered_after_external = field->property("text").toString();
+        auto* item = qobject_cast<QQuickItem*>(field); QVERIFY(item); item->forceActiveFocus();
+        QVERIFY(qmltest::Click(qmltest::Find(addressRow(address), "addressRowDetailsButton")));
+        QVERIFY(qmltest::WaitForVisible(m_app, "addressDetailsPopup"));
+        auto* page = qmltest::Find(m_app, "addressListPage"); QVERIFY(page);
+        // Both application generations expose their actual outcome owner. The
+        // independent oracle below is the same public Core value in each case.
+        if (auto* operation = page->property("noteOperation").value<QObject*>()) {
+            QTRY_VERIFY(!operation->property("pending").toBool());
+        } else {
+            auto* editor = page->property("selectedEditor").value<QObject*>(); QVERIFY(editor);
+            QTRY_VERIFY(editor->property("phase").toInt() != 0 && !editor->property("busy").toBool());
+        }
+        const auto persisted = addressNote(wallet->name(), address);
+        qInfo() << "Unchanged-label oracle" << rendered_after_external << persisted;
+        QCOMPARE(persisted, QStringLiteral("External note"));
+        QCOMPARE(rendered_after_external, QStringLiteral("External note"));
+    }
+    void addressDetailsCloseRequiresExplicitDraftConsent_data()
+    {
+        QTest::addColumn<QString>("choice");
+        QTest::newRow("keep-editing") << QStringLiteral("keep");
+        QTest::newRow("discard") << QStringLiteral("discard");
+        QTest::newRow("save") << QStringLiteral("save");
+    }
+    void addressDetailsCloseRequiresExplicitDraftConsent()
+    {
+        QFETCH(QString, choice); auto* wallet = qmltest::CreateWallet(m_app, "note-close"); QVERIFY(wallet);
+        const auto address = labeledAddress(wallet->name(), "Original note");
+        QVERIFY(openAddresses()); QTRY_VERIFY(addressRow(address));
+        QVERIFY(qmltest::Click(qmltest::Find(addressRow(address), "addressRowDetailsButton")));
+        auto* popup = qmltest::WaitForVisible(m_app, "addressDetailsPopup"); QVERIFY(popup);
+        auto* field = qmltest::WaitForVisible(m_app, "addressDetailsNoteField"); QVERIFY(field);
+        QTRY_COMPARE(field->property("text").toString(), QStringLiteral("Original note"));
+        QVERIFY(qmltest::SetText(m_app, "addressDetailsNoteField", "Unfinished private note"));
+        QVERIFY(qmltest::Click(m_app, "addressDetailsCloseButton"));
+        QVERIFY(QTest::qWaitFor([&] {
+            auto* prompt = qmltest::Find(m_app, "addressNoteClosePrompt");
+            return (prompt && prompt->property("opened").toBool()) ||
+                (!popup->property("visible").toBool() && addressNote(wallet->name(), address) == "Unfinished private note");
+        }));
+        const auto before_consent = addressNote(wallet->name(), address);
+        qInfo() << "Dirty-close oracle before consent" << before_consent;
+        QCOMPARE(before_consent, QStringLiteral("Original note"));
+        if (choice == "keep") {
+            QVERIFY(qmltest::Click(m_app, "addressNoteKeepEditingButton"));
+            QTRY_VERIFY(!qmltest::Find(m_app, "addressNoteClosePrompt")->property("visible").toBool());
+            QVERIFY(popup->property("visible").toBool());
+            QCOMPARE(field->property("text").toString(), QStringLiteral("Unfinished private note"));
+            QVERIFY(qmltest::Click(m_app, "addressDetailsCloseButton"));
+            QVERIFY(qmltest::WaitForVisible(m_app, "addressNoteClosePrompt"));
+        }
+        QVERIFY(qmltest::Click(m_app, choice == "save" ? "addressNoteSaveAndCloseButton" : "addressNoteDiscardAndCloseButton"));
+        QTRY_VERIFY(!popup->property("visible").toBool());
+        QCOMPARE(addressNote(wallet->name(), address), choice == "save" ? QStringLiteral("Unfinished private note") : QStringLiteral("Original note"));
+    }
+    void untouchedRequestPrefillUsesTheLatestPrivateMetadata_data()
+    {
+        QTest::addColumn<QString>("current"); QTest::addColumn<int>("edit");
+        QTest::newRow("renamed") << QStringLiteral("Landlord") << 0;
+        QTest::newRow("cleared") << QString{} << 0;
+        QTest::newRow("explicit-note") << QStringLiteral("Landlord") << 1;
+        QTest::newRow("returned-to-base") << QStringLiteral("Landlord") << 2;
+    }
+    void untouchedRequestPrefillUsesTheLatestPrivateMetadata()
+    {
+        QFETCH(QString, current); QFETCH(int, edit);
+        auto* wallet = qmltest::CreateWallet(m_app, "request-prefill"); QVERIFY(wallet);
+        const auto address = labeledAddress(wallet->name(), "Rent");
+        QVERIFY(AwaitReceiveRequest(wallet->setCurrentPaymentRequestAddress(address)));
+        auto* request = wallet->currentPaymentRequest(); QCOMPARE(request->address(), address); QCOMPARE(request->noteSelf(), QStringLiteral("Rent"));
+        if (edit == 1) request->setNoteSelf("Explicit private note");
+        if (edit == 2) { request->setNoteSelf("Rentx"); request->setNoteSelf("Rent"); }
+        request->setLabel("Public invoice"); request->setMessage("Public message"); request->amount()->setSatoshi(1000);
+        UniValue rename{UniValue::VARR}; rename.push_back(address.toStdString()); rename.push_back(current.toStdString());
+        qmltest::Rpc(m_app, "setlabel", rename, wallet->name());
+        QVERIFY(AwaitReceiveRequest(wallet->commitPaymentRequest()));
+        const auto expected = edit == 1 ? QStringLiteral("Explicit private note") : current;
+        QCOMPARE(addressNote(wallet->name(), address), expected);
+        const auto blobs = qmltest::Call(m_app, [backend = wallet->wallet()](interfaces::Node*) { return backend->getAddressReceiveRequests(); });
+        const auto records = walletrequests::Decode(blobs).entries; QCOMPARE(records.size(), size_t{1});
+        QCOMPARE(QString::fromStdString(records.front().recipient.noteSelf), expected);
+        QCOMPARE(records.front().recipient.label, std::string{"Public invoice"}); QCOMPARE(records.front().recipient.message, std::string{"Public message"});
+        QCOMPARE(records.front().recipient.amount, CAmount{1000});
+    }
+    void nativeMessageEntryPreservesExactCryptoBytes_data()
+    {
+        QTest::addColumn<QString>("message");
+        QTest::newRow("nbsp") << QStringLiteral("Audit\u00a0statement");
+        QTest::newRow("ordinary-space") << QStringLiteral("Audit statement");
+        QTest::newRow("unicode-tabs-newlines") << QStringLiteral("Caf\u00e9\tstatement\nnext line");
+        QTest::newRow("literal-markup") << QStringLiteral("<b>literal message</b>");
+    }
+    void nativeMessageEntryPreservesExactCryptoBytes()
+    {
+        QFETCH(QString, message); auto* wallet = qmltest::CreateWallet(m_app, "exact-message"); QVERIFY(wallet);
+        const auto address = qmltest::NewAddress(m_app, wallet->name(), "legacy");
+        QVERIFY(openMessages());
+        QVERIFY(qmltest::SetText(m_app, "signMessageAddressField", address));
+        QVERIFY(qmltest::SetText(m_app, "signMessageMessageField", message));
+        QVERIFY(qmltest::Click(m_app, "signMessageButton"));
+        auto* model = wallet->signVerifyMessageModel(); QTRY_VERIFY(model->signingSucceeded());
+        const auto signature = model->signature(); QVERIFY(!signature.isEmpty());
+        UniValue parameters{UniValue::VARR}; parameters.push_back(address.toStdString()); parameters.push_back(signature.toStdString()); parameters.push_back(message.toStdString());
+        const auto exact = qmltest::Rpc(m_app, "verifymessage", parameters).get_bool();
+        qInfo() << "Native message oracle" << message << model->signingMessage() << exact;
+        QVERIFY(exact); QCOMPARE(model->signingMessage(), message);
+        const QString changed = message + QStringLiteral(" changed");
+        UniValue altered{UniValue::VARR}; altered.push_back(address.toStdString()); altered.push_back(signature.toStdString()); altered.push_back(changed.toStdString());
+        QVERIFY(!qmltest::Rpc(m_app, "verifymessage", altered).get_bool());
+        QVERIFY(qmltest::Click(m_app, "verifyMessageTab"));
+        QVERIFY(qmltest::SetText(m_app, "verifyMessageAddressField", address));
+        QVERIFY(qmltest::SetText(m_app, "verifyMessageMessageField", message));
+        QVERIFY(qmltest::SetText(m_app, "verifyMessageSignatureField", signature));
+        QVERIFY(qmltest::Click(m_app, "verifyMessageButton")); QTRY_VERIFY(!model->verificationBusy());
+        QVERIFY(model->verificationValid());
+        QVERIFY(qmltest::SetText(m_app, "verifyMessageMessageField", changed));
+        QVERIFY(qmltest::Click(m_app, "verifyMessageButton")); QTRY_VERIFY(!model->verificationBusy());
+        QVERIFY(!model->verificationValid()); QCOMPARE(model->verificationState(), SignVerifyMessageModel::VerificationInvalid);
+    }
+    void publishedNbspSignatureVerifiesThroughTheNativeEditor()
+    {
+        auto* wallet = qmltest::CreateWallet(m_app, "nbsp-vector"); QVERIFY(wallet);
+        const QString address{"mhfTimpyFDvD3n5TQ8jZtEDUh2cJE9um4z"}, message = QStringLiteral("Audit\u00a0statement");
+        const QString signature{"H0NCrVXRxVR5PGH/S9LePF1qq/Qj5oGZNZ0xRTKcYey2Dw+62BnSCqU6iU53npgV3C69d9fF9L0ayZTUulOlipY="};
+        UniValue parameters{UniValue::VARR}; parameters.push_back(address.toStdString()); parameters.push_back(signature.toStdString()); parameters.push_back(message.toStdString());
+        QVERIFY(qmltest::Rpc(m_app, "verifymessage", parameters).get_bool());
+        QVERIFY(openMessages()); QVERIFY(qmltest::Click(m_app, "verifyMessageTab"));
+        QVERIFY(qmltest::SetText(m_app, "verifyMessageAddressField", address));
+        QVERIFY(qmltest::SetText(m_app, "verifyMessageMessageField", message));
+        QVERIFY(qmltest::SetText(m_app, "verifyMessageSignatureField", signature));
+        QVERIFY(qmltest::Click(m_app, "verifyMessageButton"));
+        auto* model = wallet->signVerifyMessageModel(); QTRY_VERIFY(!model->verificationBusy());
+        QVERIFY(model->verificationValid());
+        QVERIFY(qmltest::SetText(m_app, "verifyMessageMessageField", "Audit statement"));
+        QVERIFY(qmltest::Click(m_app, "verifyMessageButton")); QTRY_VERIFY(!model->verificationBusy());
+        QVERIFY(!model->verificationValid());
+    }
+    void cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature_data()
+    {
+        QTest::addColumn<bool>("prior_signature");
+        QTest::newRow("no-prior-signature") << false; QTest::newRow("retained-signature") << true;
+    }
+    void cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature()
+    {
+        QFETCH(bool, prior_signature); auto* wallet = qmltest::CreateWallet(m_app, "auth-message"); QVERIFY(wallet);
+        const auto address = qmltest::NewAddress(m_app, wallet->name(), "legacy");
+        QVERIFY(wallet->encryptWallet("signing password")); QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QVERIFY(openMessages()); QVERIFY(qmltest::SetText(m_app, "signMessageAddressField", address));
+        QVERIFY(qmltest::SetText(m_app, "signMessageMessageField", "Exact signing statement"));
+        auto* model = wallet->signVerifyMessageModel(); QString earlier;
+        if (prior_signature) {
+            QVERIFY(qmltest::Click(m_app, "signMessageButton")); QVERIFY(qmltest::WaitForVisible(m_app, "signMessagePassphrasePopup"));
+            QVERIFY(qmltest::SetText(m_app, "signMessagePassphraseField", "signing password"));
+            QVERIFY(qmltest::Click(m_app, "signMessagePassphraseConfirmButton")); QTRY_VERIFY(model->signingSucceeded());
+            earlier = model->signature(); QVERIFY(!earlier.isEmpty());
+        }
+        QVERIFY(qmltest::Click(m_app, "signMessageButton")); QVERIFY(qmltest::WaitForVisible(m_app, "signMessagePassphrasePopup"));
+        QVERIFY(qmltest::SetText(m_app, "signMessagePassphraseField", "wrong password"));
+        QVERIFY(qmltest::Click(m_app, "signMessagePassphraseConfirmButton"));
+        QTRY_VERIFY(!model->signingBusy() && !model->signingError().isEmpty());
+        QVERIFY(qmltest::Click(m_app, "signMessagePassphraseCancelButton"));
+        QTRY_VERIFY(!qmltest::Find(m_app, "signMessagePassphrasePopup")->property("visible").toBool());
+        qInfo() << "Cancelled authorization oracle" << model->signingNeedsUnlock() << model->signingError() << model->signature().size();
+        QVERIFY(!model->signingNeedsUnlock()); QVERIFY(model->signingError().isEmpty());
+        QCOMPARE(model->signature(), earlier);
+        QCOMPARE(qmltest::Rpc(m_app, "getwalletinfo", {}, wallet->name()).find_value("unlocked_until").getInt<int64_t>(), 0);
+        QVERIFY(model->signingResult()); QCOMPARE(model->signingResult()->error, walletmessage::Error::IncorrectPassphrase);
+    }
+    void addressDraftSurvivesBackWithoutImplicitPersistence()
+    {
+        auto* wallet = qmltest::CreateWallet(m_app, "draft-back"); QVERIFY(wallet);
+        const auto address = labeledAddress(wallet->name(), "Original note");
+        QVERIFY(openAddresses()); QTRY_VERIFY(addressRow(address));
+        auto* field = qmltest::Find(addressRow(address), "addressRowNoteField"); QVERIFY(field);
+        QVERIFY(enterText(field, "Unfinished private note"));
+        QVERIFY(qmltest::Click(m_app, "addressListBackButton"));
+        QVERIFY(qmltest::WaitForVisible(m_app, "walletAddressesRow"));
+        QCOMPARE(addressNote(wallet->name(), address), QStringLiteral("Original note"));
+        QVERIFY(qmltest::Click(m_app, "walletAddressesRow")); QTRY_VERIFY(addressRow(address));
+        field = qmltest::Find(addressRow(address), "addressRowNoteField"); QVERIFY(field);
+        QTRY_COMPARE(field->property("text").toString(), QStringLiteral("Unfinished private note"));
+        auto* editor = wallet->addressListModel()->labelEditor(address); QVERIFY(editor); QVERIFY(editor->dirty());
+        editor->discard(); QTRY_COMPARE(field->property("text").toString(), QStringLiteral("Original note"));
+        QCOMPARE(addressNote(wallet->name(), address), QStringLiteral("Original note"));
+    }
+    void labelCommitPreservesTheNextRowsFocusedEditor()
+    {
+        auto* wallet = qmltest::CreateWallet(m_app, "label-focus"); QVERIFY(wallet);
+        const auto alpha = labeledAddress(wallet->name(), "Alpha"), beta = labeledAddress(wallet->name(), "Beta");
+        QVERIFY(openAddresses()); QTRY_VERIFY(addressRow(alpha) && addressRow(beta));
+        QPointer<QObject> first = addressRow(alpha), second = addressRow(beta);
+        QPointer<QObject> field = qmltest::Find(second, "addressRowNoteField"); QVERIFY(field);
+        QSignalSpy reset{wallet->addressListModel(), &QAbstractItemModel::modelReset};
+        QVERIFY(enterText(qmltest::Find(first, "addressRowNoteField"), "Alpha committed"));
+        QVERIFY(editorCenterIsHittable(field));
+        QVERIFY(qmltest::Click(field)); QTRY_VERIFY(field->property("activeFocus").toBool());
+        QTRY_COMPARE(addressNote(wallet->name(), alpha), QStringLiteral("Alpha committed"));
+        QVERIFY(first && second && field); QCOMPARE(addressRow(beta), second.data());
+        QVERIFY(field->property("activeFocus").toBool()); QCOMPARE(field->property("text").toString(), QStringLiteral("Beta"));
+        QCOMPARE(reset.size(), 0); QCOMPARE(addressNote(wallet->name(), beta), QStringLiteral("Beta"));
+    }
+    void publicWatchOnlyWalletRefusesSigningWithoutPasswordPrompt()
+    {
+        auto* owner = qmltest::CreateWallet(m_app, "message-key-owner"); QVERIFY(owner);
+        const auto address = qmltest::NewAddress(m_app, owner->name(), "legacy");
+        UniValue create{UniValue::VOBJ}; create.pushKV("wallet_name", "message-watch-only"); create.pushKV("disable_private_keys", true);
+        qmltest::Rpc(m_app, "createwallet", create);
+        auto* wallet = qmltest::SelectOpenWalletForSetup(m_app, "message-watch-only"); QVERIFY(wallet);
+        QVERIFY(!qmltest::Rpc(m_app, "getwalletinfo", {}, wallet->name()).find_value("private_keys_enabled").get_bool());
+        QVERIFY(openMessages()); QVERIFY(qmltest::SetText(m_app, "signMessageAddressField", address));
+        QVERIFY(qmltest::SetText(m_app, "signMessageMessageField", "Watch-only cannot sign"));
+        QVERIFY(qmltest::Click(m_app, "signMessageButton")); auto* model = wallet->signVerifyMessageModel();
+        QTRY_VERIFY(!model->signingBusy()); QCOMPARE(model->signingState(), SignVerifyMessageModel::SigningFailed);
+        QVERIFY(!model->signingNeedsUnlock()); QVERIFY(!model->signingPrompt()); QVERIFY(model->signature().isEmpty());
+        QVERIFY(!qmltest::Find(m_app, "signMessagePassphrasePopup")->property("visible").toBool());
+        QCOMPARE(model->error().code, MessageSigningError::Signing);
+    }
+    void retiredLabelEditorCannotWriteToTheReopenedWallet()
+    {
+        auto* wallet = qmltest::CreateWallet(m_app, "label-reopen"); QVERIFY(wallet); const auto name = wallet->name();
+        const auto opening = wallet->opening()->identity();
+        const auto address = labeledAddress(name, "Original note");
+        QVERIFY(openAddresses()); QTRY_VERIFY(addressRow(address));
+        QVERIFY(qmltest::Click(qmltest::Find(addressRow(address), "addressRowDetailsButton")));
+        QVERIFY(qmltest::WaitForVisible(m_app, "addressDetailsPopup"));
+        QVERIFY(qmltest::SetText(m_app, "addressDetailsNoteField", "Retained original draft"));
+        auto* page = qmltest::Find(m_app, "addressListPage"); QVERIFY(page);
+        auto* editor = qobject_cast<TextEditSessionModel*>(page->property("selectedEditor").value<QObject*>()); QVERIFY(editor);
+        QTRY_VERIFY(editor->dirty()); editor->setParent(nullptr); QQmlEngine::setObjectOwnership(editor, QQmlEngine::CppOwnership);
+        std::unique_ptr<TextEditSessionModel> retained{editor};
+        UniValue unload{UniValue::VARR}; unload.push_back(name.toStdString());
+        // No dialog-close command precedes unload. The retained projection is
+        // deliberately detached; Core must not wait for its GUI destruction.
+        qmltest::Rpc(m_app, "unloadwallet", unload);
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller);
+        QTRY_VERIFY(!controller->walletForName(name)); QTRY_VERIFY(!editor->available());
+        UniValue load{UniValue::VARR}; load.push_back(name.toStdString()); qmltest::Rpc(m_app, "loadwallet", load);
+        QTRY_VERIFY(controller->walletForName(name) && controller->walletForName(name)->available());
+        QVERIFY(controller->walletForName(name)->opening()->identity() != opening);
+        QSignalSpy rejected{editor, &TextEditSessionModel::commandRejected};
+        editor->text()->edit("Must not reach successor"); editor->save();
+        QCOMPARE(rejected.size(), 2); QCOMPARE(editor->entityId(), address);
+        QCOMPARE(editor->error().code, TextEditError::Closed); QVERIFY(!editor->saveResult().present);
+        QCOMPARE(addressNote(name, address), QStringLiteral("Original note"));
     }
 
     void signingUnlocksOnlyForTheOperation()

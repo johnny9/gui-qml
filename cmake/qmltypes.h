@@ -25,6 +25,9 @@
 #include <qml/models/chainmodel.h>
 #include <qml/models/coinslistmodel.h>
 #include <qml/models/debuglogmodel.h>
+#include <qml/models/exacttextdocument.h>
+#include <qml/models/texteditsessionmodel.h>
+#include <qml/models/messagesigningprompt.h>
 #include <qml/models/flowdetailsmodel.h>
 #include <qml/models/desktoptrayiconcontroller.h>
 #include <qml/models/desktopwindowbehaviormodel.h>
@@ -223,6 +226,17 @@ struct WalletProvisioningCheckForeign {
     QML_UNCREATABLE("Owned by the wallet controller")
 };
 
+struct ExactTextDocumentForeign { Q_GADGET QML_FOREIGN(ExactTextDocument) QML_NAMED_ELEMENT(ExactTextDocument) };
+struct TextEditSessionModelForeign { Q_GADGET QML_FOREIGN(TextEditSessionModel) QML_NAMED_ELEMENT(TextEditSessionModel) QML_UNCREATABLE("Owned by an editor factory") };
+struct TextEditInputForeign { Q_GADGET QML_FOREIGN(TextEditInput) QML_NAMED_ELEMENT(TextEditInput) QML_UNCREATABLE("Owned by an editor") };
+struct TextEditClosePromptForeign { Q_GADGET QML_FOREIGN(TextEditClosePrompt) QML_NAMED_ELEMENT(TextEditClosePrompt) QML_UNCREATABLE("Owned by an editor") };
+struct TextEditErrorForeign { Q_GADGET QML_FOREIGN(TextEditError) QML_ANONYMOUS };
+struct TextEditConflictForeign { Q_GADGET QML_FOREIGN(TextEditConflict) QML_ANONYMOUS };
+struct TextEditSaveResultForeign { Q_GADGET QML_FOREIGN(TextEditSaveResult) QML_ANONYMOUS };
+struct MessageSigningPromptForeign { Q_GADGET QML_FOREIGN(MessageSigningPrompt) QML_NAMED_ELEMENT(MessageSigningPrompt) QML_UNCREATABLE("Owned by a signing attempt") };
+struct MessageSigningErrorForeign { Q_GADGET QML_FOREIGN(MessageSigningError) QML_ANONYMOUS };
+struct MessageVerificationSnapshotForeign { Q_GADGET QML_FOREIGN(MessageVerificationSnapshot) QML_ANONYMOUS };
+
 struct BitcoinAmountForeign {
     Q_GADGET
     QML_FOREIGN(BitcoinAmount)
@@ -372,7 +386,8 @@ struct SendRecipientsListModelForeign {
 struct SignVerifyMessageModelForeign {
     Q_GADGET
     QML_FOREIGN(SignVerifyMessageModel)
-    QML_ANONYMOUS
+    QML_NAMED_ELEMENT(SignVerifyMessageModel)
+    QML_UNCREATABLE("Owned by a wallet")
 };
 
 struct PsbtQmlModelForeign {

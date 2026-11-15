@@ -17,11 +17,14 @@ SettingsPage {
     objectName: "signVerifyMessagePage"
 
     property WalletQmlModel wallet: null
-    property var signVerifyModel: wallet ? wallet.signVerifyMessageModel : null
+    property SignVerifyMessageModel signVerifyModel: wallet ? wallet.signVerifyMessageModel : null
     readonly property string verifyResultText: signVerifyModel ? signVerifyModel.verificationText : ""
     readonly property bool verifyResultSuccess: signVerifyModel ? signVerifyModel.verificationValid : false
     property int initialTab: SignVerifyMessage.SignTab
     property int selectedMode: root.initialTab
+    onVisibleChanged: if (!root.visible && signPassphrasePopup && signPassphrasePopup.context) signPassphrasePopup.context.retire()
+    onSignVerifyModelChanged: if (signPassphrasePopup && signPassphrasePopup.context
+            && (!root.signVerifyModel || root.signVerifyModel.signingPrompt !== signPassphrasePopup.context)) signPassphrasePopup.context.retire()
 
     enum Tabs { SignTab, VerifyTab }
     readonly property bool signingComplete: !!root.signVerifyModel
@@ -43,6 +46,7 @@ SettingsPage {
     contentSpacing: 24
 
     function clearSignForm() {
+        if (root.signVerifyModel && root.signVerifyModel.signingBusy) return
         signAddress.text = ""
         signMessageText.text = ""
         if (root.signVerifyModel) root.signVerifyModel.clear()
@@ -56,22 +60,23 @@ SettingsPage {
     }
 
     Binding { target: root.signVerifyModel; property: "signingAddress"; value: signAddressModel.address; when: root.signVerifyModel !== null }
-    Binding { target: root.signVerifyModel; property: "signingMessage"; value: signMessageText.text; when: root.signVerifyModel !== null }
+    Binding { target: root.signVerifyModel; property: "signingMessage"; value: signMessageText.exactText; when: root.signVerifyModel !== null }
     Binding { target: root.signVerifyModel; property: "verificationAddress"; value: verifyAddressModel.address; when: root.signVerifyModel !== null }
-    Binding { target: root.signVerifyModel; property: "verificationMessage"; value: verifyMessageText.text; when: root.signVerifyModel !== null }
-    Binding { target: root.signVerifyModel; property: "verificationSignature"; value: verifySignature.text; when: root.signVerifyModel !== null }
+    Binding { target: root.signVerifyModel; property: "verificationMessage"; value: verifyMessageText.exactText; when: root.signVerifyModel !== null }
+    Binding { target: root.signVerifyModel; property: "verificationSignature"; value: verifySignature.exactText; when: root.signVerifyModel !== null }
 
     function submitSign(passphrase) {
-        if (!root.signVerifyModel || root.signVerifyModel.signingBusy
+        if (!root.signVerifyModel || root.signVerifyModel.signingBusy || !signMessageText.exactTextValid
                 || signAddressModel.normalizationPending || signAddressModel.normalizationError.length > 0) return
-        if (arguments.length === 0) root.signVerifyModel.requestSignMessage(signAddressModel.address, signMessageText.text)
-        else root.signVerifyModel.requestSignMessageWithPassphrase(signAddressModel.address, signMessageText.text, passphrase)
+        if (arguments.length === 0) root.signVerifyModel.sign()
+        else root.signVerifyModel.requestSignMessageWithPassphrase(signAddressModel.address, signMessageText.exactText, passphrase)
     }
 
     function submitVerify() {
         if (root.signVerifyModel && !root.signVerifyModel.verificationBusy
+                && verifyMessageText.exactTextValid && verifySignature.exactTextValid
                 && !verifyAddressModel.normalizationPending && verifyAddressModel.normalizationError.length === 0)
-            root.signVerifyModel.requestVerifyMessage(verifyAddressModel.address, verifyMessageText.text, verifySignature.text)
+            root.signVerifyModel.verify(verifySignature.exactText)
     }
 
     Connections {
@@ -152,7 +157,7 @@ SettingsPage {
                     readOnly: root.signingComplete
                     showCopyButton: root.signingComplete
                     copyButtonObjectName: "signMessageCopyMessageButton"
-                    onCopyRequested: Clipboard.setText(text)
+                    onCopyRequested: Clipboard.setText(exactText)
                 }
 
                 RowLayout {
@@ -164,8 +169,8 @@ SettingsPage {
                         Layout.fillWidth: true
                         text: qsTr("Sign message")
                         enabled: !!root.signVerifyModel
-                            && root.signVerifyModel.signingAddressValid && !root.signVerifyModel.signingBusy
-                            && !signAddressModel.normalizationPending && signAddressModel.normalizationError.length === 0
+                            && root.signVerifyModel.canSign
+                            && signMessageText.exactTextValid && !signAddressModel.normalizationPending && signAddressModel.normalizationError.length === 0
                         onClicked: root.submitSign()
                     }
 
@@ -267,7 +272,8 @@ SettingsPage {
                         Layout.fillWidth: true
                         text: qsTr("Verify message")
                         enabled: !!root.signVerifyModel
-                            && root.signVerifyModel.verificationAddressValid && !root.signVerifyModel.verificationBusy
+                            && root.signVerifyModel.canVerify
+                            && verifyMessageText.exactTextValid && verifySignature.exactTextValid
                             && !verifyAddressModel.normalizationPending && verifyAddressModel.normalizationError.length === 0
                             && verifySignature.text.length > 0
                         onClicked: root.submitVerify()
@@ -310,20 +316,22 @@ SettingsPage {
         descriptionText: qsTr("Enter the wallet password to sign this message.")
         confirmText: qsTr("Unlock and sign")
         busyConfirmText: qsTr("Signing...")
-        property var context: null
-        readonly property bool contextValid: context !== null && root.visible
-            && root.signVerifyModel === context.model
-            && root.signVerifyModel.signingAddress === context.address
-            && root.signVerifyModel.signingMessage === context.message
-        onAboutToShow: context = { model: root.signVerifyModel, address: signAddressModel.address, message: signMessageText.text }
-        onContextValidChanged: if (!contextValid) close()
-        onClosed: context = null
-        busy: contextValid && context.model.signingBusy
-        errorText: contextValid && context.model.signingNeedsUnlock ? context.model.signingError : ""
-        onSubmitted: (passphrase) => {
-            if (contextValid && !context.model.signingBusy)
-                context.model.requestSignMessageWithPassphrase(context.address, context.message, passphrase)
+        property MessageSigningPrompt context: null
+        readonly property bool contextValid: context !== null && context.pending && root.visible
+            && root.signVerifyModel !== null && root.signVerifyModel.signingPrompt === context
+        onAboutToShow: context = root.signVerifyModel ? root.signVerifyModel.signingPrompt : null
+        Timer {
+            interval: 0
+            running: signPassphrasePopup.visible && !signPassphrasePopup.contextValid
+            onTriggered: if (!signPassphrasePopup.contextValid) signPassphrasePopup.close()
         }
+        onClosed: {
+            if (context) context.cancel()
+            context = null
+        }
+        busy: contextValid && context.busy
+        errorText: contextValid ? context.error : ""
+        onSubmitted: (passphrase) => { if (contextValid) context.submit(passphrase) }
     }
 
 }

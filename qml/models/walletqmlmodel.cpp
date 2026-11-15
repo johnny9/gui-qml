@@ -1631,7 +1631,7 @@ ReceiveRequestOperation* WalletQmlModel::submitRequest(walletrequests::Command c
             target->setPaymentReceived(false);
             if (!observer || !target || observer->m_stopping) return;
             if (intent && intent->select) {
-                target->setNoteSelf(address.label);
+                target->setNoteSelfBaseline(address.label, true);
                 if (!observer || !target || observer->m_stopping) return;
                 target->setIsEditing(true);
                 if (!observer || !target || observer->m_stopping) return;
@@ -1702,6 +1702,7 @@ ReceiveRequestOperation* WalletQmlModel::savePaymentRequest(PaymentRequest* requ
     }
     command.draft = {request->address(), request->label(), request->message(), request->noteSelf(),
                      request->addressType(), request->amount()->satoshi()};
+    command.preserve_current_note = command.kind == walletrequests::Kind::Create && request->notePrefilled() && !request->noteDirty();
     command.require_unused = consume_address;
     command.consume_address = consume_address;
     if (consume_address) command.reservation = m_receiving_intent;
@@ -1784,7 +1785,7 @@ bool WalletQmlModel::applyRequest(PaymentRequest* target, walletrequests::Prepar
     if (!update(1, [&] { target->setAddressType(data.address_type); })) return false;
     if (!update(1, [&] { target->setLabel(data.label); })) return false;
     if (!update(1, [&] { target->setMessage(data.message); })) return false;
-    if (!update(1, [&] { target->setNoteSelf(data.note); })) return false;
+    if (!update(1, [&] { if (as_template) target->setNoteSelf(data.note); else target->setNoteSelfBaseline(data.note); })) return false;
     if (!update(1, [&] { target->amount()->setSatoshi(data.amount_sats); })) return false;
     if (as_template) {
         if (!update(0, [&] { target->setIsEditing(false); })) return false;
@@ -2003,6 +2004,71 @@ ReceiveRequestOperation* WalletQmlModel::setAddressLabel(const QString& address,
     walletrequests::Command command; command.kind = walletrequests::Kind::Label;
     command.address = address; command.label = label;
     return submitRequest(std::move(command));
+}
+
+TextEditSessionModel* WalletQmlModel::editAddressLabel(const QString& address, QObject* parent)
+{
+    if (!available() || !m_request_store || address.isEmpty() || address.size() > 128) return nullptr;
+    TextEditSessionModel::Ports ports;
+    ports.execution = {m_opening->scheduler(), m_fee_read_services.post};
+    ports.validate = [](const QString& value) { return value.size() <= 16384; };
+    ports.read = [weak = std::weak_ptr<walletopening::Session>{m_opening}, address](auto done) {
+        const auto opening = weak.lock();
+        if (!opening) return execution::Admission{{}, execution::Rejection::Closed};
+        return opening->read([address](interfaces::Wallet& wallet) {
+            TextEditSessionModel::Read result;
+            const auto destination = DecodeDestination(address.toStdString());
+            std::string label; wallet::AddressPurpose purpose;
+            if (!IsValidDestination(destination) || !wallet.getAddress(destination, &label, &purpose) || purpose != wallet::AddressPurpose::RECEIVE)
+                result.error = {TextEditError::Invalid, tr("This receiving address is no longer available.")};
+            // UTF8 bytes and UTF16 editor units have different bounds. A
+            // supported16384-unit note must survive its own readback.
+            else if (label.size() > 65536) result.error = {TextEditError::Invalid, tr("The saved note is too long to edit here.")};
+            else result.value = QString::fromStdString(label);
+            return result;
+        }, done, [done](std::exception_ptr) { done({{}, {TextEditError::Refused, tr("The address note could not be read.")}}); }, execution::WorkClass::Observation, 262144);
+    };
+    ports.admitWrite = [weak_store = std::weak_ptr<walletrequests::Store>{m_request_store}, weak_opening = std::weak_ptr<walletopening::Session>{m_opening}, address]() -> TextEditSessionModel::Writer {
+        const auto store = weak_store.lock(); const auto opening = weak_opening.lock();
+        if (!store || !opening) return {};
+        const auto action = opening->startAction();
+        if (!action) return {};
+        return [store, action, address](const auto& attempt, auto done, const auto&) {
+        walletrequests::Command command; command.kind = walletrequests::Kind::Label;
+        command.address = address; command.label = attempt.values[0]; command.expected_label = attempt.base[0];
+        const auto admission = store->submitResult(std::move(command), [saved_value = attempt.values[0], done = std::move(done)](const walletrequests::Result& result) {
+            const auto* outcome = &result;
+            TextEditSessionModel::Write value;
+            value.persisted = outcome->label_saved;
+            value.value = saved_value;
+            value.outcome = outcome->error == walletrequests::Error::Uncertain ? persistentedit::Outcome::Unknown
+                : outcome->error == walletrequests::Error::None ? persistentedit::Outcome::Saved
+                : outcome->label_saved ? persistentedit::Outcome::Partial : persistentedit::Outcome::Failed;
+            value.error = {outcome->error == walletrequests::Error::None ? TextEditError::None
+                : outcome->error == walletrequests::Error::Changed ? TextEditError::Changed
+                : outcome->error == walletrequests::Error::Uncertain ? TextEditError::Unknown : TextEditError::Persistence,
+                ReceiveRequestOperation::ErrorText(outcome->error)};
+            if (!outcome->label_saved && outcome->current_label) value.current = TextEditSessionModel::Read{*outcome->current_label, {}};
+            done(std::move(value));
+        }, action);
+        return execution::Admission{{}, admission.rejection};
+        };
+    };
+    // The read-only port cannot infer an unknown write's durability from a
+    // matching value. Until a retained native receipt resolves it, stay unknown.
+    auto* editor = new AddressLabelEditorModel(this, address, std::move(ports), parent);
+    if (!editor->available()) { delete editor; return nullptr; }
+    connect(this, &WalletQmlModel::availableChanged, editor, [this, editor] { if (!available()) editor->retire(); });
+    connect(this, &WalletQmlModel::addressLabelsChanged, editor, &TextEditSessionModel::refresh);
+    connect(editor, &TextEditSessionModel::changed, this, [this, editor, consumed = QString{}]() mutable {
+        const auto result = editor->saveResult();
+        if (!result.persisted || result.operationId == consumed || !observationsAllowed()) return;
+        consumed = result.operationId;
+        const QPointer<WalletQmlModel> observer{this};
+        Q_EMIT addressLabelsChanged();
+        if (observer && observationsAllowed()) Q_EMIT addressListChanged();
+    });
+    return editor;
 }
 
 void WalletQmlModel::requestSendFacts()

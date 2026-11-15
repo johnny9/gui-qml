@@ -109,6 +109,12 @@ void PaymentRequest::setNoteSelf(const QString& note)
     Q_EMIT noteSelfChanged();
 }
 
+void PaymentRequest::setNoteSelfBaseline(const QString& note, bool address_prefill)
+{
+    m_note_baseline = note; m_note_prefilled = address_prefill;
+    setNoteSelf(note);
+}
+
 BitcoinAmount* PaymentRequest::amount() const
 {
     return m_amount;
@@ -289,6 +295,7 @@ void PaymentRequest::clear()
     m_message.clear();
     m_address_type.clear();
     m_noteSelf.clear();
+    m_note_baseline.clear(); m_note_prefilled = false;
     m_amountError.clear();
     m_id.clear();
     m_needs_unlock = false;

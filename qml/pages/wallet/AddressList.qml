@@ -28,12 +28,7 @@ SettingsPage {
     property bool selectedUsed: false
     property bool selectedHasPaymentRequest: false
     property string errorText: ""
-    property var pendingNotesByAddress: ({})
-    property ReceiveRequestOperation noteOperation: null
-    property WalletQmlModel noteOperationWallet: null
-    property string noteOperationAddress: ""
-    property string noteOperationLabel: ""
-    property bool noteOperationHandled: false
+    property TextEditSessionModel selectedEditor: null
     property ReceiveRequestOperation receiveOperation: null
     property WalletQmlModel receiveOperationWallet: null
     property string receiveOperationAddress: ""
@@ -110,60 +105,17 @@ SettingsPage {
     onWalletChanged: {
         receiveOperation = null;
         receiveOperationWallet = null;
-        noteOperation = null;
-        noteOperationWallet = null;
+        selectedEditor = null;
+        detailsPopup.close();
     }
 
-    function pendingNote(address, fallbackLabel) {
-        const note = root.pendingNotesByAddress[address]
-        return note === undefined ? fallbackLabel : note
-    }
-
-    function updatePendingNote(address, note) {
-        const notes = {}
-        for (const key in root.pendingNotesByAddress) {
-            notes[key] = root.pendingNotesByAddress[key]
-        }
-        notes[address] = note
-        root.pendingNotesByAddress = notes
-    }
-
-    function clearPendingNote(address) {
-        const notes = {}
-        for (const key in root.pendingNotesByAddress) {
-            if (key !== address) notes[key] = root.pendingNotesByAddress[key]
-        }
-        root.pendingNotesByAddress = notes
-    }
-
-    function updateAddressLabel(address, label) {
-        if (noteOperation && noteOperation.pending) return false
-        root.errorText = ""
-        const command = root.addressModel.setAddressLabel(address, label)
-        if (!command) {
-            root.errorText = qsTr("The address note could not be saved.")
-            return false
-        }
-        noteOperationWallet = wallet
-        noteOperationAddress = address
-        noteOperationLabel = label
-        noteOperationHandled = false
-        noteOperation = command
-        finishAddressLabel()
-        return true
-    }
-    function finishAddressLabel() {
-        if (!noteOperation || noteOperation.pending || noteOperationHandled || !wallet || noteOperationWallet !== wallet) return
-        noteOperationHandled = true
-        if (noteOperation.labelSaved) {
-            if (selectedAddress === noteOperationAddress) selectedLabel = noteOperationLabel
-            clearPendingNote(noteOperationAddress)
-        }
-        errorText = noteOperation.errorText
+    Connections {
+        target: root.wallet
+        function onAvailableChanged() { if (!root.wallet || !root.wallet.available) detailsPopup.close() }
     }
     Connections {
-        target: root.noteOperation
-        function onChanged() { root.finishAddressLabel() }
+        target: root.selectedEditor
+        function onClosed() { detailsPopup.close() }
     }
 
     rightItem: IconButton {
@@ -211,7 +163,7 @@ SettingsPage {
         rightPadding: 40
         topPadding: 30
         bottomPadding: 30
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        closePolicy: Popup.NoAutoClose
 
         enter: Transition {
             NumberAnimation {
@@ -264,7 +216,8 @@ SettingsPage {
         contentItem: AddressDetails {
             id: addressDetails
             address: root.selectedAddress
-            label: root.selectedLabel
+            label: root.selectedEditor ? root.selectedEditor.committedText : root.selectedLabel
+            editor: root.selectedEditor
             amount: root.selectedAmount
             hasAmount: root.selectedHasAmount
             category: root.selectedCategory
@@ -275,14 +228,7 @@ SettingsPage {
             onCreatePaymentRequestRequested: {
                 root.createPaymentRequestFromSelected(function() { detailsPopup.close(); });
             }
-            onEditLabelRequested: (address, label) => {
-                if (root.updateAddressLabel(address, label)) {
-                    root.selectedLabel = label;
-                    noteErrorText = "";
-                } else {
-                    noteErrorText = qsTr("This address is no longer available.");
-                }
-            }
+
         }
     }
 
@@ -350,14 +296,13 @@ SettingsPage {
 
             delegate: AddressRow {
                 width: ListView.view.width
-                pendingLabel: root.pendingNote(address, label)
+                addressModel: root.addressModel
+                commitOnFocusLoss: root.visible && (!root.navigationStack || root.StackView.status === StackView.Active)
                 showDivider: index < addressList.count - 1
-                onNoteDraftEdited: (address, label) => root.updatePendingNote(address, label)
-                onNoteDraftDiscarded: (address) => root.clearPendingNote(address)
-                onEditLabelRequested: (address, label) => root.updateAddressLabel(address, label)
                 onDetailsRequested: (address, label, amount, hasAmount, category, scriptType, used) => {
                     root.selectedAddress = address;
-                    root.selectedLabel = root.pendingNote(address, label);
+                    root.selectedEditor = root.addressModel && category !== "change" ? root.addressModel.editLabel(address) : null;
+                    root.selectedLabel = label;
                     root.selectedAmount = amount;
                     root.selectedHasAmount = hasAmount;
                     root.selectedCategory = category;

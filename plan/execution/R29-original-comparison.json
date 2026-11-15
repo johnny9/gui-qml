@@ -1,0 +1,512 @@
+{
+  "parent_test_only": "7545bc2748e1cd367ae09d35ebf7068950e20dcf",
+  "parent_production": "2df977a789f01db5b4f3079abaf2a96f34168e47",
+  "head_implementation": "984dc5f20a62246521824fb2912d89b2eaf5aa45",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "status": "Original scalar/Core failures reproduced; matching head rows all pass",
+  "actual_parent_counts": {
+    "pass": 5,
+    "fail": 20
+  },
+  "parent_body_count": 25,
+  "parent_driver_exit": 1,
+  "diagnostics": "Outer integration stderr empty. Child XML retains exactly the six established minimal-platform font warnings on each of17 rows, also present in passing controls. They do not replace the independently recorded scalar/Core mismatches. No production suppression or warning-policy change.",
+  "evidence": [
+    {
+      "selection": "literal-locale-original-oracle",
+      "body_count": 8,
+      "passed": 0,
+      "failed": 8,
+      "actual_process_exit": 8,
+      "command": [
+        "/review/build/bin/bitcoinqml_unit_tests",
+        "-platform",
+        "minimal",
+        "--test-class=AddressListModelTests",
+        "localeFormattingUsesTheWalletDisplayConvention",
+        "-o",
+        "/r29/artifacts/native/literal-locale-original-oracle/results.xml,xml",
+        "-o",
+        "/r29/artifacts/native/literal-locale-original-oracle/results.txt,txt"
+      ],
+      "outer_stderr_bytes": 142,
+      "child_stderr_known_minimal_font_receipts": 0,
+      "xml_sha256": "a24f4327c017d2ae2ddfabc9d30c3ae109aef33cc83d663f338d6fe6171996a4"
+    },
+    {
+      "selection": "unchangedAddressDraftCannotHideOrOverwriteAnExternalRelabel",
+      "body_count": 1,
+      "passed": 0,
+      "failed": 1,
+      "actual_process_exit": 1,
+      "command": [
+        "/review/build/bin/bitcoinqml_integration_tests",
+        "--module=receive",
+        "--wallet=enabled",
+        "--test=unchangedAddressDraftCannotHideOrOverwriteAnExternalRelabel",
+        "--profile-dir=/tmp/r29-integration",
+        "-o",
+        "/r29/artifacts/integration/unchangedAddressDraftCannotHideOrOverwriteAnExternalRelabel/results.xml,xml",
+        "-o",
+        "/r29/artifacts/integration/unchangedAddressDraftCannotHideOrOverwriteAnExternalRelabel/results.txt,txt"
+      ],
+      "outer_stderr_bytes": 0,
+      "child_stderr_known_minimal_font_receipts": 1,
+      "xml_sha256": "3258d22290b0f42219fc16ab0e1684ed3d38ff1cc1cb6e7f8e26fe41ce2e252b"
+    },
+    {
+      "selection": "addressDetailsCloseRequiresExplicitDraftConsent",
+      "body_count": 3,
+      "passed": 0,
+      "failed": 3,
+      "actual_process_exit": 3,
+      "command": [
+        "/review/build/bin/bitcoinqml_integration_tests",
+        "--module=receive",
+        "--wallet=enabled",
+        "--test=addressDetailsCloseRequiresExplicitDraftConsent",
+        "--profile-dir=/tmp/r29-integration",
+        "-o",
+        "/r29/artifacts/integration/addressDetailsCloseRequiresExplicitDraftConsent/results.xml,xml",
+        "-o",
+        "/r29/artifacts/integration/addressDetailsCloseRequiresExplicitDraftConsent/results.txt,txt"
+      ],
+      "outer_stderr_bytes": 0,
+      "child_stderr_known_minimal_font_receipts": 3,
+      "xml_sha256": "7b4d44eafa9e1ca4002c8a343e1e38df0faaafa0cc3d624638aaafd2943f7f65"
+    },
+    {
+      "selection": "untouchedRequestPrefillUsesTheLatestPrivateMetadata",
+      "body_count": 4,
+      "passed": 1,
+      "failed": 3,
+      "actual_process_exit": 3,
+      "command": [
+        "/review/build/bin/bitcoinqml_integration_tests",
+        "--module=receive",
+        "--wallet=enabled",
+        "--test=untouchedRequestPrefillUsesTheLatestPrivateMetadata",
+        "--profile-dir=/tmp/r29-integration",
+        "-o",
+        "/r29/artifacts/integration/untouchedRequestPrefillUsesTheLatestPrivateMetadata/results.xml,xml",
+        "-o",
+        "/r29/artifacts/integration/untouchedRequestPrefillUsesTheLatestPrivateMetadata/results.txt,txt"
+      ],
+      "outer_stderr_bytes": 0,
+      "child_stderr_known_minimal_font_receipts": 4,
+      "xml_sha256": "3773efd9c079f94590d4fea922b4edfd375cd1c47bcac74abd66b85cec112af5"
+    },
+    {
+      "selection": "nativeMessageEntryPreservesExactCryptoBytes",
+      "body_count": 4,
+      "passed": 3,
+      "failed": 1,
+      "actual_process_exit": 1,
+      "command": [
+        "/review/build/bin/bitcoinqml_integration_tests",
+        "--module=receive",
+        "--wallet=enabled",
+        "--test=nativeMessageEntryPreservesExactCryptoBytes",
+        "--profile-dir=/tmp/r29-integration",
+        "-o",
+        "/r29/artifacts/integration/nativeMessageEntryPreservesExactCryptoBytes/results.xml,xml",
+        "-o",
+        "/r29/artifacts/integration/nativeMessageEntryPreservesExactCryptoBytes/results.txt,txt"
+      ],
+      "outer_stderr_bytes": 0,
+      "child_stderr_known_minimal_font_receipts": 4,
+      "xml_sha256": "daaaad757221550fe5feb06ab51c5960ababedd0718bb4188f8da9fb8e521e6a"
+    },
+    {
+      "selection": "publishedNbspSignatureVerifiesThroughTheNativeEditor",
+      "body_count": 1,
+      "passed": 0,
+      "failed": 1,
+      "actual_process_exit": 1,
+      "command": [
+        "/review/build/bin/bitcoinqml_integration_tests",
+        "--module=receive",
+        "--wallet=enabled",
+        "--test=publishedNbspSignatureVerifiesThroughTheNativeEditor",
+        "--profile-dir=/tmp/r29-integration",
+        "-o",
+        "/r29/artifacts/integration/publishedNbspSignatureVerifiesThroughTheNativeEditor/results.xml,xml",
+        "-o",
+        "/r29/artifacts/integration/publishedNbspSignatureVerifiesThroughTheNativeEditor/results.txt,txt"
+      ],
+      "outer_stderr_bytes": 0,
+      "child_stderr_known_minimal_font_receipts": 1,
+      "xml_sha256": "0c992f038631e88582d00fb4a188be387f518b2acfc9554d0120261aa13b5469"
+    },
+    {
+      "selection": "cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature",
+      "body_count": 2,
+      "passed": 0,
+      "failed": 2,
+      "actual_process_exit": 2,
+      "command": [
+        "/review/build/bin/bitcoinqml_integration_tests",
+        "--module=receive",
+        "--wallet=enabled",
+        "--test=cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature",
+        "--profile-dir=/tmp/r29-integration",
+        "-o",
+        "/r29/artifacts/integration/cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature/results.xml,xml",
+        "-o",
+        "/r29/artifacts/integration/cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature/results.txt,txt"
+      ],
+      "outer_stderr_bytes": 0,
+      "child_stderr_known_minimal_font_receipts": 2,
+      "xml_sha256": "5a0c4cc77f1123d85dcc8e01e25e14595133a0481279029e0d4cfb016cc0626c"
+    },
+    {
+      "selection": "addressDraftSurvivesBackWithoutImplicitPersistence",
+      "body_count": 1,
+      "passed": 0,
+      "failed": 1,
+      "actual_process_exit": 1,
+      "command": [
+        "/review/build/bin/bitcoinqml_integration_tests",
+        "--module=receive",
+        "--wallet=enabled",
+        "--test=addressDraftSurvivesBackWithoutImplicitPersistence",
+        "--profile-dir=/tmp/r29-integration",
+        "-o",
+        "/r29/artifacts/integration/addressDraftSurvivesBackWithoutImplicitPersistence/results.xml,xml",
+        "-o",
+        "/r29/artifacts/integration/addressDraftSurvivesBackWithoutImplicitPersistence/results.txt,txt"
+      ],
+      "outer_stderr_bytes": 0,
+      "child_stderr_known_minimal_font_receipts": 1,
+      "xml_sha256": "81670e9e6a242c730d9e044c9ec96a5ac8b9ef86e24e803c13c102d69f5b120d"
+    },
+    {
+      "selection": "labelCommitPreservesTheNextRowsFocusedEditor",
+      "body_count": 1,
+      "passed": 1,
+      "failed": 0,
+      "actual_process_exit": 0,
+      "command": [
+        "/review/build/bin/bitcoinqml_integration_tests",
+        "--module=receive",
+        "--wallet=enabled",
+        "--test=labelCommitPreservesTheNextRowsFocusedEditor",
+        "--profile-dir=/tmp/r29-integration",
+        "-o",
+        "/r29/artifacts/integration/labelCommitPreservesTheNextRowsFocusedEditor/results.xml,xml",
+        "-o",
+        "/r29/artifacts/integration/labelCommitPreservesTheNextRowsFocusedEditor/results.txt,txt"
+      ],
+      "outer_stderr_bytes": 0,
+      "child_stderr_known_minimal_font_receipts": 1,
+      "xml_sha256": "a2aaf9df6c7b6661ddf8eb7286c2c082ab4fa038d69174cd06d775c3fbe0ac93"
+    }
+  ],
+  "rows": [
+    {
+      "group": "native",
+      "identity": "AddressListModelTests::localeFormattingUsesTheWalletDisplayConvention:english-btc",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Literal locale/unit convention differs: old formatter uses thin-space grouping, fixed decimal dot and BTC prefix; new en_US/de_DE/full-precision expectations pass on head.",
+      "original_failure": {
+        "file": "/review/source/test/test_addresslistmodel.cpp",
+        "line": "951",
+        "description": "Compared values are not the same\n   Actual   (fixture.model->data(fixture.model->index(found), AddressListModel::DisplayAmountRole).toString()): \"\\u20BF 11\\u2009862.62345678\"\n   Expected (expected)                                                                                        : \"11,862.62345678 BTC\""
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/native/literal-locale-original-oracle/results.xml"
+    },
+    {
+      "group": "native",
+      "identity": "AddressListModelTests::localeFormattingUsesTheWalletDisplayConvention:german-btc",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Literal locale/unit convention differs: old formatter uses thin-space grouping, fixed decimal dot and BTC prefix; new en_US/de_DE/full-precision expectations pass on head.",
+      "original_failure": {
+        "file": "/review/source/test/test_addresslistmodel.cpp",
+        "line": "951",
+        "description": "Compared values are not the same\n   Actual   (fixture.model->data(fixture.model->index(found), AddressListModel::DisplayAmountRole).toString()): \"\\u20BF 11\\u2009862.62345678\"\n   Expected (expected)                                                                                        : \"11.862,62345678 BTC\""
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/native/literal-locale-original-oracle/results.xml"
+    },
+    {
+      "group": "native",
+      "identity": "AddressListModelTests::localeFormattingUsesTheWalletDisplayConvention:english-mbtc",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Literal locale/unit convention differs: old formatter uses thin-space grouping, fixed decimal dot and BTC prefix; new en_US/de_DE/full-precision expectations pass on head.",
+      "original_failure": {
+        "file": "/review/source/test/test_addresslistmodel.cpp",
+        "line": "951",
+        "description": "Compared values are not the same\n   Actual   (fixture.model->data(fixture.model->index(found), AddressListModel::DisplayAmountRole).toString()): \"11\\u2009862\\u2009623.45678 mBTC\"\n   Expected (expected)                                                                                        : \"11,862,623.45678 mBTC\""
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/native/literal-locale-original-oracle/results.xml"
+    },
+    {
+      "group": "native",
+      "identity": "AddressListModelTests::localeFormattingUsesTheWalletDisplayConvention:german-mbtc",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Literal locale/unit convention differs: old formatter uses thin-space grouping, fixed decimal dot and BTC prefix; new en_US/de_DE/full-precision expectations pass on head.",
+      "original_failure": {
+        "file": "/review/source/test/test_addresslistmodel.cpp",
+        "line": "951",
+        "description": "Compared values are not the same\n   Actual   (fixture.model->data(fixture.model->index(found), AddressListModel::DisplayAmountRole).toString()): \"11\\u2009862\\u2009623.45678 mBTC\"\n   Expected (expected)                                                                                        : \"11.862.623,45678 mBTC\""
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/native/literal-locale-original-oracle/results.xml"
+    },
+    {
+      "group": "native",
+      "identity": "AddressListModelTests::localeFormattingUsesTheWalletDisplayConvention:english-bits",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Literal locale/unit convention differs: old formatter uses thin-space grouping, fixed decimal dot and BTC prefix; new en_US/de_DE/full-precision expectations pass on head.",
+      "original_failure": {
+        "file": "/review/source/test/test_addresslistmodel.cpp",
+        "line": "951",
+        "description": "Compared values are not the same\n   Actual   (fixture.model->data(fixture.model->index(found), AddressListModel::DisplayAmountRole).toString()): \"11\\u2009862\\u2009623\\u2009456.78 bits\"\n   Expected (expected)                                                                                        : \"11,862,623,456.78 bits\""
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/native/literal-locale-original-oracle/results.xml"
+    },
+    {
+      "group": "native",
+      "identity": "AddressListModelTests::localeFormattingUsesTheWalletDisplayConvention:german-bits",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Literal locale/unit convention differs: old formatter uses thin-space grouping, fixed decimal dot and BTC prefix; new en_US/de_DE/full-precision expectations pass on head.",
+      "original_failure": {
+        "file": "/review/source/test/test_addresslistmodel.cpp",
+        "line": "951",
+        "description": "Compared values are not the same\n   Actual   (fixture.model->data(fixture.model->index(found), AddressListModel::DisplayAmountRole).toString()): \"11\\u2009862\\u2009623\\u2009456.78 bits\"\n   Expected (expected)                                                                                        : \"11.862.623.456,78 bits\""
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/native/literal-locale-original-oracle/results.xml"
+    },
+    {
+      "group": "native",
+      "identity": "AddressListModelTests::localeFormattingUsesTheWalletDisplayConvention:english-sat",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Literal locale/unit convention differs: old formatter uses thin-space grouping, fixed decimal dot and BTC prefix; new en_US/de_DE/full-precision expectations pass on head.",
+      "original_failure": {
+        "file": "/review/source/test/test_addresslistmodel.cpp",
+        "line": "951",
+        "description": "Compared values are not the same\n   Actual   (fixture.model->data(fixture.model->index(found), AddressListModel::DisplayAmountRole).toString()): \"1\\u2009186\\u2009262\\u2009345\\u2009678 sats\"\n   Expected (expected)                                                                                        : \"1,186,262,345,678 sats\""
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/native/literal-locale-original-oracle/results.xml"
+    },
+    {
+      "group": "native",
+      "identity": "AddressListModelTests::localeFormattingUsesTheWalletDisplayConvention:german-sat",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Literal locale/unit convention differs: old formatter uses thin-space grouping, fixed decimal dot and BTC prefix; new en_US/de_DE/full-precision expectations pass on head.",
+      "original_failure": {
+        "file": "/review/source/test/test_addresslistmodel.cpp",
+        "line": "951",
+        "description": "Compared values are not the same\n   Actual   (fixture.model->data(fixture.model->index(found), AddressListModel::DisplayAmountRole).toString()): \"1\\u2009186\\u2009262\\u2009345\\u2009678 sats\"\n   Expected (expected)                                                                                        : \"1.186.262.345.678 sats\""
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/native/literal-locale-original-oracle/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.unchangedAddressDraftCannotHideOrOverwriteAnExternalRelabel",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Unchanged/return-to-base GUI draft writes Original note over independently RPC-persisted External note.",
+      "original_failure": {
+        "file": "/review/source/test/integration/wallet_activity/test_receive.cpp",
+        "line": "627",
+        "description": "Child exited with status 1\nCompared values are not the same\n   Actual   (persisted)                      : \"Original note\"\n   Expected (QStringLiteral(\"External note\")): \"External note\"\n\nstderr.txt:\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/regular\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/semibold\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/robotomono/regular\"\n\nRetained failed profile: /tmp/r29-integration/bitcoinqml-receive.enabled.unchangedAddressDraftCannotHideOrOverwriteAnExternalRelabel-nINwHm"
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/unchangedAddressDraftCannotHideOrOverwriteAnExternalRelabel/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.addressDetailsCloseRequiresExplicitDraftConsent:keep-editing",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "All three rows find Unfinished private note already persisted before close consent; old automatic focus-loss write bypasses Save/Discard/KeepEditing. Parent stops before later choice assertions.",
+      "original_failure": {
+        "file": "/review/source/test/integration/wallet_activity/test_receive.cpp",
+        "line": "655",
+        "description": "Child exited with status 1\nCompared values are not the same\n   Actual   (before_consent)                 : \"Unfinished private note\"\n   Expected (QStringLiteral(\"Original note\")): \"Original note\"\n\nstderr.txt:\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/regular\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/semibold\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/robotomono/regular\"\n\nRetained failed profile: /tmp/r29-integration/bitcoinqml-receive.enabled.addressDetailsCloseRequiresExplicitDraftConsent-pSLWbR"
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/addressDetailsCloseRequiresExplicitDraftConsent/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.addressDetailsCloseRequiresExplicitDraftConsent:discard",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "All three rows find Unfinished private note already persisted before close consent; old automatic focus-loss write bypasses Save/Discard/KeepEditing. Parent stops before later choice assertions.",
+      "original_failure": {
+        "file": "/review/source/test/integration/wallet_activity/test_receive.cpp",
+        "line": "655",
+        "description": "Child exited with status 1\nCompared values are not the same\n   Actual   (before_consent)                 : \"Unfinished private note\"\n   Expected (QStringLiteral(\"Original note\")): \"Original note\"\n\nstderr.txt:\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/regular\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/semibold\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/robotomono/regular\"\n\nRetained failed profile: /tmp/r29-integration/bitcoinqml-receive.enabled.addressDetailsCloseRequiresExplicitDraftConsent-iPHeNf"
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/addressDetailsCloseRequiresExplicitDraftConsent/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.addressDetailsCloseRequiresExplicitDraftConsent:save",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "All three rows find Unfinished private note already persisted before close consent; old automatic focus-loss write bypasses Save/Discard/KeepEditing. Parent stops before later choice assertions.",
+      "original_failure": {
+        "file": "/review/source/test/integration/wallet_activity/test_receive.cpp",
+        "line": "655",
+        "description": "Child exited with status 1\nCompared values are not the same\n   Actual   (before_consent)                 : \"Unfinished private note\"\n   Expected (QStringLiteral(\"Original note\")): \"Original note\"\n\nstderr.txt:\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/regular\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/semibold\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/robotomono/regular\"\n\nRetained failed profile: /tmp/r29-integration/bitcoinqml-receive.enabled.addressDetailsCloseRequiresExplicitDraftConsent-qWMmqY"
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/addressDetailsCloseRequiresExplicitDraftConsent/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.untouchedRequestPrefillUsesTheLatestPrivateMetadata:renamed",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Untouched/returned-to-base Rent prefill overwrites newer Landlord or cleared public address metadata. Explicit local edit remains an independently passing control.",
+      "original_failure": {
+        "file": "/review/source/test/integration/wallet_activity/test_receive.cpp",
+        "line": "690",
+        "description": "Child exited with status 1\nCompared values are not the same\n   Actual   (addressNote(wallet->name(), address)): \"Rent\"\n   Expected (expected)                            : \"Landlord\"\n\nstderr.txt:\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/regular\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/semibold\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/robotomono/regular\"\n\nRetained failed profile: /tmp/r29-integration/bitcoinqml-receive.enabled.untouchedRequestPrefillUsesTheLatestPrivateMetadata-GtmdPO"
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/untouchedRequestPrefillUsesTheLatestPrivateMetadata/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.untouchedRequestPrefillUsesTheLatestPrivateMetadata:cleared",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Untouched/returned-to-base Rent prefill overwrites newer Landlord or cleared public address metadata. Explicit local edit remains an independently passing control.",
+      "original_failure": {
+        "file": "/review/source/test/integration/wallet_activity/test_receive.cpp",
+        "line": "690",
+        "description": "Child exited with status 1\nCompared values are not the same\n   Actual   (addressNote(wallet->name(), address)): \"Rent\"\n   Expected (expected)                            : \"\"\n\nstderr.txt:\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/regular\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/semibold\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/robotomono/regular\"\n\nRetained failed profile: /tmp/r29-integration/bitcoinqml-receive.enabled.untouchedRequestPrefillUsesTheLatestPrivateMetadata-SwYBUG"
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/untouchedRequestPrefillUsesTheLatestPrivateMetadata/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.untouchedRequestPrefillUsesTheLatestPrivateMetadata:explicit-note",
+      "parent": "pass",
+      "head": "pass",
+      "classification": "Untouched/returned-to-base Rent prefill overwrites newer Landlord or cleared public address metadata. Explicit local edit remains an independently passing control.",
+      "original_failure": null,
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/untouchedRequestPrefillUsesTheLatestPrivateMetadata/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.untouchedRequestPrefillUsesTheLatestPrivateMetadata:returned-to-base",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Untouched/returned-to-base Rent prefill overwrites newer Landlord or cleared public address metadata. Explicit local edit remains an independently passing control.",
+      "original_failure": {
+        "file": "/review/source/test/integration/wallet_activity/test_receive.cpp",
+        "line": "690",
+        "description": "Child exited with status 1\nCompared values are not the same\n   Actual   (addressNote(wallet->name(), address)): \"Rent\"\n   Expected (expected)                            : \"Landlord\"\n\nstderr.txt:\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/regular\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/semibold\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/robotomono/regular\"\n\nRetained failed profile: /tmp/r29-integration/bitcoinqml-receive.enabled.untouchedRequestPrefillUsesTheLatestPrivateMetadata-hmmAUq"
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/untouchedRequestPrefillUsesTheLatestPrivateMetadata/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.nativeMessageEntryPreservesExactCryptoBytes:nbsp",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "NBSP exact-byte signature check fails; ordinary-space, Unicode/newline and literal-markup controls pass, so this is a specific native text conversion defect.",
+      "original_failure": {
+        "file": "/review/source/test/integration/wallet_activity/test_receive.cpp",
+        "line": "718",
+        "description": "Child exited with status 1\n'exact' returned FALSE. ()\n\nstderr.txt:\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/regular\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/semibold\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/robotomono/regular\"\n\nRetained failed profile: /tmp/r29-integration/bitcoinqml-receive.enabled.nativeMessageEntryPreservesExactCryptoBytes-FCUsnY"
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/nativeMessageEntryPreservesExactCryptoBytes/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.nativeMessageEntryPreservesExactCryptoBytes:ordinary-space",
+      "parent": "pass",
+      "head": "pass",
+      "classification": "NBSP exact-byte signature check fails; ordinary-space, Unicode/newline and literal-markup controls pass, so this is a specific native text conversion defect.",
+      "original_failure": null,
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/nativeMessageEntryPreservesExactCryptoBytes/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.nativeMessageEntryPreservesExactCryptoBytes:unicode-tabs-newlines",
+      "parent": "pass",
+      "head": "pass",
+      "classification": "NBSP exact-byte signature check fails; ordinary-space, Unicode/newline and literal-markup controls pass, so this is a specific native text conversion defect.",
+      "original_failure": null,
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/nativeMessageEntryPreservesExactCryptoBytes/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.nativeMessageEntryPreservesExactCryptoBytes:literal-markup",
+      "parent": "pass",
+      "head": "pass",
+      "classification": "NBSP exact-byte signature check fails; ordinary-space, Unicode/newline and literal-markup controls pass, so this is a specific native text conversion defect.",
+      "original_failure": null,
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/nativeMessageEntryPreservesExactCryptoBytes/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.publishedNbspSignatureVerifiesThroughTheNativeEditor",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Independent published NBSP signature is rejected through the old native editor; exact head path verifies the same vector.",
+      "original_failure": {
+        "file": "/review/source/test/integration/wallet_activity/test_receive.cpp",
+        "line": "745",
+        "description": "Child exited with status 1\n'model->verificationValid()' returned FALSE. ()\n\nstderr.txt:\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/regular\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/semibold\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/robotomono/regular\"\n\nRetained failed profile: /tmp/r29-integration/bitcoinqml-receive.enabled.publishedNbspSignatureVerifiesThroughTheNativeEditor-MhxEfk"
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/publishedNbspSignatureVerifiesThroughTheNativeEditor/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature:no-prior-signature",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Both rows retain obsolete signingNeedsUnlock after cancel. Parent stops at that assertion; no separate claim that its later retained-signature oracle failed.",
+      "original_failure": {
+        "file": "/review/source/test/integration/wallet_activity/test_receive.cpp",
+        "line": "776",
+        "description": "Child exited with status 1\n'!model->signingNeedsUnlock()' returned FALSE. ()\n\nstderr.txt:\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/regular\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/semibold\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/robotomono/regular\"\n\nRetained failed profile: /tmp/r29-integration/bitcoinqml-receive.enabled.cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature-XaYwef"
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature:retained-signature",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Both rows retain obsolete signingNeedsUnlock after cancel. Parent stops at that assertion; no separate claim that its later retained-signature oracle failed.",
+      "original_failure": {
+        "file": "/review/source/test/integration/wallet_activity/test_receive.cpp",
+        "line": "776",
+        "description": "Child exited with status 1\n'!model->signingNeedsUnlock()' returned FALSE. ()\n\nstderr.txt:\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/regular\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/semibold\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/robotomono/regular\"\n\nRetained failed profile: /tmp/r29-integration/bitcoinqml-receive.enabled.cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature-oAtjKL"
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/cancelledMessageAuthorizationClearsItsErrorAndRetainsEarlierSignature/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.addressDraftSurvivesBackWithoutImplicitPersistence",
+      "parent": "fail",
+      "head": "pass",
+      "classification": "Back navigation has already persisted Unfinished private note instead of leaving Core Original note and retaining the draft.",
+      "original_failure": {
+        "file": "/review/source/test/integration/wallet_activity/test_receive.cpp",
+        "line": "790",
+        "description": "Child exited with status 1\nCompared values are not the same\n   Actual   (addressNote(wallet->name(), address)): \"Unfinished private note\"\n   Expected (QStringLiteral(\"Original note\"))     : \"Original note\"\n\nstderr.txt:\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/regular\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/bitcoincoresans/semibold\"\n[warning] default: This plugin does not support application fonts\n[warning] default: Failed to load font resource: \":/fonts/robotomono/regular\"\n\nRetained failed profile: /tmp/r29-integration/bitcoinqml-receive.enabled.addressDraftSurvivesBackWithoutImplicitPersistence-DjgyXv"
+      },
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/addressDraftSurvivesBackWithoutImplicitPersistence/results.xml"
+    },
+    {
+      "group": "integration",
+      "identity": "receive.enabled.labelCommitPreservesTheNextRowsFocusedEditor",
+      "parent": "pass",
+      "head": "pass",
+      "classification": "Passing original control: incremental next-row delegate/focus/no-reset behavior is retained from R10; no newly fixed focus defect is claimed.",
+      "original_failure": null,
+      "parent_xml": "red-parent-02/artifacts-worker-collection/integration/labelCommitPreservesTheNextRowsFocusedEditor/results.xml"
+    }
+  ]
+}
