@@ -45,6 +45,12 @@ constexpr qsizetype MAX_FRAME{128 * 1024};
 constexpr size_t MAX_CLIENTS{4}, MAX_REPLIES{64};
 StartResult Rejected(const QString& error) { return {StartStatus::Rejected, error, {}}; }
 StartResult Unknown() { return {StartStatus::Unknown, QStringLiteral("Delivery to the running GUI could not be confirmed. Check that GUI before trying again."), {}}; }
+std::vector<QString> ProducerKeys(const std::vector<Input>& inputs)
+{
+    std::vector<QString> result; result.reserve(inputs.size());
+    for (const auto& input : inputs) result.push_back(input.producer_key);
+    return result;
+}
 QString NormalizeProfile(const QString& directory)
 {
     const auto input = fs::PathFromString(directory.toStdString());
@@ -158,8 +164,7 @@ StartResult Forward(const QString& endpoint, std::vector<Input> inputs, const Li
     // service nonce namespaces the immutable batch, and both ACK and query use
     // this same mapping. Hashing keeps even maximal original keys bounded.
     const auto nonce = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    std::vector<QString> producer_keys;
-    for (const auto& input : inputs) producer_keys.push_back(input.producer_key);
+    const auto producer_keys = ProducerKeys(inputs);
     for (auto& input : inputs)
         input.producer_key = nonce + QLatin1Char(':') + QString::fromLatin1(QCryptographicHash::hash(input.producer_key.toUtf8(), QCryptographicHash::Sha256).toHex());
     const auto start = limits.now(); QJsonArray items, keys;
@@ -471,10 +476,10 @@ execution::Admission Service::start(QString directory, QString network, std::vec
                         try { return Forward(endpoint, *forward_payload, state->limits, state->flags->stopping); }
                         catch (...) { return Unknown(); }
                     }, [finish, lifetime, forward_payload](StartResult result) {
-                        if (result.producer_keys.empty()) for (const auto& input : *forward_payload) result.producer_keys.push_back(input.producer_key);
+                        if (result.producer_keys.empty()) result.producer_keys = ProducerKeys(*forward_payload);
                         finish(std::move(result));
                     }, [finish, lifetime, forward_payload](std::exception_ptr) {
-                        auto result = Unknown(); for (const auto& input : *forward_payload) result.producer_keys.push_back(input.producer_key);
+                        auto result = Unknown(); result.producer_keys = ProducerKeys(*forward_payload);
                         finish(std::move(result));
                     },
                         {execution::Lane::Core, 1024 + Queue::MAX_PENDING_BYTES, state->key});
@@ -490,7 +495,7 @@ execution::Admission Service::start(QString directory, QString network, std::vec
         try {
             const auto admitted = owner->admit(*payload, [finish, payload, result = std::move(result)](auto admission) mutable {
                 if (!admission) result = Rejected(QStringLiteral("The GUI could not accept these requests."));
-                else { result.receipts = std::move(admission.receipts); for (const auto& input : *payload) result.producer_keys.push_back(input.producer_key); }
+                else { result.receipts = std::move(admission.receipts); result.producer_keys = ProducerKeys(*payload); }
                 finish(std::move(result));
             });
             if (!admitted) finish(Rejected(QStringLiteral("The GUI could not accept these requests.")));

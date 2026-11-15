@@ -92,8 +92,15 @@ private Q_SLOTS:
         auto retired = Stop(service); QVERIFY(Ready(retired)); QVERIFY(service->retired());
         owner.reset(); QVERIFY(Shutdown(executor)); QVERIFY(service);
     }
+    void secondaryForwardsEarlyFileOpenAndArgumentsAndDoesNotStealEmptyEndpoint_data()
+    {
+        QTest::addColumn<bool>("arguments");
+        QTest::newRow("early-open-only-empty-argv") << false;
+        QTest::newRow("early-open-and-arguments") << true;
+    }
     void secondaryForwardsEarlyFileOpenAndArgumentsAndDoesNotStealEmptyEndpoint()
     {
+        QFETCH(bool, arguments);
         BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()}, empty_executor{execution::Limits::Bounded()};
         auto primary_owner = NewOwner(primary_executor.scheduler());
         auto secondary_owner = NewOwner(secondary_executor.scheduler());
@@ -106,15 +113,35 @@ private Q_SLOTS:
             Shutdown(primary_executor); Shutdown(secondary_executor); Shutdown(empty_executor);
         });
         QTemporaryDir directory; QVERIFY(directory.isValid());
-        auto listening = Start(primary, directory.path()); QVERIFY(Ready(listening)); QVERIFY(listening.get().status == StartStatus::Primary);
+        const auto profile = directory.filePath(QStringLiteral("missing/profile"));
+        auto listening = Start(primary, profile); QVERIFY(Ready(listening)); QVERIFY(listening.get().status == StartStatus::Primary);
         QVERIFY(secondary_owner->admit({Request(1, Origin::FileOpen)}, {}));
-        auto forwarded = Start(secondary, directory.path(), {Request(2)}); QVERIFY(Ready(forwarded));
+        auto forwarded = Start(secondary, profile, arguments ? std::vector<Input>{Request(2)} : std::vector<Input>{}); QVERIFY(Ready(forwarded));
         const auto result = forwarded.get(); QVERIFY(result.status == StartStatus::Forwarded);
-        QCOMPARE(result.receipts.size(), size_t{2}); QCOMPARE(result.producer_keys, (std::vector<QString>{QStringLiteral("1"), QStringLiteral("2")}));
-        QCOMPARE(result.receipts[0].delivery, uint64_t{1}); QCOMPARE(result.receipts[1].delivery, uint64_t{2});
+        QCOMPARE(result.receipts.size(), arguments ? size_t{2} : size_t{1});
+        QCOMPARE(result.producer_keys, arguments ? (std::vector<QString>{QStringLiteral("1"), QStringLiteral("2")}) : std::vector<QString>{QStringLiteral("1")});
+        QCOMPARE(result.receipts[0].delivery, uint64_t{1}); if (arguments) QCOMPARE(result.receipts[1].delivery, uint64_t{2});
         QVERIFY(!secondary_owner->admit({Request(3, Origin::FileOpen)}, {}));
-        auto no_request = Start(empty, directory.path()); QVERIFY(Ready(no_request)); QVERIFY(no_request.get().status == StartStatus::Rejected);
-        QVERIFY(!primary->retired());
+        auto no_request = Start(empty, profile); QVERIFY(Ready(no_request)); QVERIFY(no_request.get().status == StartStatus::Rejected);
+        QVERIFY(!primary->retired()); QVERIFY(!QFileInfo::exists(profile));
+    }
+    void reusedLocalProducerKeyFromAnotherServiceIsASeparateDelivery()
+    {
+        BackendExecutor primary_executor{execution::Limits::Bounded()}, first_executor{execution::Limits::Bounded()}, second_executor{execution::Limits::Bounded()};
+        auto primary_owner = NewOwner(primary_executor.scheduler());
+        auto first_owner = NewOwner(first_executor.scheduler());
+        auto second_owner = NewOwner(second_executor.scheduler());
+        auto primary = Service::Create(primary_executor.scheduler(), primary_owner);
+        auto first = Service::Create(first_executor.scheduler(), first_owner);
+        auto second = Service::Create(second_executor.scheduler(), second_owner);
+        const auto cleanup = qScopeGuard([&] { primary->stop(); first->stop(); second->stop(); primary_owner.reset(); first_owner.reset(); second_owner.reset(); Shutdown(primary_executor); Shutdown(first_executor); Shutdown(second_executor); });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        auto listening = Start(primary, directory.path()); QVERIFY(Ready(listening)); QVERIFY(listening.get().status == StartStatus::Primary);
+        auto original = Start(first, directory.path(), {Request(1)}); QVERIFY(Ready(original));
+        auto reused = Start(second, directory.path(), {Request(1)}); QVERIFY(Ready(reused));
+        const auto before = original.get(), after = reused.get();
+        QVERIFY(before.status == StartStatus::Forwarded); QVERIFY(after.status == StartStatus::Forwarded);
+        QCOMPARE(before.producer_keys, after.producer_keys); QCOMPARE(before.receipts.front().delivery, uint64_t{1}); QCOMPARE(after.receipts.front().delivery, uint64_t{2});
     }
     void capacityRejectsWholeRemoteBatchWithoutConsumingIdentity()
     {
