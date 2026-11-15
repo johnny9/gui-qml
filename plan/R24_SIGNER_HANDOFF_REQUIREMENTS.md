@@ -29,3 +29,8 @@ direct broadcast, as well as wallet Send. The R21 audit found a remaining
 finalized-field trust gap in those standalone paths. Its guard and real-key
 regressions must be qualified before that work is accepted; the main Send pass
 does not establish a pass for every signing consumer.
+
+Apply these requirements to main Send, SignOnly and standalone PSBT sign/broadcast.
+Exercise both success and error at every held boundary. An unfinished partial
+signature map is not proof of verified completion; preserve recoverable bytes
+without granting submission authority. See [the focused schedule review](execution/R24-device-switch.md).

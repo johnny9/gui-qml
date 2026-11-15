@@ -20,12 +20,14 @@ progress without changing shared finding or schedule registers.
 | R15 | Focused checkpoint integrated:135 worker Linux bodies and31 supplemental Mac; merged206 actual behaviors pass, manifest count corrected by affected7-case rerun plus1newCore regression (207 distinct). QMLlint,11pinned static entries and app lint pass; R24 signing handoffs/R42 qualification pending |
 | R13 | Focused checkpoint integrated:172 worker QtTest bodies plus2 compatibility scenarios pass; same172 QtTest bodies rerun in combined339-body gate with pinned23-entry tidy, QML/app lint and5 IPC/lifecycle scenarios |
 | R19 | Focused checkpoint integrated:42 worker bodies,3 exact-parent REDs and merged248-body/17-static gate pass; source-refuted RC80 retained, R42 pending |
-| R29 | Coherent bace89 candidate validating on Gameboy;370 Core commands unchanged when optional app coverage is disabled. Native/QML/Core gate pending |
-| R33 | Independent editor/backend95 bodies pass with a parent marker-failure oracle; retirement repair, shared R29/frontend/integration gates pending |
-| R20 | Domain confirmation/submission ledger implementation active; Core receipt reason distinction awaits user decision |
-| R21 | Next independent root work: immutable PSBT document/analysis owner; R19 prerequisite accepted |
+| R29 | Focused checkpoint integrated:255 distinct worker bodies (135 native,95 QML,25 Core); parent25 executes20 intended failures and5 controls. Pinned static/QML/app lint pass. Combined122 native/Core bodies pass with R21; R42 remains pending |
+| R33 | Combined R29/source14 Bazzite135 bodies plus startup recovery pass; parent5 intended failures reproduced. Mac81/82 pass with one signer save-error failure under repair; current static pending. Acceptance remains open |
+| R20 | Candidate6f5100c9:139 distinct focused bodies and pinned lint/tidy/QML checks pass. Acceptance held for the pending public receipt reason decision; no disabled/rejected/relay inference |
+| R21 | Focused checkpoint integrated atffe3637d:270 R21 bodies plus122 R29 composition bodies pass (392 distinct combined);16 pinned static entries,app/QML lint pass. Scope095 held; R24 lifecycle and R42 remain open |
 | R24 | Signer compatibility hardening repair integrated:157 affected bodies, actual Core/HWI and10 pinned static entries pass; full R24 handoff/extraction gate pending |
-| R22–R23, R25–R27, R30–R32, R34–R40 | Authorized according to actual prerequisites; remaining implementation/gates pending |
+| R22 | Independent implementation starting on R21/R20 candidates; acceptance awaits R20 decision and its own focused gates |
+| R30 | Reservation/request editor work active; exact receive-type capability filtering007 awaits user decision about the public-interface gap |
+| R23, R25–R27, R31–R32, R34–R40 | Authorized according to actual prerequisites; remaining implementation/gates pending |
 | R41 | Cleanup pending |
 | R42 | Final coverage, full suites/matrices, native Windows and sanitizers pending |
 
@@ -63,3 +65,8 @@ preparation and exact scope dispositions. The [signer repair](R24_SIGNER_GUARD_C
 records key compatibility without physical-device identity assumptions. The
 [R20 public receipt limitation](R20_PUBLIC_RECEIPT_LIMIT.md) is a separate pending
 user decision; it does not authorize Core changes or automatic rebroadcast.
+
+The [device-switch review](execution/R24-device-switch.md) records the required
+held admission/process/Domain/GUI schedules and the remaining partial-result
+qualification. R21 verifies finalized inputs; it does not establish every R24
+partial-signature or physical-device lifecycle guarantee.

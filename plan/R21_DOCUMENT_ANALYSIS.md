@@ -1,4 +1,4 @@
-# R21 document analysis: implementation and evidence in progress
+# R21 document analysis: focused checkpoint
 
 Core stays at `44901d8f64cb617714707bd025ecd83f108353c2`. No subtree or Qt
 changes, private wallet access, wallet RPC escape, persisted-format change or
@@ -58,8 +58,9 @@ derive from the explicit state; unverified evidence cannot grant broadcast.
 A localized empty metadata error cannot grant authority or be mislabeled as
 a missing fee when the fee is actually known.
 
-The standalone guard is implemented but remains unqualified. Full R24 held-device,
-timeout, stale-publication and partial-result obligations remain open; no physical
+The standalone guard passed the focused compatible/incompatible-key cases and
+Core integration selection recorded below. Full R24 held-device, timeout,
+stale-publication and partial-result obligations remain open; no physical
 hardware pass is claimed.
 
 ## Scope accounting
@@ -131,7 +132,12 @@ bounded read remain unchanged; no new cardinality cap was added.
 
 Exact-head app lint passed with the pinned Core 449 linter. Exact-head QML lint
 passed in both recorded compatibility variants (Qt 6.2 and 6.5). The pinned
-Clang23/Bitcoin-plugin tidy selection, including fresh MOCs for the changed
-C++ files, is the remaining focused static gate. Exhaustive coverage,
+Clang23/Bitcoin-plugin tidy selection passed all 16 entries: nine changed
+handwritten translation units and seven fresh MOC aggregates. The static and
+exact-head app-lint input is `86c718c55642eced3801bdef28e2b8c2efad64a2`; only
+plan evidence changed after runtime candidate610. Integration at
+`ffe3637d1fd79923dadfa8306b0b8dcdabe4d5ed` has the exact qualified candidate tree.
+`R21/final/evidence/FINAL_HANDOFF.json` and `integration-14/ACCEPTANCE.json` retain
+commands, hashes, counts and limitations. Exhaustive coverage,
 sanitizers and the full configuration/platform matrix remain deferred to R42
 under the user's validation policy.
