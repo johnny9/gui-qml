@@ -16,7 +16,6 @@ Popup {
     readonly property int contentMargin: 28
     property bool showCompleteDiagnostics: false
     property RuntimePromptModel prompt: ApplicationModels.nodeModel.runtimePrompt
-    readonly property Window presentationWindow: parent !== null ? parent.Window.window : null
 
     function runtimeButtonSpecs() {
         return [
@@ -58,7 +57,7 @@ Popup {
     // Native visibility is a bounded presentation handoff. It precedes the
     // popup enter transition, which may not advance while the window is hidden.
     Component.onCompleted: {
-        const window = root.presentationWindow
+        const window = root.parent !== null ? root.parent.Window.window : null
         if (prompt !== null && window !== null) {
             window.show()
             window.requestActivate()
@@ -75,7 +74,7 @@ Popup {
     visible: prompt !== null
     onOpened: {
         runtimeButtonTags.restart()
-        const window = root.presentationWindow
+        const window = root.parent !== null ? root.parent.Window.window : null
         if (prompt !== null && window !== null) {
             window.show()
             window.requestActivate()
@@ -86,9 +85,10 @@ Popup {
     }
     Component.onDestruction: if (prompt !== null) prompt.unavailable()
     Connections {
-        target: root.presentationWindow
+        target: root.parent !== null ? root.parent.Window.window : null
         function onVisibleChanged() {
-            if (root.presentationWindow !== null && !root.presentationWindow.visible && root.prompt !== null) root.prompt.unavailable()
+            const window = root.parent !== null ? root.parent.Window.window : null
+            if (window !== null && !window.visible && root.prompt !== null) root.prompt.unavailable()
         }
     }
 
