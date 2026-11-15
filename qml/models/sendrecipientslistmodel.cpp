@@ -526,16 +526,23 @@ bool SendRecipientsListModel::projectImport(const senddraft::AppliedImport& valu
     m_import_owner = value.owner; m_import_child = value.child;
     m_intent_revision = value.applied_intent; m_revision = revision;
     m_projecting_import = true;
+    SendRecipient* maximum = value.recipient.mode == senddraft::AmountMode::Maximum ? target.data()
+        : m_maximum_recipient == target ? nullptr : m_maximum_recipient.data();
+    if (m_maximum_recipient != maximum) {
+        m_maximum_recipient = maximum;
+        Q_EMIT maximumRecipientChanged();
+        if (!guard || m_closed) return false;
+    }
     target->projectImportedPayment(value.recipient, value.formatted_address,
                                    value.amount_changed, value.private_note_changed);
     if (!guard || m_closed) return false;
     m_projecting_import = false;
-    m_import_pending->store(false);
     // Canonical data and the child receipt were committed on Domain already.
     // This notification invalidates old preparation aliases without creating
     // another draft edit or performing the imported effect again.
     Q_EMIT intentSubmitted(); if (!guard || m_closed) return false;
     Q_EMIT revisionChanged(); if (!guard || m_closed) return false;
+    m_import_pending->store(false);
     Q_EMIT validationChanged(); if (!guard || m_closed) return false;
     if (m_opening) m_opening->postDomain([backend, owner = value.owner, child = value.child] {
         if (backend->applied_import && backend->applied_import->owner == owner && backend->applied_import->child == child)

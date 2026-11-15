@@ -2389,7 +2389,7 @@ WalletQmlModel::PreparationState WalletQmlModel::preparationState() const
 bool WalletQmlModel::currentTransactionNeedsRevalidation() const
 {
     return m_current_transaction && m_current_transaction_source == CurrentTransactionSource::SendDraft &&
-        !m_preparation_projection.candidate_current;
+        ((m_send_recipients && m_send_recipients->importPending()) || !m_preparation_projection.candidate_current);
 }
 
 quint64 WalletQmlModel::preparationId() const
@@ -2825,7 +2825,7 @@ void WalletQmlModel::applyPreparationResolution(transactionattempt::Result resol
 
 quint64 WalletQmlModel::approveExternalSignerTransaction()
 {
-    if (!observationsAllowed() || signerApprovalState() == ApprovalState::ApprovalUncertain || psbtActionBusy() || signerApprovalBusy() ||
+    if (!observationsAllowed() || currentTransactionNeedsRevalidation() || signerApprovalState() == ApprovalState::ApprovalUncertain || psbtActionBusy() || signerApprovalBusy() ||
         preparationBusy() || sendBusy() || m_sending_commit->load() || !available() || !m_opening || !m_current_transaction ||
         !m_current_transaction->getWtx() || !m_signer_approval_operation || m_approval_id == std::numeric_limits<quint64>::max()) return 0;
     const QPointer<WalletQmlModel> observer{this};
