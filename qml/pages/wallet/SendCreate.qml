@@ -179,10 +179,6 @@ PageStack {
         sendPage.m_legacyPaymentRequestStatus = ""
         sendPage.m_legacyPaymentRequestIsError = false
         sendPage.m_legacyPaymentRequestMessage = ""
-        sendPage.m_pendingClipboardUri = ""
-        sendPage.m_filledUri = ""
-        sendPage.m_dismissedUri = ""
-        sendPage.showClipboardUriBanner = false
         sendPage.clearPendingPaymentUriPaste()
     }
 
@@ -227,10 +223,6 @@ PageStack {
         sendPage.m_legacyPaymentRequestStatus = ""
         sendPage.m_legacyPaymentRequestIsError = false
         sendPage.m_legacyPaymentRequestMessage = ""
-        sendPage.showClipboardUriBanner = false
-        sendPage.m_pendingClipboardUri = ""
-        sendPage.m_filledUri = ""
-        sendPage.m_dismissedUri = ""
         sendPage.m_applyingUri = false
         sendPage.clearPendingPaymentUriPaste()
         paymentUriOverwritePopup.close()
@@ -246,6 +238,7 @@ PageStack {
                 root.wallet.scheduleFeeEstimates()
             }
         }
+        function onValidationChanged() { if (!root.wallet.recipients.importPending) sendPage.checkClipboard() }
         function onCountChanged() {
             root.draftChanged()
             root.clearPrepareTransactionError()
@@ -346,7 +339,11 @@ PageStack {
 
         function openPsbtFileImport() {
             sendOptionsPopup.close()
-            psbtOpenDialog.open()
+            cancelUriAction()
+            m_importWallet = root.wallet
+            m_importSource = qsTr("file")
+            m_importOperation = BitcoinUri.captureImport(root.wallet, root.recipient, sendPage)
+            if (m_importOperation) psbtOpenDialog.open()
         }
 
         Popup {
@@ -474,9 +471,12 @@ PageStack {
             title: qsTr("Import PSBT")
             fileMode: AppFileDialog.OpenFile
             nameFilters: [qsTr("Partially Signed Bitcoin Transactions (*.psbt)"), qsTr("All files (*)")]
-            contextObject: root.wallet
+            contextObject: sendPage.m_importOperation
             enabled: root.visible && root.wallet !== null && root.wallet.available && !root.wallet.psbtActionBusy
-            onChosen: (context, file) => { if (context === root.wallet) root.requestPsbtImport(file.toString()) }
+            onChosen: (context, file) => {
+                const original = context as PaymentImportOperation
+                if (original && original === sendPage.m_importOperation && original.requestFile(file)) original.use()
+            }
         }
 
         // Kept hidden so functional tests can inject a PSBT path until the
@@ -539,20 +539,23 @@ PageStack {
 
         // Native clipboard capture and immutable Domain probe outcomes belong
         // to the original wallet, recipient, draft and editor selection.
-        property bool showClipboardUriBanner: false
-        property string m_pendingClipboardUri: ""
-        property double m_pendingClipboardCounter: -1
-        property string m_filledUri: ""
-        property string m_dismissedUri: ""
+        readonly property bool showClipboardUriBanner: root.visible && m_clipboardOperation !== null
+            && m_clipboardWallet !== null && m_clipboardWallet.available
+            && m_clipboardOperation.state === PaymentImportOperation.Inspecting
+            && m_clipboardOperation.sourceKind === PaymentImportOperation.PaymentSource
+            && m_clipboardOperation.canApply && !m_clipboardOperation.matchesExistingRequest
+            && root.wallet === m_clipboardWallet && root.recipient === m_clipboardRecipient
+            && root.draftRevision === m_clipboardRevision && root.hiddenCount === m_clipboardHidden
+            && Clipboard.revision === m_clipboardCounter
+        readonly property string m_pendingClipboardUri: showClipboardUriBanner ? m_clipboardText : ""
+        readonly property double m_pendingClipboardCounter: m_clipboardCounter
         property PaymentImportOperation m_importOperation: null
         property WalletQmlModel m_importWallet: null
         property string m_importSource: ""
         property string m_importPresentedResult: ""
         readonly property string importError: m_importOperation ? m_importOperation.error : ""
-        property BitcoinUriParseOperation m_uriOperation: null
-        property BitcoinUriParseOperation m_clipboardOperation: null
-        property var m_uriHandled: null
-        property var m_clipboardHandled: null
+        property PaymentImportOperation m_clipboardOperation: null
+        property string m_nativeHandoffHandled: ""
         property WalletQmlModel m_uriWallet: null
         property SendRecipient m_uriRecipient: null
         property SendRecipient m_uriCurrentRecipient: null
@@ -562,10 +565,6 @@ PageStack {
         property double m_uriRecipientRevision: -1
         property string m_uriRevision: ""
         property int m_uriHidden: -1
-        property string m_uriText: ""
-        property string m_uriSource: ""
-        property string m_uriField: ""
-        property string m_uriKind: ""
         property bool m_uriApplying: false
         property WalletQmlModel m_clipboardWallet: null
         property SendRecipient m_clipboardRecipient: null
@@ -574,25 +573,18 @@ PageStack {
         property double m_clipboardCounter: -1
         property string m_clipboardText: ""
         property bool m_applyingUri: false
-        property var m_pendingPastedPaymentRequest: null
-        property string m_pendingPastedPaymentRequestText: ""
         readonly property bool uriActionPending: (m_importOperation !== null && m_importOperation.pending) || m_uriApplying
-            || (m_uriOperation !== null && m_uriHandled !== m_uriOperation)
-            || m_pendingPastedPaymentRequest !== null
             || (m_uriPasteOwner !== null && m_uriPasteOwner.pending)
 
         Connections {
-            target: sendPage.m_uriOperation
-            function onFinished() { sendPage.finishUriAction() }
-        }
-        Connections {
-            target: sendPage.m_clipboardOperation
-            function onFinished() { sendPage.finishClipboardCheck() }
-        }
-        Connections {
             target: sendPage.m_importOperation
             function onChanged() {
-                if (sendPage.m_importOperation && sendPage.m_importOperation.promptToken) paymentUriOverwritePopup.open()
+                sendPage.performNativeHandoff()
+                const operation = sendPage.m_importOperation
+                if (!operation) return
+                if (operation.promptToken) paymentUriOverwritePopup.open()
+                if (operation.state === PaymentImportOperation.Applied || operation.state === PaymentImportOperation.Failed
+                        || operation.state === PaymentImportOperation.Closed) sendPage.finishPasteOwner(false)
                 sendPage.presentImportedReview()
             }
         }
@@ -604,42 +596,28 @@ PageStack {
             m_importPresentedResult = operation.resultToken
             root.openTransactionReview()
         }
-        function probeContext(recipient, field, payload) {
-            return {address: recipient ? recipient.address.address : "", amount: recipient ? recipient.amount.satoshi : 0,
-                maximum: recipient ? recipient.amountMode === SendRecipient.Maximum : false,
-                note: recipient ? recipient.label : "", requestLabel: recipient ? recipient.paymentRequestLabel : "",
-                sourceField: field || "", edited: !!(payload && payload.edited),
-                previousText: payload && payload.edited ? payload.previous : "",
-                currentText: payload && payload.edited ? payload.current : ""}
-        }
         function finishPasteOwner(cancel) {
             if (!m_uriPasteOwner || !m_uriPayload) return
             if (cancel && m_uriPasteOwner.intent === m_uriPayload) m_uriPasteOwner.cancel()
-            else m_uriPasteOwner.complete(m_uriPayload)
+            else if (!(m_uriPasteOwner.literalActive && m_uriPasteOwner.effectPending)) m_uriPasteOwner.complete(m_uriPayload)
         }
-        function clearPendingPaymentUriPaste() {
-            m_pendingPastedPaymentRequest = null
-            m_pendingPastedPaymentRequestText = ""
-        }
+        function clearPendingPaymentUriPaste() { finishPasteOwner(true) }
         function cancelUriAction() {
             if (m_importOperation) m_importOperation.cancel()
             m_importOperation = null
             m_importWallet = null
             m_importPresentedResult = ""
-            if (m_uriOperation) m_uriOperation.cancel()
-            m_uriOperation = null
-            if (m_uriPasteOwner && m_uriPayload && m_uriPasteOwner.intent === m_uriPayload) m_uriPasteOwner.cancel()
+            finishPasteOwner(true)
             m_uriPasteOwner = null
             m_uriPayload = null
             m_uriHadPasteOwner = false
-            clearPendingPaymentUriPaste()
+            m_nativeHandoffHandled = ""
             paymentUriOverwritePopup.close()
         }
         function cancelUriIntents() {
             cancelUriAction()
             if (m_clipboardOperation) m_clipboardOperation.cancel()
             m_clipboardOperation = null
-            showClipboardUriBanner = false
         }
         function uriContextValid() {
             return root.visible && m_uriWallet && m_uriWallet.available && root.wallet === m_uriWallet
@@ -647,7 +625,7 @@ PageStack {
                 && root.draftRevision === m_uriRevision && root.hiddenCount === m_uriHidden
                 && (!m_uriHadPasteOwner || (m_uriPasteOwner && m_uriPasteOwner.owns(m_uriPayload)))
         }
-        function requestUriAction(text, kind, source, field, payload, recipient) {
+        function requestUriAction(text, source, field, payload, recipient) {
             cancelUriAction()
             if (!root.visible || !root.wallet || !root.wallet.available || !(recipient || root.recipient)) {
                 if (payload && payload.origin) payload.origin.cancel()
@@ -659,144 +637,65 @@ PageStack {
             m_uriRecipientRevision = m_uriRecipient.validationRevision
             m_uriRevision = root.draftRevision
             m_uriHidden = root.hiddenCount
-            m_uriText = text
-            m_uriKind = kind
-            m_uriSource = source
-            m_uriField = field || ""
             m_uriPayload = payload || null
             m_uriPasteOwner = payload ? payload.origin : null
             m_uriHadPasteOwner = m_uriPasteOwner !== null
-            m_uriHandled = null
-            m_uriOperation = kind === "file" ? BitcoinUri.requestParseFile(text, sendPage)
-                : BitcoinUri.requestProbe(text, probeContext(m_uriRecipient, field, payload), sendPage)
-            if (!m_uriOperation) {
+            m_importWallet = m_uriWallet
+            m_importSource = source
+            m_importOperation = BitcoinUri.requestImportPaste(text, field, !!(payload && payload.edited),
+                payload && payload.edited ? payload.previous : "", payload && payload.edited ? payload.current : "",
+                m_uriWallet, m_uriRecipient, sendPage)
+            if (!m_importOperation) {
                 m_legacyPaymentRequestStatus = qsTr("Payment URI services are unavailable. Try again.")
                 m_legacyPaymentRequestIsError = true
                 finishPasteOwner(true)
                 return
             }
-            finishUriAction()
+            performNativeHandoff()
         }
-        function finishUriAction() {
-            const operation = m_uriOperation
-            if (!operation || operation.pending || m_uriHandled === operation) return
+        function performNativeHandoff() {
+            const operation = m_importOperation
+            if (!operation || !operation.nativeHandoffToken || m_nativeHandoffHandled === operation.nativeHandoffToken) return
+            if (!uriContextValid()) { cancelUriAction(); return }
+            const token = operation.nativeHandoffToken
+            m_nativeHandoffHandled = token
             m_uriApplying = true
-            m_uriHandled = operation
             try {
-                if (!uriContextValid()) { cancelUriAction(); return }
-                const result = operation.result
-                if (m_uriKind === "paste") {
-                    if (!result.probeSucceeded) {
-                        m_legacyPaymentRequestStatus = result.error
-                        m_legacyPaymentRequestIsError = true
-                        finishPasteOwner(true)
-                        return
-                    }
-                    const nativeEdit = m_uriPayload && m_uriPayload.edited
-                    if (!result.isPaymentUri || (nativeEdit && !result.pasteProvenance)) {
-                        if (m_uriPasteOwner) {
-                            if (nativeEdit && m_uriField === "amount" && result.containsPaymentUri) {
-                                m_uriPasteOwner.restore(m_uriPayload)
-                                m_uriPasteOwner.complete(m_uriPayload)
-                            } else m_uriPasteOwner.apply(m_uriPayload)
-                        }
-                        return
-                    }
-                    if (m_uriPasteOwner) m_uriPasteOwner.restore(m_uriPayload)
-                    if (result.success && result.conflicts) {
-                        m_pendingPastedPaymentRequest = result
-                        m_pendingPastedPaymentRequestText = m_uriText
-                        paymentUriOverwritePopup.open()
-                    } else {
-                        applyPastedPaymentRequest(result, m_uriText)
-                        finishPasteOwner(false)
-                    }
-                } else applyParsedPaymentRequest(result, m_uriSource, m_uriRecipient)
+                if (m_uriPasteOwner) {
+                    if (operation.nativeDisposition === PaymentImportOperation.LiteralPaste) m_uriPasteOwner.apply(m_uriPayload)
+                    else m_uriPasteOwner.restore(m_uriPayload)
+                }
+                if (operation !== m_importOperation) return
+                operation.completeNativeHandoff(token)
+                if (operation.nativeDisposition === PaymentImportOperation.RestoreImport) operation.use()
             } finally { m_uriApplying = false }
         }
-        function applyPastedPaymentRequest(result, text, replacePrivateNote) {
-            applyParsedPaymentRequest(result, qsTr("clipboard"), m_uriRecipient, replacePrivateNote)
-            if (result.success) {
-                m_filledUri = result.sourceId
-                showClipboardUriBanner = false
-            }
-        }
         function handlePaymentUriPaste(text, sourceField) {
-            requestUriAction(text, "paste", qsTr("clipboard"), sourceField, null, root.recipient)
+            requestUriAction(text, qsTr("clipboard"), sourceField, null, root.recipient)
         }
         function handleClipboardPaste(field, editor, payload) {
             if (!payload) {
                 const text = Clipboard.text()
-                const component = !editor ? null : field === "address" ? editor.addressField : field === "amount" ? editor.amountField : editor.noteField
+                const component = !editor ? null : field === BitcoinUri.AddressField ? editor.addressField : field === BitcoinUri.AmountField ? editor.amountField : editor.noteField
                 payload = component ? component.capturePaste(text, false) : {text: text, origin: null, edited: false}
             }
             if (!payload || !payload.text.length) {
                 if (payload && payload.origin) payload.origin.complete(payload)
                 return
             }
-            requestUriAction(payload.text, "paste", qsTr("clipboard"), field, payload, editor ? editor.recipient : root.recipient)
+            requestUriAction(payload.text, qsTr("clipboard"), field, payload, editor ? editor.recipient : root.recipient)
         }
         function checkClipboard() {
-            if (!root.visible || !root.wallet || !root.wallet.available || !root.recipient) {
-                if (m_clipboardOperation) m_clipboardOperation.cancel()
-                m_clipboardOperation = null
-                showClipboardUriBanner = false
-                return
-            }
+            if (m_clipboardOperation) m_clipboardOperation.cancel()
+            m_clipboardOperation = null
+            if (!root.visible || !root.wallet || !root.wallet.available || !root.recipient || root.wallet.recipients.importPending) return
             m_clipboardWallet = root.wallet
             m_clipboardRecipient = root.recipient
             m_clipboardRevision = root.draftRevision
             m_clipboardHidden = root.hiddenCount
             m_clipboardText = Clipboard.text()
             m_clipboardCounter = Clipboard.revision
-            m_clipboardHandled = null
-            m_clipboardOperation = BitcoinUri.requestProbe(m_clipboardText, probeContext(root.recipient, "", null), sendPage, m_clipboardOperation)
-            finishClipboardCheck()
-        }
-        function finishClipboardCheck() {
-            const operation = m_clipboardOperation
-            if (!operation || operation.pending || m_clipboardHandled === operation) return
-            m_clipboardHandled = operation
-            if (!root.visible || !m_clipboardWallet || !m_clipboardWallet.available || root.wallet !== m_clipboardWallet
-                    || root.recipient !== m_clipboardRecipient || root.draftRevision !== m_clipboardRevision
-                    || root.hiddenCount !== m_clipboardHidden || Clipboard.revision !== m_clipboardCounter) return
-            const parsed = operation.result
-            if (!parsed.success || parsed.sourceId === m_dismissedUri) {
-                showClipboardUriBanner = false
-                m_pendingClipboardUri = ""
-                return
-            }
-            if (parsed.sourceId === m_filledUri && parsed.matchesExistingRequest) {
-                showClipboardUriBanner = false
-                return
-            }
-            m_pendingClipboardUri = m_clipboardText
-            m_pendingClipboardCounter = m_clipboardCounter
-            showClipboardUriBanner = true
-        }
-
-        // Apply a pre-parsed URI result to the current recipient form fields.
-        function applyParsedPaymentRequest(result, source, recipient, replacePrivateNote) {
-            if (!result.success) {
-                m_legacyPaymentRequestStatus = result.error
-                m_legacyPaymentRequestIsError = true
-                return
-            }
-            const wallet = m_uriWallet
-            const target = recipient || root.recipient
-            if (!root.visible || !wallet || !wallet.available || root.wallet !== wallet || !target) return
-            m_applyingUri = true
-            try {
-                sendPage.expandedRecipient = wallet.recipients.currentIndex - 1
-                target.applyParsedPaymentRequest(result, !!replacePrivateNote)
-            } finally { m_applyingUri = false }
-            if (!root.visible || !wallet.available || root.wallet !== wallet) return
-            root.scheduleFeeEstimates()
-            m_legacyPaymentRequestMessage = result.hasMessage ? result.uriMessage : ""
-            m_legacyPaymentRequestStatus = qsTr("Payment request imported from %1").arg(source)
-            m_legacyPaymentRequestIsError = false
-            m_filledUri = result.sourceId || ""
-            checkClipboard()
+            m_clipboardOperation = BitcoinUri.requestImportText(m_clipboardText, m_clipboardWallet, m_clipboardRecipient, sendPage)
         }
 
         // Parse a URI from text and apply to form.
@@ -820,9 +719,8 @@ PageStack {
             id: paymentUriOverwritePopup
             objectName: "sendPaymentUriOverwritePopup"
             parent: Overlay.overlay
-            title: sendPage.m_importOperation ? qsTr("Replace payment details?") : qsTr("Confirm paste?")
-            message: sendPage.m_importOperation ? qsTr("The payment request differs from the current draft. Replace the payment details?")
-                : qsTr("The payment request from the clipboard contains information that differs from the currently populated values. Pasting will replace the values.")
+            title: qsTr("Replace payment details?")
+            message: qsTr("The payment request differs from the current draft. Replace the payment details?")
             messageObjectName: "sendPaymentUriOverwriteMessage"
 
             AlertAction {
@@ -836,25 +734,12 @@ PageStack {
             }
 
             AlertAction {
-                text: sendPage.m_importOperation ? qsTr("Replace") : qsTr("Paste")
+                text: qsTr("Replace")
                 buttonObjectName: "sendPaymentUriOverwriteConfirmButton"
                 closesPopup: false
                 onTriggered: {
-                    if (sendPage.m_importOperation) {
-                        sendPage.m_importOperation.replace(sendPage.m_importOperation.promptToken)
-                        paymentUriOverwritePopup.close()
-                        return
-                    }
-                    if (!sendPage.uriContextValid()) { sendPage.cancelUriAction(); return }
-                    const result = sendPage.m_pendingPastedPaymentRequest
-                    const text = sendPage.m_pendingPastedPaymentRequestText
-                    sendPage.m_uriApplying = true
-                    sendPage.clearPendingPaymentUriPaste()
+                    if (sendPage.m_importOperation) sendPage.m_importOperation.replace(sendPage.m_importOperation.promptToken)
                     paymentUriOverwritePopup.close()
-                    try {
-                        if (result) sendPage.applyPastedPaymentRequest(result, text, true)
-                        sendPage.finishPasteOwner(false)
-                    } finally { sendPage.m_uriApplying = false }
                 }
             }
         }
@@ -864,11 +749,8 @@ PageStack {
             function onDataChanged() { sendPage.checkClipboard() }
         }
 
-        // Re-check the clipboard whenever any form field changes due to user
-        // input. checkClipboard() compares current values against the filled URI
-        // and re-shows the banner if any specified field has diverged.
-        // The m_applyingUri guard prevents these from firing during a programmatic
-        // fill, which would trigger a re-check before m_filledUri is set.
+        // Capture a fresh observation after local input. Public metadata
+        // equality is decided by the original target on Domain.
         Connections {
             target: root.recipient.address
             function onAddressChanged() {
@@ -895,6 +777,8 @@ PageStack {
                 root.draftChanged()
                 if (!sendPage.m_applyingUri) sendPage.checkClipboard()
             }
+            function onMessageChanged() { if (!sendPage.m_applyingUri) sendPage.checkClipboard() }
+            function onPaymentRequestChanged() { if (!sendPage.m_applyingUri) sendPage.checkClipboard() }
         }
 
         Component.onCompleted: sendPage.checkClipboard()
@@ -986,18 +870,12 @@ PageStack {
             anchors.fill: parent
             keys: ["text/uri-list", "text/plain"]
             onDropped: (drop) => {
-                if (drop.hasUrls && drop.urls.length > 0) {
-                    const url = drop.urls[0].toString()
-                    if (url.startsWith("file://")) {
-                        // Pass the raw file:// URL; C++ uses QUrl::toLocalFile()
-                        // to derive the correct local path on all platforms.
-                        sendPage.applyPaymentRequestFromFile(url)
-                    } else {
-                        sendPage.applyPaymentRequestFromText(url, qsTr("drag and drop"))
-                    }
-                } else if (drop.hasText) {
-                    sendPage.applyPaymentRequestFromText(drop.text, qsTr("drag and drop"))
-                }
+                sendPage.cancelUriAction()
+                sendPage.m_importWallet = root.wallet
+                sendPage.m_importSource = qsTr("drag and drop")
+                sendPage.m_importOperation = BitcoinUri.requestImportDrop(drop.hasUrls ? drop.urls.length : 0,
+                    drop.hasUrls && drop.urls.length ? drop.urls[0] : "", drop.hasUrls ? "" : drop.text, root.wallet, root.recipient, sendPage)
+                if (sendPage.m_importOperation) sendPage.m_importOperation.use()
             }
         }
 

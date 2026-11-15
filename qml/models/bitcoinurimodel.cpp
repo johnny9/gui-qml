@@ -84,7 +84,8 @@ QVariantMap ContextResult(QVariantMap result, const QString& text, const QVarian
         (field != "label" && !note.isEmpty() && !private_note.isEmpty() && note != private_note)));
     result.insert(QStringLiteral("matchesExistingRequest"), result.value("success").toBool() && !fixed_replaces_maximum &&
         address == result.value("address").toString() && (!result.value("hasAmount").toBool() || amount == result.value("amountSats").toLongLong()) &&
-        (!result.value("hasLabel").toBool() || context.value("requestLabel").toString() == result.value("label").toString()));
+        context.value("requestLabel").toString() == result.value("label").toString() &&
+        context.value("requestMessage").toString() == result.value("uriMessage").toString());
     if (context.value("edited").toBool()) {
         const auto current = context.value("currentText").toString();
         result.insert(QStringLiteral("pasteProvenance"), PasteProvenance(context.value("previousText").toString(), current, text));
@@ -192,7 +193,40 @@ PaymentImportOperation* BitcoinUriModel::requestImportFile(const QString& path, 
 }
 PaymentImportOperation* BitcoinUriModel::requestImport(paymentimport::Input input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner)
 {
-    if (m_closed || !owner || !m_services.scheduler || input.value.size() > 1024 * 1024 ||
+    return createImport(std::move(input), std::move(target), owner);
+}
+PaymentImportOperation* BitcoinUriModel::captureImport(WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
+{
+    const QPointer<BitcoinUriModel> self{this}; const QPointer<QObject> original_owner{owner};
+    const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
+    return self && original_owner ? self->createImport({}, target, original_owner) : nullptr;
+}
+PaymentImportOperation* BitcoinUriModel::requestImportDrop(int urlCount, const QUrl& firstUrl, const QString& text, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
+{
+    paymentimport::Input input{paymentimport::Input::Kind::Drop, text}; input.url_count = urlCount; input.url = firstUrl;
+    const QPointer<BitcoinUriModel> self{this}; const QPointer<QObject> original_owner{owner};
+    const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
+    return self && original_owner ? self->requestImport(std::move(input), target, original_owner) : nullptr;
+}
+PaymentImportOperation* BitcoinUriModel::requestImportPaste(const QString& text, InputField field, bool edited, const QString& previous, const QString& current,
+                                                         WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
+{
+    paymentimport::Input input{paymentimport::Input::Kind::Text, text}; input.paste = true;
+    switch (field) {
+    case InputField::AddressField: input.field = paymentimport::SourceField::Address; break;
+    case InputField::AmountField: input.field = paymentimport::SourceField::Amount; break;
+    case InputField::PrivateNoteField: input.field = paymentimport::SourceField::PrivateNote; break;
+    default: return nullptr;
+    }
+    input.edited = edited; input.previous = previous; input.current = current;
+    const QPointer<BitcoinUriModel> self{this}; const QPointer<QObject> original_owner{owner};
+    const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
+    return self && original_owner ? self->requestImport(std::move(input), target, original_owner) : nullptr;
+}
+PaymentImportOperation* BitcoinUriModel::createImport(std::optional<paymentimport::Input> input, std::shared_ptr<const paymentimport::TargetPort> target, QObject* owner)
+{
+    if (m_closed || !owner || !m_services.scheduler || (input && (input->value.size() > 1024 * 1024 ||
+        input->previous.size() > 1024 * 1024 || input->current.size() > 1024 * 1024)) ||
         m_sequence == std::numeric_limits<quint64>::max()) return nullptr;
     bool capacity;
     { std::lock_guard lock{m_operations->import_mutex}; capacity = m_operations->imports.size() >= MAX_OPERATIONS; }
@@ -214,10 +248,11 @@ PaymentImportOperation* BitcoinUriModel::requestImport(paymentimport::Input inpu
         });
     if (!actor || !observer || admission->load()) { if (actor) actor->close(); if (observer) delete observer.data(); return nullptr; }
     operation->m_owner = actor;
-    operation->m_snapshot.phase = paymentimport::Phase::Reading; operation->m_snapshot.pending = true;
+    operation->m_input_started = input.has_value();
+    operation->m_snapshot.phase = input ? paymentimport::Phase::Reading : paymentimport::Phase::Empty; operation->m_snapshot.pending = input.has_value();
     operation->m_export_services.scheduler = m_services.scheduler; operation->m_export_services.post = post;
     { std::lock_guard lock{registry->import_mutex}; registry->imports.emplace(operation->requestId(), actor); }
-    if (!actor->inspect(std::move(input)) || !actor->chooseTarget(std::move(target)) || !observer || admission->load()) {
+    if ((input && !actor->inspect(std::move(*input))) || !actor->chooseTarget(std::move(target)) || !observer || admission->load()) {
         actor->close(); if (observer) delete observer.data(); return nullptr;
     }
     return observer;

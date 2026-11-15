@@ -18,7 +18,7 @@ Pane {
     property string clipboardText: ""
     property double clipboardRevision: -1
     signal toggleExpanded()
-    signal pasteRequested(string field, var payload)
+    signal pasteRequested(int field, var payload)
     signal edited()
     signal removeRequested()
     readonly property SendRecipientEditor editorItem: editorLoader.item as SendRecipientEditor

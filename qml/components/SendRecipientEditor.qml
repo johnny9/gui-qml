@@ -21,7 +21,7 @@ ColumnLayout {
     readonly property bool sendingMaximum: root.wallet && root.recipient
         && root.recipient.amountMode === SendRecipient.Maximum
     readonly property bool selectedCoins: root.wallet && root.wallet.coinsListModel.selectedCoinsCount > 0
-    signal pasteRequested(string field, var payload)
+    signal pasteRequested(int field, var payload)
     signal edited()
     signal removeRequested()
     spacing: 18
@@ -40,7 +40,7 @@ ColumnLayout {
         actionObjectName: "clipboardUriPasteButton"
         onActionRequested: {
             const payload = addressField.capturePaste(root.clipboardText, false)
-            if (payload) { payload.clipboardRevision = root.clipboardRevision; root.pasteRequested("address", payload) }
+            if (payload) { payload.clipboardRevision = root.clipboardRevision; root.pasteRequested(BitcoinUri.AddressField, payload) }
         }
         BitcoinAddressInputField {
             id: addressField
@@ -55,7 +55,7 @@ ColumnLayout {
             address: root.recipient ? root.recipient.address : null
             errorText: root.recipient ? root.recipient.addressError : ""
             placeholderText: qsTr("Enter a Bitcoin address or payment request")
-            onPasteRequested: (payload) => root.pasteRequested("address", payload)
+            onPasteRequested: (payload) => root.pasteRequested(BitcoinUri.AddressField, payload)
             onTextChanged: root.edited()
         }
     }
@@ -131,7 +131,7 @@ ColumnLayout {
             interceptPaste: true
             onInputTextChanged: root.edited()
             onEditingFinished: root.edited()
-            onPasteRequested: (payload) => root.pasteRequested("amount", payload)
+            onPasteRequested: (payload) => root.pasteRequested(BitcoinUri.AmountField, payload)
         }
     }
 
@@ -152,7 +152,7 @@ ColumnLayout {
         paymentUriRestoreText: root.recipient ? root.recipient.label : ""
         errorText: root.recipient ? root.recipient.inputBudgetError : ""
         onTextEdited: { if (root.recipient && !root.recipient.editPrivateNote(text)) noteField.field.syncFromModel(); root.edited() }
-        onPasteRequested: (payload) => root.pasteRequested("label", payload)
+        onPasteRequested: (payload) => root.pasteRequested(BitcoinUri.PrivateNoteField, payload)
     }
 
     Separator { visible: root.canRemove; Layout.fillWidth: true }

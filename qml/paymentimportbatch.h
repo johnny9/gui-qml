@@ -27,6 +27,17 @@ struct BatchResult {
     bool amount_changed{false}, private_note_changed{false};
 };
 
+/** Public request equality is independent of a user's private note and URI
+ * formatting. Missing label/message clear that metadata when applied; an
+ * omitted amount preserves the existing explicit Fixed/Maximum intent. */
+inline bool MatchesPaymentRequest(const senddraft::Recipient& current, const senddraft::PaymentRequest& request)
+{
+    const auto destination = DecodeDestination(request.address.toStdString());
+    return IsValidDestination(destination) && destination == DecodeDestination(current.address.toStdString()) &&
+        (!request.amount || (current.mode == senddraft::AmountMode::Fixed && current.amount_set && current.amount == *request.amount)) &&
+        current.request_label == request.label && current.message == request.message;
+}
+
 /** Prepare the complete revisioned input batch on Domain. The target actor
  * guards its opening/draft revision and commits this value as one ledger entry;
  * it then runs ordinary recipient validation and applies the existing explicit

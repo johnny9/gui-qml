@@ -1818,6 +1818,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(quint64 currentTransactionFlowRevision READ currentTransactionFlowRevision NOTIFY currentTransactionChanged)
     Q_PROPERTY(QVariantMap currentTransactionFlow READ currentTransactionFlow WRITE setCurrentTransactionFlow NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionIsImportedPsbt MEMBER m_current_transaction_is_imported_psbt NOTIFY currentTransactionChanged)
+    Q_PROPERTY(QString importedReviewToken MEMBER m_imported_review_token NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanSend MEMBER m_current_transaction_can_send NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanSignOnly MEMBER m_current_transaction_can_sign_only NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionNeedsRevalidation MEMBER m_current_transaction_needs_revalidation NOTIFY preparationChanged)
@@ -2136,6 +2137,11 @@ public:
     QString psbtSavedPath()const{return m_saved_psbt_receipt&&m_saved_psbt_receipt->saved?m_saved_psbt_receipt->path:QString{};}
     QString psbtSubmittedTxid()const{return m_submitted_psbt_receipt&&m_submitted_psbt_receipt->submitted?m_submitted_psbt_receipt->txid:QString{};}
     QObject* importedPsbt(){return &m_imported_psbt;}
+    Q_INVOKABLE void adoptImportReviewForTest(quint64 owner, quint64 child) {
+        m_imported_review_token = QString::number(owner) + QLatin1Char(':') + QString::number(child);
+        m_current_transaction_is_imported_psbt = true;
+        Q_EMIT currentTransactionChanged();
+    }
     Q_INVOKABLE quint64 requestImportPsbtFromFile(const QString& path){return requestPsbtAction(PsbtKind::Import,path);}
     Q_INVOKABLE quint64 requestSaveCurrentTransactionAsPsbt(const QString& path){return requestPsbtAction(PsbtKind::Save,path);}
     Q_INVOKABLE quint64 requestSaveUnverifiedSignerResult(const QString& token, const QString& path) {
@@ -2245,6 +2251,7 @@ public:
     bool m_current_transaction_needs_revalidation{false};
     QVariantMap m_current_transaction_flow;
     bool m_current_transaction_is_imported_psbt{false};
+    QString m_imported_review_token;
     bool m_current_transaction_can_broadcast{false};
     bool m_transaction_fee_pending{false};
     QString m_current_transaction_review_message;

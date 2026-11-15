@@ -7,6 +7,7 @@ import QtQuick 2.15
 
 QtObject {
     id: parser
+    enum InputField { AddressField, AmountField, PrivateNoteField }
     property int _sequence: 0
     property bool holdPublications: false
     property bool admitRequestsForTest: true
@@ -46,6 +47,39 @@ QtObject {
     }
     function requestImportFile(path, wallet, recipient, owner) {
         return _importRequest({success: false, error: "File parsing is unavailable in QML unit tests."}, wallet, recipient, owner)
+    }
+    function captureImport(wallet, recipient, owner) {
+        ++requestCallsForTest
+        if (!owner || !admitRequestsForTest) return null
+        return _importFactory.createObject(owner, {requestId: ++_sequence, requestOwner: owner,
+            originalWallet: wallet, originalRecipient: recipient, originalRevision: wallet ? wallet.recipients.revision : "",
+            state: PaymentImportOperation.Empty, pending: false, _inputStarted: false})
+    }
+    function requestImportDrop(count, firstUrl, text, wallet, recipient, owner) {
+        const value = count === 1 ? firstUrl.toString() : text
+        return count > 1 ? _importRequest({success: false, error: "Drop one payment request or PSBT at a time."}, wallet, recipient, owner)
+            : count === 1 && /^file:/i.test(value) ? requestImportFile(value, wallet, recipient, owner) : requestImportText(value, wallet, recipient, owner)
+    }
+    function requestImportPaste(text, field, edited, previous, current, wallet, recipient, owner) {
+        let outcome
+        try { outcome = _parse(text) } catch (error) { outcome = {success: false, error: "Not a valid Bitcoin payment URI."} }
+        const uri = /^bitcoin:/i.test(String(text || "").trim())
+        let provenance = true
+        if (edited) {
+            let prefix = 0, suffix = 0
+            while (prefix < Math.min(previous.length, current.length) && previous[prefix] === current[prefix]) prefix++
+            while (suffix < Math.min(previous.length, current.length) && previous[previous.length - suffix - 1] === current[current.length - suffix - 1]) suffix++
+            const unchanged = current.length - text.length
+            const low = Math.max(0, unchanged - suffix), high = Math.min(prefix, unchanged)
+            const found = current.indexOf(text, low)
+            provenance = !!text.length && previous !== current && current.length >= text.length && unchanged <= previous.length && low <= high && found >= 0 && found <= high
+        }
+        if (!uri || !provenance) outcome = {success: false}
+        outcome.nativeHandoff = uri && provenance ? PaymentImportOperation.RestoreImport
+            : edited && field === BitcoinUri.AmountField && /bitcoin:/i.test(current) ? PaymentImportOperation.RestoreOnly : PaymentImportOperation.LiteralPaste
+        outcome.field = field
+        if (probeErrorForTest.length) { outcome.error = probeErrorForTest; outcome.success = false }
+        return _importRequest(outcome, wallet, recipient, owner)
     }
     function _importRequest(outcome, wallet, recipient, owner) {
         ++requestCallsForTest
