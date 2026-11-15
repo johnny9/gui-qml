@@ -53,6 +53,8 @@ public:
     bool pending() const { return backup::Pending(m_projection.phase); }
     bool confirmationRequired() const { return m_projection.phase == backup::Phase::AwaitingConfirmation; }
     bool replacing() const { return m_projection.target.exists; }
+    bool succeeded() const { return m_projection.phase == backup::Phase::Succeeded; }
+    backup::Error errorCode() const { return m_projection.error; }
     QString finalPath() const;
     QString error() const;
     Q_INVOKABLE bool approve();

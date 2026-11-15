@@ -9,8 +9,16 @@
 
 #include <QScopeGuard>
 
+#include <set>
+
 namespace walletsend {
 namespace {
+Result FailureResult(Error error)
+{
+    Result result;
+    result.error = error;
+    return result;
+}
 bool SameTransaction(const CTransaction& reviewed, const CMutableTransaction& candidate)
 {
     CMutableTransaction original{reviewed}, returned{candidate};
@@ -18,6 +26,14 @@ bool SameTransaction(const CTransaction& reviewed, const CMutableTransaction& ca
         input.scriptSig.clear(); input.scriptWitness.SetNull();
     }
     return original.GetHash() == returned.GetHash();
+}
+bool HasDuplicateInputs(const CTransaction& transaction)
+{
+    std::set<COutPoint> inputs;
+    for (const auto& input : transaction.vin) {
+        if (!inputs.insert(input.prevout).second) return true;
+    }
+    return false;
 }
 bool KnownOutputs(interfaces::Wallet& wallet, const std::vector<COutPoint>& outputs)
 {
@@ -117,6 +133,9 @@ Result Execute(interfaces::Wallet& wallet, Request request)
         }
         CTransactionRef transaction = request.reviewed;
         if (request.psbt) {
+            if (!request.reviewed || HasDuplicateInputs(*request.reviewed)) {
+                result.error = Error::InvalidStructure; return result;
+            }
             if (!request.proof || !psbtfee::MatchesReview(*request.psbt, *request.proof, request.approved_fee)) {
                 result.error = Error::InvalidFee; return result;
             }
@@ -190,6 +209,93 @@ Result Execute(interfaces::Wallet& wallet, Request request)
     catch (...) { restore(); result.error = Error::Uncertain; }
     return result;
 }
+Result ExecuteSignOnly(interfaces::Wallet& wallet, Request request,
+                       const std::shared_ptr<PartiallySignedTransaction>& document_owner)
+{
+    Result result;
+    result.candidate = request.reviewed;
+    bool relock{false};
+    const auto restore = [&] {
+        if (!std::exchange(relock, false)) return;
+        try { if (!wallet.lock()) result.relock_failed = true; }
+        catch (...) { result.relock_failed = true; }
+    };
+    const auto cleanup = qScopeGuard([&] { restore(); });
+    try {
+        if (!request.reviewed || !document_owner || HasDuplicateInputs(*request.reviewed)) {
+            result.error = request.reviewed ? Error::InvalidStructure : Error::Rejected;
+            return result;
+        }
+        if (!request.proof || !request.approved_fee ||
+            (request.consent && request.consent->withdrawn())) {
+            result.error = request.consent && request.consent->withdrawn() ? Error::Cancelled : Error::InvalidFee;
+            return result;
+        }
+        if (request.captured_passphrase) {
+            request.passphrase = secretinput::Materialize(request.captured_passphrase);
+            request.captured_passphrase.reset();
+        }
+        // Hardware signing has its own explicit review action. This command is
+        // reserved for locally held signing keys and never schedules commit.
+        if (wallet.privateKeysDisabled()) { result.error = Error::CannotSign; return result; }
+
+        CMutableTransaction unsigned_tx{*request.reviewed};
+        for (auto& input : unsigned_tx.vin) { input.scriptSig.clear(); input.scriptWitness.SetNull(); }
+        PartiallySignedTransaction document = request.psbt ? *request.psbt : PartiallySignedTransaction{unsigned_tx, 2};
+        const auto document_tx = document.GetUnsignedTx();
+        if (!document_tx || !SameTransaction(*request.reviewed, *document_tx)) {
+            result.error = Error::ChangedTransaction; return result;
+        }
+        if (!psbtfee::MatchesReview(document, *request.proof, request.approved_fee)) {
+            result.error = Error::InvalidFee; return result;
+        }
+        const auto authenticated = AuthenticatedInputs(wallet, document, *request.proof);
+        if (!authenticated) { result.error = Error::InvalidFee; return result; }
+        psbtfee::FillMissing(document, *authenticated);
+
+        if (wallet.isCrypted() && wallet.isLocked()) {
+            if (!request.passphrase) { result.error = Error::NeedsUnlock; return result; }
+            relock = true;
+            if (!wallet.unlock(*request.passphrase)) {
+                relock = false;
+                result.error = Error::IncorrectPassphrase;
+                return result;
+            }
+        }
+        // The one-use secret is gone before entering the potentially blocking
+        // wallet signer. The captured unsigned transaction remains unchanged.
+        request.passphrase.reset();
+        size_t signed_inputs{0};
+        bool complete{false}, signer_threw{false};
+        std::optional<common::PSBTError> signer_error;
+        try { signer_error = wallet.fillPSBT({.sign = true, .bip32_derivs = true}, &signed_inputs, document, complete); }
+        catch (...) { signer_threw = true; }
+
+        const auto returned = document.GetUnsignedTx();
+        if (!returned || !SameTransaction(*request.reviewed, *returned)) {
+            restore(); result.error = Error::ChangedTransaction; return result;
+        }
+        if (!psbtfee::MatchesReview(document, *authenticated, request.approved_fee)) {
+            restore(); result.error = Error::InvalidFee; return result;
+        }
+        complete = FinalizePSBT(document);
+        if (!psbtsignatures::VerifyFinalizedInputs(document, complete)) {
+            restore(); result.error = Error::InvalidSignature; return result;
+        }
+        *document_owner = std::move(document);
+        result.document = std::shared_ptr<const PartiallySignedTransaction>{document_owner, document_owner.get()};
+        result.partial = !complete;
+        result.signed_inputs = signed_inputs;
+        restore();
+        if (result.relock_failed || signer_threw) result.error = Error::Uncertain;
+        else if (signer_error) { result.error = Error::Signer; result.signer_error = signer_error; }
+    } catch (const secretinput::Failure&) {
+        restore(); result.error = Error::Rejected;
+    } catch (...) {
+        restore(); result.error = Error::Uncertain;
+    }
+    return result;
+}
 } // namespace
 
 execution::Admission Operation::start(Request request, std::shared_ptr<const walletopening::Session::Action> action)
@@ -200,9 +306,16 @@ execution::Admission Operation::start(Request request, std::shared_ptr<const wal
     }
     if (action && action->identity() != m_opening->identity()) return {{}, execution::Rejection::Invalid};
     if (!action) action = m_opening->startAction();
-    if (!action) { complete(Result{.error = Error::Rejected}); return {{}, execution::Rejection::Closed}; }
+    if (!action) { complete(FailureResult(Error::Rejected)); return {{}, execution::Rejection::Closed}; }
     auto native_result = walletopening::RetainValues<CTransactionRef>(m_opening, [] { return std::make_unique<CTransactionRef>(); });
-    if (!native_result) { complete(Result{.error = Error::Rejected}); return {{}, execution::Rejection::Capacity}; }
+    if (!native_result) { complete(FailureResult(Error::Rejected)); return {{}, execution::Rejection::Capacity}; }
+    std::shared_ptr<PartiallySignedTransaction> native_document_result;
+    if (request.intent == Intent::SignOnly) {
+        native_document_result = walletopening::RetainValues<PartiallySignedTransaction>(m_opening, [] {
+            return std::make_unique<PartiallySignedTransaction>(CMutableTransaction{}, 2);
+        });
+        if (!native_document_result) { complete(FailureResult(Error::Rejected)); return {{}, execution::Rejection::Capacity}; }
+    }
     {
         std::lock_guard lock{m_mutex};
         m_request = std::move(request);
@@ -210,6 +323,7 @@ execution::Admission Operation::start(Request request, std::shared_ptr<const wal
         m_review_id = m_request.review_id;
         m_action = std::move(action);
         m_native_result = std::move(native_result);
+        m_native_document_result = std::move(native_document_result);
     }
     const auto self = shared_from_this();
     return plan([self] { self->beginOnDomain(); }, sizeof(Request));
@@ -233,6 +347,8 @@ void Operation::beginOnDomain()
         cancelled = m_request.consent && m_request.consent->withdrawn();
         if (cancelled) {
             // Completion happens after releasing the operation lock.
+        } else if (m_request.intent == Intent::SignOnly) {
+            m_stage = Stage::SigningOnly;
         } else if (m_request.sweeps_wallet && !m_request.full_wallet_consent) {
             m_stage = Stage::AwaitingSweepConsent;
             wait_for_sweep = true;
@@ -240,7 +356,7 @@ void Operation::beginOnDomain()
             m_stage = Stage::Submitting;
         }
     }
-    if (cancelled) { complete(Result{.error = Error::Cancelled}); return; }
+    if (cancelled) { complete(FailureResult(Error::Cancelled)); return; }
     if (wait_for_sweep) {
         try { m_notify(notice); } catch (...) { publicationFailed(); }
         return;
@@ -253,13 +369,15 @@ void Operation::dispatchNative(secretinput::Captured passphrase)
     Request request;
     std::shared_ptr<const walletopening::Session::Action> action;
     std::shared_ptr<CTransactionRef> native_result;
+    std::shared_ptr<PartiallySignedTransaction> native_document_result;
     {
         std::lock_guard lock{m_mutex};
-        if (m_stage != Stage::Submitting || m_result) return;
+        if ((m_stage != Stage::Submitting && m_stage != Stage::SigningOnly) || m_result) return;
         // Preserve the reviewed values across a NeedsUnlock outcome. Only the
         // one-use credential is moved into this Native invocation.
         request.attempt_id = m_request.attempt_id;
         request.review_id = m_request.review_id;
+        request.intent = m_request.intent;
         request.reviewed = m_request.reviewed;
         request.psbt = m_request.psbt;
         request.assessed_complete = m_request.assessed_complete;
@@ -273,13 +391,16 @@ void Operation::dispatchNative(secretinput::Captured passphrase)
         request.notes = m_request.notes;
         action = m_action;
         native_result = m_native_result;
+        native_document_result = m_native_document_result;
     }
     const auto self = shared_from_this();
     const size_t bytes = sizeof(Request) + (request.passphrase ? request.passphrase->capacity() : 0)
         + secretinput::Bytes(request.captured_passphrase) + request.notes.size() * 128;
     const auto admitted = m_opening->perform(action,
-        [request = std::move(request), native_result](interfaces::Wallet& wallet) mutable {
-            auto result = Execute(wallet, std::move(request));
+        [request = std::move(request), native_result, native_document_result](interfaces::Wallet& wallet) mutable {
+            auto result = request.intent == Intent::SignOnly
+                ? ExecuteSignOnly(wallet, std::move(request), native_document_result)
+                : Execute(wallet, std::move(request));
             if (result.committed) {
                 *native_result = result.committed;
                 result.committed = CTransactionRef{native_result, native_result->get()};
@@ -288,10 +409,10 @@ void Operation::dispatchNative(secretinput::Captured passphrase)
         }, [self](Result result) { self->nativeCompleted(std::move(result)); },
         [self](std::exception_ptr error) {
             try { std::rethrow_exception(error); }
-            catch (const execution::NotStarted&) { self->nativeCompleted(Result{.error = Error::Rejected}); }
-            catch (...) { self->nativeCompleted(Result{.error = Error::Uncertain}); }
+            catch (const execution::NotStarted&) { self->nativeCompleted(FailureResult(Error::Rejected)); }
+            catch (...) { self->nativeCompleted(FailureResult(Error::Uncertain)); }
         }, bytes);
-    if (!admitted) nativeCompleted(Result{.error = Error::Rejected});
+    if (!admitted) nativeCompleted(FailureResult(Error::Rejected));
 }
 
 void Operation::nativeCompleted(Result result)
@@ -303,19 +424,25 @@ void Operation::nativeCompleted(Result result)
     if (result.error == Error::NeedsUnlock || result.error == Error::IncorrectPassphrase) {
         {
             std::lock_guard lock{m_mutex};
-            if (m_result || m_stage != Stage::Submitting) return;
+            if (m_result || (m_stage != Stage::Submitting && m_stage != Stage::SigningOnly)) return;
             m_prompt_error = result.error;
             m_stage = Stage::AwaitingCredentials;
         }
         try { m_notify(Notice::CredentialsRequired); } catch (...) { publicationFailed(); }
         return;
     }
+    bool sign_only{false};
     std::shared_ptr<const walletopening::Session::Action> action;
     QMap<QString, QString> notes;
     {
         std::lock_guard lock{m_mutex};
+        sign_only = m_request.intent == Intent::SignOnly;
         action = m_action;
         notes = m_request.notes;
+    }
+    if (sign_only) {
+        complete(std::move(result));
+        return;
     }
     result.notes_requested = !notes.isEmpty();
     if (result.committed && result.notes_requested) {
@@ -356,11 +483,11 @@ execution::Admission Operation::confirmSweep(uint64_t attempt_id, uint64_t revie
             cancelled = self->m_request.consent && self->m_request.consent->withdrawn();
             if (!cancelled) {
                 self->m_request.full_wallet_consent = true;
-                self->m_stage = Stage::Submitting;
+                self->m_stage = self->m_request.intent == Intent::SignOnly ? Stage::SigningOnly : Stage::Submitting;
                 accepted = true;
             }
         }
-        if (cancelled) self->complete(Result{.error = Error::Cancelled});
+        if (cancelled) self->complete(FailureResult(Error::Cancelled));
         else if (accepted) self->dispatchNative();
     }, 256);
     if (!admission) { std::lock_guard lock{m_mutex}; m_continuation_pending = false; }
@@ -389,11 +516,11 @@ execution::Admission Operation::providePassphrase(uint64_t attempt_id, uint64_t 
             cancelled = self->m_request.consent && self->m_request.consent->withdrawn();
             if (!cancelled) {
                 self->m_prompt_error = Error::None;
-                self->m_stage = Stage::Submitting;
+                self->m_stage = self->m_request.intent == Intent::SignOnly ? Stage::SigningOnly : Stage::Submitting;
                 accepted = true;
             }
         }
-        if (cancelled) self->complete(Result{.error = Error::Cancelled});
+        if (cancelled) self->complete(FailureResult(Error::Cancelled));
         else if (accepted) self->dispatchNative(std::move(passphrase));
     }, bytes);
     if (!admission) { std::lock_guard lock{m_mutex}; m_continuation_pending = false; }
@@ -421,7 +548,7 @@ execution::Admission Operation::cancelPrompt(uint64_t attempt_id, uint64_t revie
             if (self->m_request.consent) self->m_request.consent->withdraw();
             self->m_stage = Stage::Finished;
         }
-        self->complete(Result{.error = Error::Cancelled});
+        self->complete(FailureResult(Error::Cancelled));
     }, 256);
     if (!admission) { std::lock_guard lock{m_mutex}; m_continuation_pending = false; }
     return admission;

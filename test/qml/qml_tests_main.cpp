@@ -1399,6 +1399,26 @@ Q_SIGNALS:
     void changed();
 };
 
+class MockFileExportOperation : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(bool pending MEMBER m_pending NOTIFY changed)
+    Q_PROPERTY(bool confirmationRequired MEMBER m_confirmation NOTIFY changed)
+    Q_PROPERTY(bool replacing MEMBER m_replacing NOTIFY changed)
+    Q_PROPERTY(bool saved MEMBER m_saved NOTIFY changed)
+    Q_PROPERTY(QString finalPath MEMBER m_path NOTIFY changed)
+    Q_PROPERTY(QString errorText MEMBER m_error NOTIFY changed)
+public:
+    explicit MockFileExportOperation(QObject* parent = nullptr) : QObject(parent) {}
+    bool m_pending{false}, m_confirmation{false}, m_replacing{false}, m_saved{false};
+    QString m_path, m_error;
+    Q_INVOKABLE bool approve() { m_confirmation = false; Q_EMIT changed(); return true; }
+    Q_INVOKABLE bool refuse() { m_confirmation = false; Q_EMIT changed(); return true; }
+    Q_INVOKABLE void retire() { m_pending = m_confirmation = false; Q_EMIT changed(); }
+Q_SIGNALS:
+    void changed();
+};
+
 class MockImageExportOperation : public QObject
 {
     Q_OBJECT
@@ -1781,6 +1801,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QVariantMap currentTransactionFlow READ currentTransactionFlow WRITE setCurrentTransactionFlow NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionIsImportedPsbt MEMBER m_current_transaction_is_imported_psbt NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanSend MEMBER m_current_transaction_can_send NOTIFY currentTransactionChanged)
+    Q_PROPERTY(bool currentTransactionCanSignOnly MEMBER m_current_transaction_can_sign_only NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionNeedsRevalidation MEMBER m_current_transaction_needs_revalidation NOTIFY preparationChanged)
     Q_PROPERTY(bool transactionFeePending MEMBER m_transaction_fee_pending NOTIFY currentTransactionChanged)
     Q_PROPERTY(bool currentTransactionCanBroadcast MEMBER m_current_transaction_can_broadcast NOTIFY currentTransactionChanged)
@@ -1817,7 +1838,9 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(bool holdPreparationForTest MEMBER m_hold_preparation)
     Q_PROPERTY(int scheduleFeeEstimatesCalls READ scheduleFeeEstimatesCalls NOTIFY scheduleFeeEstimatesCallsChanged)
     Q_PROPERTY(int sendTransactionCalls READ sendTransactionCalls NOTIFY sendTransactionCallsChanged)
+    Q_PROPERTY(int signOnlyTransactionCalls READ signOnlyTransactionCalls NOTIFY sendOperationChanged)
     Q_PROPERTY(int sendState READ sendState NOTIFY sendOperationChanged)
+    Q_PROPERTY(bool sendSignOnly MEMBER m_send_sign_only NOTIFY sendOperationChanged)
     Q_PROPERTY(quint64 sendOperationId MEMBER m_send_operation_id NOTIFY sendOperationChanged)
     Q_PROPERTY(int signerApprovalState MEMBER m_approval_state NOTIFY signerApprovalChanged)
     Q_PROPERTY(QString signerApprovalError MEMBER m_approval_error NOTIFY signerApprovalChanged)
@@ -1842,6 +1865,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(QString psbtSubmittedTxid READ psbtSubmittedTxid NOTIFY psbtActionChanged)
     Q_PROPERTY(QObject* importedPsbt READ importedPsbt CONSTANT)
     Q_PROPERTY(bool holdPsbtPublicationForTest MEMBER m_hold_psbt_publication)
+    Q_PROPERTY(bool failNextPsbtSaveForTest MEMBER m_fail_next_psbt_save_for_test)
     Q_PROPERTY(PsbtImportResult psbtImportResultForTest MEMBER m_next_psbt_import_result)
     Q_PROPERTY(int discardCurrentTransactionCalls READ discardCurrentTransactionCalls NOTIFY discardCurrentTransactionCallsChanged)
     Q_PROPERTY(bool isEncrypted MEMBER m_is_encrypted NOTIFY securityStateChanged)
@@ -1858,6 +1882,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(bool securityBusy READ securityBusy NOTIFY securityOperationChanged)
     Q_PROPERTY(QString securityError MEMBER m_settings_error NOTIFY securityOperationChanged)
     Q_PROPERTY(MockBackupFileOperation* backupOperation MEMBER m_backup_operation NOTIFY backupWalletCallsChanged)
+    Q_PROPERTY(MockFileExportOperation* fileExportOperation MEMBER m_file_export_operation NOTIFY psbtActionChanged)
     Q_PROPERTY(QString lastBackupPath READ lastBackupPath NOTIFY backupWalletCallsChanged)
     Q_PROPERTY(int backupWalletCalls READ backupWalletCalls NOTIFY backupWalletCallsChanged)
     Q_PROPERTY(QString transactionError MEMBER m_transaction_error NOTIFY transactionErrorChanged)
@@ -1950,7 +1975,7 @@ public:
     Q_ENUM(SendRecord)
     int m_send_submission{SubmissionMempool};
     int m_send_record_state{2};
-    enum SendState { SendIdle, SendPending, SendNeedsConfirmation, SendNeedsUnlock, SendFailed, SendCommitted, SendUncertain, SendClosed };
+    enum SendState { SendIdle, SendPending, SendNeedsConfirmation, SendNeedsUnlock, SendFailed, SendCommitted, SendUncertain, SendClosed, SendSignedOnly, SendPartiallySigned };
     enum PreparationState { PreparationIdle, PreparationPending, PreparationNeedsUnlock, PreparationReady, PreparationFailed, PreparationStale, PreparationClosed, PreparationUncertain };
     Q_ENUM(PreparationState)
     int m_preparation_state{PreparationIdle};
@@ -2000,21 +2025,30 @@ public:
     Q_ENUM(SendState)
     int m_send_state{SendIdle};
     quint64 m_send_operation_id{0};
-    bool m_hold_send{false};
+    bool m_hold_send{false}, m_send_sign_only{false};
+    int m_sign_only_transaction_calls{0};
     QPointer<QObject> m_send_review;
     int sendState() const { return m_send_state; }
     bool sendBusy() const { return m_send_state == SendPending || m_send_state == SendNeedsConfirmation; }
     QString sendResultTxid() const { return m_current_transaction ? m_current_transaction->property("txid").toString() : QString{}; }
-    Q_INVOKABLE void resetSendForTest() { resetPsbtForTest();m_hold_send = false; m_send_state = SendIdle; m_send_submission = SubmissionMempool; m_send_review.clear(); Q_EMIT sendOperationChanged(); }
+    Q_INVOKABLE void resetSendForTest() { resetPsbtForTest();m_hold_send = false; m_send_sign_only = false; m_sign_only_transaction_calls = 0; m_send_state = SendIdle; m_send_submission = SubmissionMempool; m_send_review.clear(); Q_EMIT sendOperationChanged(); }
     Q_INVOKABLE void finishSendForTest() {
         if (!sendBusy()) return;
-        m_send_state = m_send_review != m_current_transaction ? SendClosed : m_send_transaction_result ? SendCommitted : m_transaction_needs_unlock ? SendNeedsUnlock : SendFailed;
+        m_send_state = m_send_review != m_current_transaction ? SendClosed : m_send_sign_only ? SendSignedOnly : m_send_transaction_result ? SendCommitted : m_transaction_needs_unlock ? SendNeedsUnlock : SendFailed;
         Q_EMIT sendOperationChanged();
     }
     Q_INVOKABLE quint64 requestSendTransaction() {
         if (sendBusy() || psbtActionBusy()) return 0; ++m_send_operation_id; m_send_review = m_current_transaction;
         if (m_current_transaction_sweeps_wallet) m_send_state = SendNeedsConfirmation;
         else { sendTransaction(); m_send_state = SendPending; if (!m_hold_send) QTimer::singleShot(0, this, [this] { finishSendForTest(); }); }
+        Q_EMIT sendOperationChanged();
+        return m_send_operation_id;
+    }
+    Q_INVOKABLE quint64 requestSignOnlyTransaction() {
+        if (!m_current_transaction_can_sign_only || sendBusy() || psbtActionBusy()) return 0;
+        ++m_sign_only_transaction_calls; ++m_send_operation_id; m_send_review = m_current_transaction;
+        m_send_sign_only = true;
+        m_send_state = m_transaction_needs_unlock ? SendNeedsUnlock : SendSignedOnly;
         Q_EMIT sendOperationChanged();
         return m_send_operation_id;
     }
@@ -2095,7 +2129,9 @@ public:
         const QPointer<MockWalletQmlModel> observer{this};
         auto packet=std::make_shared<PsbtPacket>();packet->kind=kind;packet->ticket=++m_psbt_action_id;packet->review_revision=m_review_revision;
         packet->review=m_current_transaction;packet->path=path;packet->txid=kind==PsbtKind::Import&&!m_imported_psbt.matchedTxid().isEmpty()?m_imported_psbt.matchedTxid():m_current_transaction?m_current_transaction->property("txid").toString():QString{};
-        packet->imported=kind==PsbtKind::Import?m_next_psbt_import_result:PsbtImportResult::PsbtUnsupported;packet->allowed=kind==PsbtKind::Import?!path.isEmpty():m_current_transaction&&(kind==PsbtKind::Save?!path.isEmpty():m_current_transaction_can_broadcast&&!m_transaction_fee_pending);
+        packet->imported=kind==PsbtKind::Import?m_next_psbt_import_result:PsbtImportResult::PsbtUnsupported;
+        const bool reject_save = kind == PsbtKind::Save && std::exchange(m_fail_next_psbt_save_for_test, false);
+        packet->allowed=!reject_save&&(kind==PsbtKind::Import?!path.isEmpty():m_current_transaction&&(kind==PsbtKind::Save?!path.isEmpty():m_current_transaction_can_broadcast&&!m_transaction_fee_pending));
         m_psbt_operation=packet;m_psbt_action_state=PsbtActionState::PsbtPending;m_psbt_action_error.clear();m_psbt_import_result=PsbtImportResult::PsbtUnsupported;
         if(kind==PsbtKind::Save){m_saved_psbt_receipt=packet;m_last_saved_psbt_path=path;}
         if(kind==PsbtKind::Broadcast)m_submitted_psbt_receipt=packet;
@@ -2171,6 +2207,7 @@ public:
     int m_target_blocks{2};
     bool m_prepare_transaction_result{true};
     bool m_current_transaction_can_send{true};
+    bool m_current_transaction_can_sign_only{false};
     bool m_current_transaction_needs_revalidation{false};
     QVariantMap m_current_transaction_flow;
     bool m_current_transaction_is_imported_psbt{false};
@@ -2372,6 +2409,7 @@ public:
     int prepareTransactionCalls() const { return m_prepare_transaction_calls; }
     int scheduleFeeEstimatesCalls() const { return m_schedule_fee_estimates_calls; }
     int sendTransactionCalls() const { return m_send_transaction_calls; }
+    int signOnlyTransactionCalls() const { return m_sign_only_transaction_calls; }
     int broadcastCurrentTransactionCalls() const { return m_broadcast_current_transaction_calls; }
     int discardCurrentTransactionCalls() const { return m_discard_current_transaction_calls; }
     bool sendAmountExhaustsBalance() const { return m_send_amount_exhausts_balance; }
@@ -2777,7 +2815,7 @@ private:
     MockPsbtDocument m_imported_psbt{this};
     PsbtActionState m_psbt_action_state{PsbtActionState::PsbtIdle};
     PsbtImportResult m_psbt_import_result{PsbtImportResult::PsbtUnsupported},m_next_psbt_import_result{PsbtImportResult::WalletCanSign};
-    quint64 m_psbt_action_id{0},m_review_revision{0};bool m_hold_psbt_publication{false};QString m_psbt_action_error;
+    quint64 m_psbt_action_id{0},m_review_revision{0};bool m_hold_psbt_publication{false},m_fail_next_psbt_save_for_test{false};QString m_psbt_action_error;
     std::shared_ptr<PsbtPacket> m_psbt_operation,m_saved_psbt_receipt,m_submitted_psbt_receipt;
     MockFlowDetails m_flow_details{this};
     quint64 m_flow_revision{0};
@@ -2813,6 +2851,7 @@ private:
     bool m_can_manage_passphrase{true};
     QString m_settings_error;
     MockBackupFileOperation* m_backup_operation{nullptr};
+    MockFileExportOperation* m_file_export_operation{nullptr};
     QString m_last_backup_path;
     int m_backup_wallet_calls{0};
     QString m_transaction_error;
@@ -6893,6 +6932,7 @@ public Q_SLOTS:
         qmlRegisterUncreatableType<MockSendRecipient>("org.bitcoincore.qt", 1, 0, "SendRecipient", "Test stub type");
         qmlRegisterUncreatableType<MockBumpTransactionModel>("org.bitcoincore.qt", 1, 0, "BumpTransactionModel", "Test stub type");
         qmlRegisterUncreatableType<MockBackupFileOperation>("org.bitcoincore.qt", 1, 0, "BackupFileOperation", "Test stub type");
+        qmlRegisterUncreatableType<MockFileExportOperation>("org.bitcoincore.qt", 1, 0, "FileExportOperationModel", "Test stub type");
         qmlRegisterUncreatableType<MockWalletSecurity>("org.bitcoincore.qt", 1, 0, "WalletSecurityModel", "Test fixture");
         qmlRegisterUncreatableType<MockSecurityOperation>("org.bitcoincore.qt", 1, 0, "SecurityOperationModel", "Test fixture");
         qmlRegisterUncreatableType<MockWalletQmlModel>("org.bitcoincore.qt", 1, 0, "WalletQmlModel", "Test stub type");

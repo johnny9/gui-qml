@@ -140,10 +140,10 @@ bool BackupFileOperation::refuse()
 
 void BackupFileOperation::retire()
 {
+    if (!m_admitted || !backup::Pending(m_projection.phase)) return;
     const auto state = m_backend;
     auto expected = backup::OperationState::Admission::Open;
-    if (!state->admission.compare_exchange_strong(expected, backup::OperationState::Admission::Retired)
-        || !m_admitted) return;
+    if (!state->admission.compare_exchange_strong(expected, backup::OperationState::Admission::Retired)) return;
     // Logical retirement is visible to an already queued Native task. Do not
     // require new action admission from an opening that is already closing.
     execution::Submit(*state->services.scheduler, [state] { state->consume(backup::Event::Retire); }, [] {});

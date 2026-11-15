@@ -16,6 +16,7 @@
 #include <qml/models/activitydetailmodel.h>
 #include <qml/models/addresslistmodel.h>
 #include <qml/models/backuppolicyoperation.h>
+#include <qml/models/fileexportoperation.h>
 #include <qml/models/imageexportoperation.h>
 #include <qml/models/banlistmodel.h>
 #include <qml/models/bitcoinaddress.h>
@@ -136,6 +137,13 @@ struct BackupFileOperationForeign {
     QML_FOREIGN(BackupFileOperation)
     QML_NAMED_ELEMENT(BackupFileOperation)
     QML_UNCREATABLE("Owned by a wallet")
+};
+
+struct FileExportOperationModelForeign {
+    Q_GADGET
+    QML_FOREIGN(FileExportOperationModel)
+    QML_NAMED_ELEMENT(FileExportOperationModel)
+    QML_UNCREATABLE("Owned by a PSBT export request")
 };
 
 struct QmlFileDialogForeign {

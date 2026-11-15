@@ -54,6 +54,8 @@ Page {
             sweepAlert.close()
             reviewEntryPopup.close()
             sendPassphrasePopup.close()
+            if (wallet && wallet.fileExportOperation && wallet.fileExportOperation.pending)
+                wallet.fileExportOperation.retire()
             sending = false
             sendTicket = 0
             saveStatus = ""
@@ -77,7 +79,13 @@ Page {
         }
     }
 
-    onWalletChanged: { cancelPendingSendPrompt(); psbtTicket = 0; psbtReview = null; sendTicket = 0; sendReview = null; sendWallet = null; sweepAlert.close(); sendPassphrasePopup.close() }
+    onWalletChanged: {
+        cancelPendingSendPrompt()
+        if (sendWallet && sendWallet.fileExportOperation && sendWallet.fileExportOperation.pending)
+            sendWallet.fileExportOperation.retire()
+        psbtTicket = 0; psbtReview = null; sendTicket = 0; sendReview = null; sendWallet = null
+        sweepAlert.close(); sendPassphrasePopup.close()
+    }
     onTransactionChanged: {
         if (sendReview !== null && sendReview !== transaction) cancelPendingSendPrompt()
         sweepAlert.close(); reviewEntryPopup.close()
@@ -95,6 +103,15 @@ Page {
         sendReview = wallet.currentTransaction
         sendTicket = 0
         sendTicket = wallet.requestSendTransaction()
+        handleSendOutcome()
+    }
+
+    function signOnly() {
+        if (sending || sendBusy || !wallet || !detailsReady || !wallet.currentTransactionCanSignOnly) return
+        sendWallet = wallet
+        sendReview = wallet.currentTransaction
+        sendTicket = 0
+        sendTicket = wallet.requestSignOnlyTransaction()
         handleSendOutcome()
     }
 
@@ -226,6 +243,16 @@ Page {
             if (target && target === root.wallet) root.savePsbt(selectedFile.toString())
         }
         onRejected: targetWallet = null
+    }
+
+    Instantiator {
+        model: root.wallet && root.wallet.fileExportOperation ? [root.wallet.fileExportOperation] : []
+        delegate: PsbtExportConfirmation {
+            required property FileExportOperationModel modelData
+            parent: root.Overlay.overlay
+            operation: modelData
+            visible: root.visible && modelData.confirmationRequired
+        }
     }
 
     Item {
@@ -457,6 +484,16 @@ Page {
                     text: qsTr("Save transaction")
                     onClicked: root.startSavePsbt()
                 }
+                NeutralButton {
+                    objectName: "sendTransactionReviewSignOnlyButton"
+                    visible: root.wallet && root.wallet.currentTransactionCanSignOnly
+                    buttonSize: NeutralButton.Large
+                    enabled: root.detailsReady && !root.sending && !root.sendBusy
+                    width: parent.width < 540 ? parent.width : (parent.width - 12) / 2
+                    height: 46
+                    text: qsTr("Sign only")
+                    onClicked: root.signOnly()
+                }
                 ContinueButton {
                     objectName: "sendTransactionReviewSendButton"
                     visible: (root.showSend && !externalSignerActions.visible) || root.showBroadcast
@@ -469,13 +506,24 @@ Page {
             }
 
             ToastBanner {
-                visible: root.saveStatus.length > 0
+                objectName: "sendTransactionReviewSaveToast"
+                visible: root.saveStatus.length > 0 && !root.saveError
                 Layout.fillWidth: true
-                tintColor: root.saveError ? Theme.color.red : Theme.color.green
-                iconSource: root.saveError ? "image://images/info-filled" : "image://images/check"
+                tintColor: Theme.color.green
+                iconSource: "image://images/check"
                 text: root.saveStatus
                 dismissAfter: 3
-                onDismissed: root.saveStatus = ""
+                onDismissed: if (!root.saveError) root.saveStatus = ""
+            }
+
+            CoreText {
+                objectName: "sendTransactionReviewSaveError"
+                visible: root.saveError && root.saveStatus.length > 0
+                Layout.fillWidth: true
+                text: root.saveStatus
+                color: Theme.color.red
+                font: Theme.text.description.font
+                wrap: true
             }
 
             CoreText {
@@ -585,9 +633,11 @@ Page {
         parent: Overlay.overlay
         width: Math.min(420, root.width - 40)
         titleText: qsTr("Enter wallet password")
-        descriptionText: qsTr("Enter your wallet password to send this transaction.")
-        confirmText: qsTr("Unlock and send")
-        busyConfirmText: qsTr("Unlocking...")
+        descriptionText: actionWallet && actionWallet.sendSignOnly
+            ? qsTr("Enter your wallet password to sign this PSBT. The transaction will not be sent.")
+            : qsTr("Enter your wallet password to send this transaction.")
+        confirmText: actionWallet && actionWallet.sendSignOnly ? qsTr("Unlock and sign") : qsTr("Unlock and send")
+        busyConfirmText: actionWallet && actionWallet.sendSignOnly ? qsTr("Signing...") : qsTr("Unlocking...")
         property WalletQmlModel actionWallet: null
         property WalletQmlModelTransaction reviewedTransaction: null
         readonly property bool contextValid: root.visible && actionWallet !== null
