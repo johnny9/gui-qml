@@ -142,7 +142,7 @@ QtObject {
 }
 '''
         _, transformed = self.map(source)
-        self.run_qml(source, transformed, '''
+        oracle = '''
         let originalReads = 0; let measuredReads = 0;
         let left = {}; let right = {};
         Object.defineProperty(left, "value", { configurable: true, get: function() { ++originalReads; return 4; } });
@@ -155,7 +155,11 @@ QtObject {
             compare(measured.conditional(right, condition), original.conditional(left, condition));
             compare(JSON.stringify(right), JSON.stringify(left));
         }
-        ''')
+        '''
+        self.run_qml(source, transformed, oracle)
+        self.assertIn("delete object[key]", transformed)
+        self.run_qml(source, transformed.replace("delete object[key]", "(function(value) { return true; })(object[key])"),
+                     oracle, expected_success=False)
 
     def test_annotations_are_metadata(self):
         source = '''import QtQml
