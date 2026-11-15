@@ -1,7 +1,8 @@
 # R23 PSBT eligibility and revision coherence
 
-Implementation is in the isolated R23 candidate. Acceptance remains pending the
-R22 reentrant Save admission repair and its affected checks. Core remains
+Implementation and focused qualification pass at
+82a4f0f8f9447af8c231cfad37b36b26fa525afc. Merged composition remains pending.
+The R22 Save continuation, withdrawal and lifetime guards are repaired. Core remains
 44901d8f64cb617714707bd025ecd83f108353c2, unchanged.
 
 The reviewed immutable assessment, authenticated fee, verified final transaction
@@ -31,15 +32,23 @@ Artifacts are under `.validation/qt6-r11-r40-20261114/R23/`. Parent01 executes
 failure. `combined-06` at1cac3b22327 executes608 bodies:606 pass and2 original
 R22 Save withdrawal rows fail, with no skipped or incomplete selections.
 `opening-07` at ead12cbea44 adds1 passing actual Core unload/reopen control.
-The R22 worker owns the remaining repair; its original oracle stays unchanged.
+After the repair, `withdrawal-08` at862ed14afcf passes78 affected bodies and
+`lifetime-09` at82a4f0f8f94 passes44 Save/preparation bodies, including all21
+unchanged original quiet/delete/withdrawal cases. `FINAL_FOCUSED_UNION.json`
+records609 distinct passing identities across exact sources with explicit carries;
+it does not claim one final-ELF full-suite execution or merged coverage profiles.
 
 App lint03 passes at1cac3b22327. Pinned Clang23.1.6/Bitcoin-plugin static01 checks
 59 handwritten affected units plus7 freshly regenerated MOC aggregates:65 pass,
 one test-only unnecessary UniValue copy fails and is corrected at583d549be95;
-the affected tidy rerun remains pending. Actual IPC GUI functional01 at583d549be95
+static02 passes9/9 affected units, replacing that failure and rechecking the
+changed Save guard plus7 fresh MOCs. All66 distinct static entries are qualified.
+Final app lint05 passes at82a4f0f8f94 and clone/source/Core identities are rechecked.
+Actual IPC GUI functional02 at82a4f0f8f94
 passes native startup failure/recovery and bridge-protocol scenarios. It records
 the intended failed process exit1/markerfalse and recovered CoreReady/550MiB/
 markertrue/exit0, inspects GUI stderr, and has empty outer stderr in both scenarios.
+`FOCUSED_QUALIFICATION.json` records exact commands, scopes, artifacts and limits.
 
 Future upstream improvement: expose a typed, revisioned, read-only finalized
 transaction eligibility observation, including mempool spender/replacement and
