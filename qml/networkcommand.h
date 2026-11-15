@@ -95,6 +95,9 @@ public:
     bool observe(Observation observation);
     bool setAvailable(bool available, uint64_t revision);
     Projection projection() const;
+    // Observer retirement withdraws publication and fresh ingress, while the
+    // original admitted action scopes still own decisions/effects/outcomes.
+    void retire();
     void close();
 private:
     struct Publication;

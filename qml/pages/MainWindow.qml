@@ -333,7 +333,7 @@ ApplicationWindow {
         delegate: NodeRuntimeDialog {
             required property RuntimePromptModel modelData
             prompt: modelData
-            parent: Overlay.overlay
+            parent: appWindow.Overlay.overlay
         }
     }
 

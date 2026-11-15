@@ -38,7 +38,7 @@ Effect Applied(uint64_t id, bool active, uint64_t before, uint64_t after)
 struct Fixture {
     ManualRoutedExecution execution;
     std::deque<std::function<void()>> gui;
-    bool active{true}, throw_write{false}, throw_read{false}, throw_post{false};
+    bool active{true}, throw_write{false}, throw_read{false}, throw_post{false}, advance_generation_on_write{true};
     uint64_t generation{1};
     int reads{0}, writes{0}, generation_reads{0};
     std::unique_ptr<NetworkModel> model;
@@ -56,7 +56,7 @@ struct Fixture {
         };
         ports.generation = [this] { ++generation_reads; return generation; };
         ports.set_active = [this](bool value) {
-            ++writes; rpc(value);
+            ++writes; if(advance_generation_on_write)rpc(value);else active=value;
             if (std::exchange(throw_write, false)) throw std::runtime_error{"Original effect outcome unavailable"};
         };
         model = std::make_unique<NetworkModel>(std::move(ports));
@@ -115,6 +115,75 @@ private Q_SLOTS:
         QVERIFY(!command.finish(Applied(2, true, 11, 12)));
         QCOMPARE(command.projection().outcome, Outcome::Succeeded);
         QVERIFY(command.projection().active);
+    }
+
+    void ownedWriteWithoutCallbackRetainsItsFreshReadAndLatestSuccessor()
+    {
+        Fixture fixture;
+        fixture.advance_generation_on_write = false;
+        fixture.ready();
+        QVERIFY(fixture.model->requestActive(false));
+        QVERIFY(fixture.execution.step(execution::Lane::Domain));
+        QVERIFY(fixture.execution.step(execution::Lane::Core));
+        QCOMPARE(fixture.writes, 1);
+        QVERIFY(!fixture.active);
+        // The original physical read is held before Domain accounting. The
+        // latest explicit successor is still based on the current public clock.
+        QVERIFY(fixture.model->requestActive(true));
+        fixture.settle();
+        QCOMPARE(fixture.writes, 2);
+        QVERIFY(fixture.active);
+        QVERIFY(fixture.model->observedActive());
+        QVERIFY(!fixture.model->pending());
+        QCOMPARE(fixture.model->outcome(), NetworkModel::Succeeded);
+        QCOMPARE(fixture.model->requestId(), quint64{2});
+        QVERIFY(fixture.model->effect().attempted);
+        QVERIFY(fixture.model->effect().succeeded);
+        QCOMPARE(fixture.model->effect().after, uint64_t{1});
+    }
+
+    void passiveFacadeRetirementDrainsTheOriginalAdmittedAction_data()
+    {
+        QTest::addColumn<bool>("domain_consumed");
+        QTest::newRow("original-GUI-admission") << false;
+        QTest::newRow("original-Native-turn-queued") << true;
+    }
+    void passiveFacadeRetirementDrainsTheOriginalAdmittedAction()
+    {
+        QFETCH(bool, domain_consumed);
+        Fixture fixture;
+        fixture.ready();
+        QVERIFY(fixture.model->requestActive(false));
+        if(domain_consumed)QVERIFY(fixture.execution.step(execution::Lane::Domain));
+        QCOMPARE(fixture.writes, 0);
+        fixture.model.reset();
+        QCOMPARE(fixture.writes, 0);
+        fixture.settle();
+        QCOMPARE(fixture.writes, 1);
+        QVERIFY(!fixture.active);
+        QVERIFY(fixture.execution.quiescent());
+        fixture.settle();
+        QCOMPARE(fixture.writes, 1);
+    }
+
+    void cachedNoOpCannotSkipTheCurrentNativeValue()
+    {
+        Fixture fixture;
+        fixture.ready();
+        QVERIFY(fixture.model->observedActive());
+        fixture.active = false; // The public value changed before its notice.
+        QVERIFY(fixture.model->requestActive(true));
+        QCOMPARE(fixture.writes, 0);
+        QVERIFY(fixture.execution.step(execution::Lane::Domain));
+        QCOMPARE(fixture.writes, 0);
+        QVERIFY(fixture.execution.step(execution::Lane::Core));
+        QCOMPARE(fixture.writes, 1);
+        fixture.settle();
+        QVERIFY(fixture.active);
+        QVERIFY(fixture.model->observedActive());
+        QVERIFY(!fixture.model->pending());
+        QCOMPARE(fixture.model->outcome(), NetworkModel::Succeeded);
+        QVERIFY(fixture.model->effect().attempted);
     }
 
     void externalObservationSupersedesOlderQueuedIntent()
@@ -533,10 +602,12 @@ private Q_SLOTS:
         QEventLoop readiness;
         QTimer timeout; timeout.setSingleShot(true);
         connect(&timeout, &QTimer::timeout, &readiness, &QEventLoop::quit);
-        connect(model.get(), &NetworkModel::changed, &readiness, [&] { if (model->ready()) readiness.quit(); });
+        const auto readiness_connection = connect(model.get(), &NetworkModel::changed, &readiness, [&] { if (model->ready()) readiness.quit(); });
         model->setAvailable(true); timeout.start(5000);
         if (!model->ready()) readiness.exec();
         QVERIFY(model->ready());
+        disconnect(readiness_connection);
+        timeout.stop();
         QVERIFY(model->requestActive(false));
         QVERIFY(entered.tryAcquire(1, 5000));
         model.reset();

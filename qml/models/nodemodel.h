@@ -123,7 +123,7 @@ public:
     void setLifecyclePhase(nodelifecycle::Phase phase);
     // Compatibility capability: backend/subscription availability. The typed
     // command owner additionally requires a current observation before effects.
-    bool networkActionReady() const { return networkBackendAvailable(); }
+    bool networkActionReady() const { return networkBackendAvailable() && m_network_model && m_network_model->ready(); }
     bool peerActionPending() const { return bool(m_peer_command); }
     enum class PeerActionOutcome { Succeeded, Rejected, PartiallyApplied, Uncertain };
     Q_ENUM(PeerActionOutcome)
@@ -280,7 +280,8 @@ private:
     bool networkBackendAvailable() const { return m_backend_queries_ready && m_subscriptions_ready && !m_admission_closed && !m_shutdown_requested && !m_workers_stopping; }
     void updateNetworkAvailability();
     void publishNetworkAction();
-    bool m_network_known{false};
+    bool m_network_known{false}, m_network_ready_snapshot{false};
+    uint64_t m_pause_generation{0};
     bool m_network_action_pending{false};
     QString m_network_action_error;
     bool m_drained{false};
@@ -340,6 +341,9 @@ private:
     std::shared_ptr<startupdiagnostics::TextBudget> m_dialog_text_budget{std::make_shared<startupdiagnostics::TextBudget>()};
     struct InitializationResult { bool success; interfaces::BlockAndHeaderTipInfo tip; bool initial_block_download; bool shutdown_requested; };
     std::optional<InitializationResult> m_initialization_result;
+    std::optional<InitializationResult> m_ready_initialization;
+    bool m_startup_warning_pending{false};
+    std::shared_ptr<runtimeprompt::AnswerCell> m_startup_warning_answer;
     bool m_startup_diagnostics_sealed{false}, m_startup_warnings_shown{false};
     QString m_warnings;
     QStringList m_warning_list;
@@ -379,7 +383,9 @@ private:
     void finishStartupDiagnostics();
     void recordStartupErrorMessage(const QString& message);
     void recordStartupWarningMessage(const QString& message);
-    void showStartupWarnings();
+    bool showStartupWarnings();
+    void finishReadyInitialization();
+    void completeStartupWarning(bool presented);
     void setNodeReady(bool ready);
     void setBlockSyncActive(bool active);
     void setHeaderSyncState(int height, int64_t block_time, bool presync);

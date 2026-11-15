@@ -66,8 +66,12 @@ std::optional<Intent> Command::finish(Effect effect)
     m_running.reset();
     m_effect = effect;
     if (effect.observation) {
-        if (m_closed && (!m_observed || effect.observation->generation > m_observed->generation)) m_observed = effect.observation;
-        else observe(*effect.observation);
+        const bool fresh_original_read = effect.status == EffectStatus::Applied && effect.own_frontier
+            && effect.current == effect.after && effect.observation->generation == effect.after;
+        if ((!m_observed || effect.observation->generation > m_observed->generation)
+            || (fresh_original_read && effect.observation->generation == m_observed->generation)) {
+            m_observed = effect.observation;
+        } else if (!m_closed) observe(*effect.observation);
     }
     if (m_closed) { m_queued.reset(); m_outcome = Outcome::Closed; m_error = Error::Closed; return {}; }
     if (effect.status == EffectStatus::Uncertain) {
@@ -272,11 +276,21 @@ struct Service::State {
                     result.observation = self->ports.observe();
                     result.after = result.observation->generation;
                     result.current = self->ports.generation();
-                    result.succeeded = result.observation->active == intent.active;
-                    result.own_frontier = result.after == result.before;
-                    result.status = EffectStatus::Applied;
-                    return result;
+                    if (result.after != result.before || result.current != result.before) {
+                        result.status = EffectStatus::Superseded;
+                        return result;
+                    }
+                    // The cached no-op hint is not authority to skip a current
+                    // Native read. A changed value without a delivered notice
+                    // still needs the admitted original intent's effect.
+                    if (result.observation->active == intent.active) {
+                        result.succeeded = true;
+                        result.own_frontier = true;
+                        result.status = EffectStatus::Applied;
+                        return result;
+                    }
                 }
+                if (self->stopping || !self->available || self->availability != intent.availability) return result;
                 result.attempted = true;
                 self->ports.set_active(intent.active);
                 result.after = self->ports.generation();
@@ -395,6 +409,16 @@ Projection Service::projection() const
     std::lock_guard lock{m_publication->mutex};
     const auto value = m_publication->value.load();
     return value ? *value : m_publication->fallback;
+}
+void Service::retire()
+{
+    // Release the publication alias before the original owner. Existing task
+    // callbacks retain that owner through their accepted outcome chain; its
+    // pre-reserved Native cleanup then retires ports and the lifetime scope.
+    // Passive observer loss is not an implicit cancellation command.
+    { std::lock_guard lock{m_publication->mutex}; m_publication->closed = true; m_publication->value.store({}); }
+    m_state.reset();
+    m_owner.reset();
 }
 void Service::close()
 {

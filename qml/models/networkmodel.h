@@ -39,6 +39,7 @@ public:
     ~NetworkModel() override;
     bool observedActive() const { return m_projection.active; }
     bool known() const { return m_projection.known; }
+    uint64_t observedGeneration() const { return m_projection.generation; }
     bool ready() const { return !m_closed && m_available && m_projection.ready && m_projection.availability == m_availability; }
     bool pending() const { return m_ingress_pending || m_projection.pending; }
     QString error() const;
@@ -49,6 +50,7 @@ public:
     Q_INVOKABLE bool requestActive(bool active);
     void observe(bool active, uint64_t generation);
     void setAvailable(bool available);
+    void retire();
     void close();
 Q_SIGNALS:
     void changed();

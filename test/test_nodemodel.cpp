@@ -136,6 +136,82 @@ class NodeModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void manualStartupWarningAdmissionRejectionCanDeleteTheObserver()
+    {
+        MockNode node;
+        ConfigureNodeModelDefaults(node);
+        MempoolState mempool;
+        ConfigureMempoolGetters(node,mempool);
+        ManualExecutionEnvironment env;
+        NodeModel::Services services;
+        services.execution={env.scheduler,[&](auto turn){env.post(std::move(turn));}};
+        auto model=std::make_unique<NodeModel>(node,false,std::move(services));
+        bool rejection{false},armed{false};
+        int chain_ready{0};
+        const auto cleanup=qScopeGuard([&]{
+            if(model){QObject::disconnect(model.get(),nullptr,this,nullptr);model->beginShutdown();model.reset();}
+            for(int turn=0;turn<8;++turn){env.drain();env.publishAll();}
+        });
+        env.drain();env.publishAll();
+        QVERIFY(model->notificationsReady());
+        connect(model.get(),&NodeModel::chainStateReady,this,[&]{++chain_ready;});
+        // Availability ingress is already admitted by the earlier connection;
+        // reject the next fresh prompt intake, before any handoff is owned.
+        connect(model.get(),&NodeModel::networkActionReadyChanged,this,[&]{if(!armed){armed=true;env.rejectNext();}});
+        connect(model.get(),&NodeModel::observationErrorChanged,this,[&]{rejection=true;model.reset();});
+        model->addStartupWarnings({QStringLiteral("Original startup warning")});
+        model->initializeResult(true,{},false,false);
+        for(int turn=0;turn<8&&model;++turn){env.drain();env.publishAll();}
+        QVERIFY(armed);
+        QVERIFY(rejection);
+        QVERIFY(!model);
+        QCOMPARE(chain_ready,0);
+        for(int turn=0;turn<8;++turn){env.drain();env.publishAll();}
+        QVERIFY(env.quiescent());
+    }
+
+    void manualPauseObserverKeepsItsReentrantIntentPending()
+    {
+        struct NetworkNode final : MockNode {
+            std::function<void(bool)> set_active;
+            void setNetworkActive(bool value)override{set_active(value);}
+        } node;
+        ConfigureNodeModelDefaults(node);
+        MempoolState mempool;
+        ConfigureMempoolGetters(node,mempool);
+        bool active{false},reentered{false};
+        int writes{0};
+        interfaces::Node::NotifyNetworkActiveChangedFn notice;
+        node.handle_notify_network_active_changed_fn=[&](auto callback){notice=std::move(callback);return MakeNoopHandler();};
+        node.get_network_active_fn=[&]{return active;};
+        node.set_active=[&](bool value){++writes;if(active!=value){active=value;if(notice)notice(value);}};
+        ManualExecutionEnvironment env;
+        NodeModel::Services services;
+        services.execution={env.scheduler,[&](auto turn){env.post(std::move(turn));}};
+        auto model=std::make_unique<NodeModel>(node,true,std::move(services));
+        const auto cleanup=qScopeGuard([&]{
+            QObject::disconnect(model.get(),nullptr,this,nullptr);model->beginShutdown();model.reset();
+            for(int turn=0;turn<8;++turn){env.drain();env.publishAll();}
+        });
+        QSignalSpy pending{model.get(),&NodeModel::networkActionPendingChanged};
+        connect(model.get(),&NodeModel::pauseChanged,this,[&](bool paused){
+            if(paused&&!reentered){reentered=true;model->setPause(false);}
+        });
+        for(int turn=0;turn<8&&!reentered;++turn){env.drain();env.publishAll();}
+        QVERIFY(reentered);
+        QCOMPARE(writes,0);
+        QVERIFY(model->networkModel()->pending());
+        QVERIFY(model->networkActionPending());
+        QCOMPARE(pending.size(),1);
+        for(int turn=0;turn<8;++turn){env.drain();env.publishAll();}
+        QCOMPARE(writes,1);
+        QVERIFY(active);
+        QVERIFY(!model->pause());
+        QVERIFY(!model->networkModel()->pending());
+        QVERIFY(!model->networkActionPending());
+        QCOMPARE(pending.size(),2);
+    }
+
     void manualQueuedNetworkIntentYieldsToLaterBackendObservation() {
         struct NetworkNode final : MockNode {
             std::function<void(bool)> set_active;
@@ -358,7 +434,9 @@ void NodeModelTests::acceptedNetworkActionOutlivesFacade()
     services.execution = {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }};
     auto model = std::make_unique<NodeModel>(node, false, std::move(services));
     env.drain(); env.publishAll(); QVERIFY(model->notificationsReady());
-    model->initializeResult(true, {}, false, false); env.drain(); env.publishAll();
+    model->initializeResult(true, {}, false, false);
+    for(int turn=0;turn<8&&!model->networkActionReady();++turn){env.drain();env.publishAll();}
+    QVERIFY(model->networkActionReady());
     model->setPause(true); QVERIFY(model->networkActionPending()); QCOMPARE(node.effects, 0);
     model.reset(); // Accepted effect and its outcome survive GUI observer loss.
     QCOMPARE(node.effects, 0);

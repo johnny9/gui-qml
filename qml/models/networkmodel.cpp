@@ -19,7 +19,7 @@ NetworkModel::NetworkModel(Ports ports, QObject* parent) : QObject(parent)
         [post, observer] { post([observer] { if (observer) observer->publish(); }); },
         [post, observer] { post([observer] { if (observer) observer->finishDrain(); }); });
 }
-NetworkModel::~NetworkModel() { close(); }
+NetworkModel::~NetworkModel() { retire(); }
 QString NetworkModel::error() const
 {
     using Error = networkcommand::Error;
@@ -67,6 +67,12 @@ void NetworkModel::publish()
         m_ingress_pending = false; m_outcome = static_cast<Outcome>(value.outcome); m_error = value.error;
     }
     Q_EMIT changed();
+}
+void NetworkModel::retire()
+{
+    if (std::exchange(m_closed, true)) return;
+    m_available = false;
+    m_service->retire();
 }
 void NetworkModel::close()
 {
