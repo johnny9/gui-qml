@@ -32,7 +32,8 @@ Result Execute(interfaces::Node& node, const Request& request)
     try {
         if (request.target.node_id < 0 && (request.kind == Kind::Disconnect || request.exact_connection)) return Reject(request, QObject::tr("The peer connection is invalid."));
         if (request.kind == Kind::Ban) {
-            if (!ValidDuration(request.duration) || request.target.raw_address.isEmpty() || request.target.raw_address.size() > 512)
+            if (request.duration <= 0 || (request.exact_connection && !ValidDuration(request.duration)) ||
+                request.target.raw_address.isEmpty() || request.target.raw_address.size() > 512)
                 return Reject(request, QObject::tr("The ban duration or address is invalid."));
             address = LookupHost(request.target.raw_address.toStdString(), false);
             if (!address) return Reject(request, QObject::tr("The peer address is invalid."));

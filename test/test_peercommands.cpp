@@ -379,6 +379,37 @@ private Q_SLOTS:
         QVERIFY(!detail->prepareDisconnect()); QVERIFY(!detail->prepareBan(PeerCommandOperation::BanDuration::Day));
         QCOMPARE(f.node.calls.getNodesStats.load(), reads); QCOMPARE(f.disconnects, 0); QCOMPARE(f.ban_writes, 0);
     }
+    void durationPolicyPreservesLegacyCustomValuesWithoutWideningTypedCommands_data()
+    {
+        QTest::addColumn<bool>("legacy"); QTest::addColumn<qint64>("seconds");
+        QTest::newRow("legacy-standard-control") << true << qint64{3600};
+        QTest::newRow("legacy-positive-custom") << true << qint64{3601};
+        QTest::newRow("typed-positive-custom-refused") << false << qint64{3601};
+    }
+    void durationPolicyPreservesLegacyCustomValuesWithoutWideningTypedCommands()
+    {
+        QFETCH(bool, legacy); QFETCH(qint64, seconds);
+        Fixture f; QVERIFY(f.settle()); qint64 received_seconds{0}; QString received_address;
+        const auto cleanup = qScopeGuard([&] { f.settle(); });
+        f.node.ban_fn = [&](const CNetAddr& address, int64_t duration) {
+            ++f.ban_writes; received_seconds = duration; received_address = QString::fromStdString(address.ToStringAddr()); return true;
+        };
+        const auto reads = f.node.calls.getNodesStats.load();
+        std::unique_ptr<PeerCommandOperation> operation;
+        if (legacy) QVERIFY(f.commands->requestBanPeer(QStringLiteral("10.0.0.7"), seconds));
+        else {
+            auto* details = f.details(7); QVERIFY(details);
+            operation.reset(details->prepareBan(static_cast<PeerCommandOperation::BanDuration>(seconds)));
+            QVERIFY(operation); QVERIFY(operation->confirm());
+        }
+        QCOMPARE(f.ban_writes, 0); QVERIFY(f.settle()); QVERIFY(f.commands->lastResult().present);
+        QCOMPARE(f.node.calls.getNodesStats.load(), reads);
+        QCOMPARE(f.ban_writes, legacy ? 1 : 0); QCOMPARE(f.address_disconnects, legacy ? 1 : 0);
+        QCOMPARE(f.commands->lastResult().mutationAttempted, legacy);
+        QCOMPARE(f.commands->lastResult().outcome, legacy ? PeerCommandOperation::Succeeded : PeerCommandOperation::Rejected);
+        if (legacy) { QCOMPARE(received_seconds, seconds); QCOMPARE(received_address, QStringLiteral("10.0.0.7")); }
+        else { QVERIFY(!operation->pending()); QVERIFY(!operation->errorText().isEmpty()); }
+    }
 };
 BITCOINQML_REGISTER_QT_TEST(PeerCommandTests)
 #include <test_peercommands.moc>
