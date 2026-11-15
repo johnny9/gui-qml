@@ -972,7 +972,7 @@ void WalletQmlModel::applyPsbtFeeProof(const std::shared_ptr<const psbtfee::Requ
         previous = m_current_transaction;
         attempt_changed = setCurrentTransaction(authenticated);
     }
-    const bool node_blocked = m_current_transaction->nodePolicyBlocked();
+    const bool node_blocked = m_current_transaction->nodePolicyBlocked() || m_psbt_requires_recheck;
     m_current_transaction_can_send = known && !node_blocked && (m_psbt_key_can_send || (result.complete && m_psbt_can_commit_complete));
     m_current_transaction_can_broadcast = known && result.complete && !node_blocked;
     m_current_transaction_review_message = !known
@@ -2728,7 +2728,7 @@ void WalletQmlModel::applyPreparationResolution(transactionattempt::Result resol
     m_psbt_fee_proof = effect.review->proof
         ? std::shared_ptr<const psbtfee::Analysis>{effect.review, effect.review->proof.get()}
         : std::shared_ptr<const psbtfee::Analysis>{};
-    m_current_psbt.reset(); m_psbt_document_lease.reset();
+    m_current_psbt.reset(); m_psbt_document_lease.reset(); m_psbt_requires_recheck = false;
     m_current_transaction_source = CurrentTransactionSource::SendDraft;
     m_current_transaction_sweeps_wallet = effect.review->sweeps;
     m_current_transaction_can_send = effect.review->can_send;
@@ -3202,7 +3202,7 @@ void WalletQmlModel::publishSendOperation()
         m_current_transaction_can_send = false; m_current_transaction_can_broadcast = false;
         m_current_transaction->setWtx(result->committed);
         if (!self || !m_send_review || m_send_review != m_current_transaction) return;
-        m_current_psbt.reset(); m_psbt_document_lease.reset(); m_current_transaction_source = CurrentTransactionSource::None;
+        m_current_psbt.reset(); m_psbt_document_lease.reset(); m_psbt_requires_recheck = false; m_current_transaction_source = CurrentTransactionSource::None;
         m_current_transaction_can_send = false; m_current_transaction_can_broadcast = false;
         m_current_transaction_review_message.clear(); clearTransactionStatus();
         if (!self || !m_send_review || m_send_review != m_current_transaction) return;
@@ -3550,9 +3550,16 @@ void WalletQmlModel::publishPsbtAction()
         }
         m_psbt_action_state = not_started ? PsbtActionState::PsbtFailed : PsbtActionState::PsbtUncertain;
         m_psbt_action_error = not_started ? tr("The PSBT action did not start.") : tr("The PSBT action ended without a confirmed outcome. Reconcile before retrying.");
-        if (!not_started && m_psbt_action_kind == PsbtActionKind::Broadcast && m_psbt_action_review == m_current_transaction) m_current_transaction_can_broadcast = false;
+        if (!not_started && same && m_psbt_action_kind == PsbtActionKind::Broadcast) {
+            m_current_transaction_can_send = false; m_current_transaction_can_broadcast = false;
+            m_psbt_requires_recheck = true;
+        }
     } else {
         const auto& value = *result->value;
+        if (same && m_psbt_action_kind == PsbtActionKind::Broadcast) {
+            m_current_transaction_can_send = false; m_current_transaction_can_broadcast = false;
+            m_psbt_requires_recheck = true;
+        }
         m_psbt_action_error = !value.error.isEmpty() ? value.error : value.effect.error;
         if (original_kind == PsbtActionKind::Save && m_psbt_action_error.isEmpty() && value.export_document) {
             if (!same) {
@@ -3572,7 +3579,7 @@ void WalletQmlModel::publishPsbtAction()
             if (same) {
                 m_current_transaction_can_send = false; m_current_transaction_can_broadcast = false;
                 if (value.effect.transaction) { m_current_transaction->setWtx(value.effect.transaction); if (!owns_view()) return; }
-                m_current_psbt.reset(); m_psbt_document_lease.reset();
+                m_current_psbt.reset(); m_psbt_document_lease.reset(); m_psbt_requires_recheck = false;
                 document_view = false; projected_review = m_current_transaction;
                 had_projected_review = bool(projected_review);
                 m_current_transaction_source = CurrentTransactionSource::None;
@@ -3610,13 +3617,14 @@ void WalletQmlModel::publishPsbtAction()
                 preparation_projection_changed = setCurrentTransaction(transaction);
                 projected_review = transaction; had_projected_review = true;
                 if (previous) previous->deleteLater();
-                m_current_psbt.reset(); m_psbt_document_lease.reset();
+                m_current_psbt.reset(); m_psbt_document_lease.reset(); m_psbt_requires_recheck = false;
                 m_current_psbt = imported.document;
                 if (m_psbt_action_lease) { m_psbt_document_lease.emplace(std::move(*m_psbt_action_lease)); m_psbt_action_lease.reset(); }
                 m_psbt_fee_proof = imported.review->proof
                     ? std::shared_ptr<const psbtfee::Analysis>{imported.review, imported.review->proof.get()}
                     : std::shared_ptr<const psbtfee::Analysis>{};
                 m_psbt_fee_request.reset(); m_psbt_fee_pending = false;
+                m_psbt_requires_recheck = false;
                 m_psbt_key_can_send = imported.key_can_send; m_psbt_can_commit_complete = imported.can_commit_complete;
                 m_current_transaction_source = CurrentTransactionSource::ImportedPsbt;
                 m_current_transaction_can_send = imported.review->can_send;
@@ -3804,7 +3812,7 @@ void WalletQmlModel::discardCurrentTransaction()
 
     auto* previous = m_current_transaction;
     const bool attempt_changed = setCurrentTransaction(nullptr);
-    m_current_psbt.reset(); m_psbt_document_lease.reset();
+    m_current_psbt.reset(); m_psbt_document_lease.reset(); m_psbt_requires_recheck = false;
     m_current_transaction_source = CurrentTransactionSource::None;
     m_current_transaction_can_send = false;
     m_current_transaction_can_broadcast = false;

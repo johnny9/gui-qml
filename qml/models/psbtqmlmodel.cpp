@@ -437,6 +437,7 @@ void PsbtQmlModel::publish(quint64 ticket, quint64 generation)
         if (!not_started && m_active_kind == psbtwork::Kind::Sign) m_signing_blocked = true;
     } else {
         const auto& result = *outcome->value;
+        if (m_active_kind == psbtwork::Kind::Broadcast && generation == m_generation) m_broadcast_blocked = true;
         if (result.submitted) m_submitted = true;
         if (result.saved) m_saved = true;
         if (result.submitted || result.code == psbtwork::Error::Uncertain) {

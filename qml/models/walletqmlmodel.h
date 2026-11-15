@@ -695,6 +695,7 @@ private:
     bool m_custom_psbt_lookup{false};
     std::shared_ptr<const psbtfee::RequestIdentity> m_psbt_fee_request;
     std::shared_ptr<const psbtfee::Analysis> m_psbt_fee_proof;
+    bool m_psbt_requires_recheck{false};
     bool m_psbt_fee_pending{false};
     bool m_psbt_key_can_send{false};
     bool m_psbt_can_commit_complete{false};
