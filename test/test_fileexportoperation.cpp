@@ -508,6 +508,45 @@ private Q_SLOTS:
             ? BackupFileOperation::Phase::Retired : BackupFileOperation::Phase::Succeeded);
         QVERIFY(fixture.execution.quiescent());
     }
+
+    void acceptedWriteContinuesAfterRetirementDuringWrite()
+    {
+        Fixture fixture;
+        std::atomic_int writes{0};
+        std::atomic_int outcomes{0};
+        std::atomic_int terminal_phase{-1};
+        BackupFileOperation* projection{};
+        auto services = fixture.services();
+        services.wallet_name = [] { return std::string{"transaction"}; };
+        services.inspect = [](const std::string& raw, const std::string&) {
+            backup::Proposal proposal;
+            proposal.path = raw;
+            return proposal;
+        };
+        services.write = [&](const backup::Proposal&, bool) {
+            ++writes;
+            // Projection retirement during the already-admitted write must
+            // leave its original completion and terminal receipt intact.
+            projection->backend()->retireIfAwaitingConfirmation();
+            return backup::WriteResult{};
+        };
+        services.outcome = [&](backup::Snapshot snapshot) {
+            ++outcomes;
+            terminal_phase = static_cast<int>(snapshot.phase);
+        };
+        BackupFileOperation operation{QStringLiteral("captured.psbt"), std::move(services)};
+        projection = &operation;
+
+        QVERIFY(operation.start());
+        fixture.execution.drain();
+
+        QCOMPARE(writes.load(), 1);
+        QCOMPARE(outcomes.load(), 1);
+        QCOMPARE(terminal_phase.load(), static_cast<int>(backup::Phase::Succeeded));
+        fixture.deliverGui();
+        QCOMPARE(operation.phase(), BackupFileOperation::Phase::Succeeded);
+        QVERIFY(fixture.execution.quiescent());
+    }
 };
 
 BITCOINQML_REGISTER_QT_TEST(FileExportOperationTests)
