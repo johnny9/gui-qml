@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <qml/models/peerlistmodel.h>
 #include <qml/peerstatsutil.h>
+#include <qml/peercommandport.h>
 #include <qml/retainedsnapshot.h>
 #include <interfaces/node.h>
 #include <QTimer>
@@ -10,18 +11,22 @@
 #include <algorithm>
 #include <stdexcept>
 namespace {
+QString PresentText(const std::string& value, qsizetype limit = 512)
+{
+    return QString::fromUtf8(value.data(), qsizetype(std::min(value.size(), size_t(limit) * 4))).left(limit);
+}
 PeerPresentation Present(const CNodeCombinedStats& stats, NodeClock::time_point now)
 {
     PeerPresentation result;
     result.rawAddress = [&]() -> QString { return QString::fromStdString(stats.nodeStats.addr.ToStringAddr()); }();
-    result.address = [&]() -> QString { return QString::fromStdString(stats.nodeStats.m_addr_name); }();
-    result.addressLocal = [&]() -> QString { return QString::fromStdString(stats.nodeStats.addrLocal); }();
+    result.address = PresentText(stats.nodeStats.m_addr_name);
+    result.addressLocal = PresentText(stats.nodeStats.addrLocal);
     result.type = [&]() -> QString { return PeerStatsUtil::ConnectionTypeToQString(stats.nodeStats.m_conn_type, /*prepend_direction=*/true); }();
     result.network = [&]() -> QString { return PeerStatsUtil::NetworkToQString(stats.nodeStats.m_network); }();
     result.transport = [&]() -> QString { return PeerStatsUtil::TransportToQString(stats.nodeStats.m_transport_type); }();
-    result.sessionId = [&]() -> QString { return QString::fromStdString(stats.nodeStats.m_session_id); }();
+    result.sessionId = PresentText(stats.nodeStats.m_session_id, 128);
     result.version = [&]() -> QString { return QString::number(stats.nodeStats.nVersion); }();
-    result.userAgent = [&]() -> QString { return QString::fromStdString(stats.nodeStats.cleanSubVer); }();
+    result.userAgent = PresentText(stats.nodeStats.cleanSubVer);
     result.services = [&]() -> QString { return PeerStatsUtil::FormatServicesStr(stats.nodeStateStats.their_services); }();
     result.transactionRelay = [&]() -> bool { return stats.nodeStateStats.m_relay_txs; }();
     result.addressRelay = [&]() -> bool { return stats.nodeStateStats.m_addr_relay_enabled; }();
@@ -75,6 +80,10 @@ PeerListModel::PeerListModel(interfaces::Node& node, QObject* parent, bool backe
                 record->raw = {std::move(std::get<0>(entry)), std::move(std::get<2>(entry)), std::get<1>(entry)};
                 record->presentation = Present(record->raw, now);
                 const auto& raw = record->raw.nodeStats; const auto& view = record->presentation;
+                record->connection = {
+                    QStringLiteral("%1/%2/%3").arg(qint64(raw.nodeid)).arg(qint64(raw.m_connected.time_since_epoch().count()))
+                        .arg(QString::fromStdString(raw.addr.ToStringAddrPort())),
+                    raw.nodeid, raw.m_connected, raw.addr, view.sessionId, view.rawAddress, view.address, CSubNet{raw.addr}.IsValid()};
                 const auto age = now - raw.m_connected;
                 using namespace std::chrono_literals;
                 const QString age_text = age >= 24h ? tr("%1 d").arg(age / 24h) : age >= 1h ? tr("%1 h").arg(age / 1h)
@@ -83,7 +92,8 @@ PeerListModel::PeerListModel(interfaces::Node& node, QObject* parent, bool backe
                 row.values = {{NetNodeId, QVariant::fromValue(qint64(raw.nodeid))}, {Age, age_text}, {Address, view.address},
                     {Direction, raw.fInbound ? tr("Inbound") : tr("Outbound")}, {ConnectionType, PeerStatsUtil::ConnectionTypeToQString(raw.m_conn_type, false)},
                     {Network, view.network}, {Ping, view.pingMin}, {Sent, view.bytesSent}, {Received, view.bytesReceived},
-                    {Subversion, view.userAgent}, {Transport, view.transport}};
+                    {Subversion, view.userAgent}, {Transport, view.transport},
+                    {ConnectionId, record->connection.key}, {NodeIdText, QString::number(raw.nodeid)}};
                 result->rows.push_back(std::move(row));
             }
             std::sort(result->rows.begin(), result->rows.end(), [](const auto& a, const auto& b) {
@@ -98,13 +108,27 @@ PeerListModel::PeerListModel(interfaces::Node& node, QObject* parent, bool backe
     m_timer = new QTimer(this); m_timer->setInterval(250);
     connect(m_timer, &QTimer::timeout, this, &PeerListModel::refresh); refresh();
 }
-PeerListModel::~PeerListModel() { closeAdmission(); }
+PeerListModel::~PeerListModel() { m_destroying = true; closeAdmission(); }
 void PeerListModel::startAutoRefresh() { if (stopping()) return; m_auto_refresh_requested = true; if (m_backend_ready) m_timer->start(); }
 void PeerListModel::stopAutoRefresh() { m_auto_refresh_requested = false; m_timer->stop(); }
 void PeerListModel::backendInitialized() { if (stopping() || m_backend_ready) return; m_backend_ready = true; refresh(); if (m_auto_refresh_requested) m_timer->start(); }
 void PeerListModel::beginShutdown() { closeAdmission(); }
-void PeerListModel::closeAdmission() { if (m_timer) m_timer->stop(); m_details.reset(); NativeListModel::closeAdmission(); }
+void PeerListModel::closeAdmission() {
+    if (stopping()) return;
+    if (m_timer) m_timer->stop(); m_details.reset(); NativeListModel::closeAdmission();
+    if (!m_destroying) Q_EMIT commandsChanged();
+}
 void PeerListModel::refresh() { if (m_backend_ready) refreshNative(); }
+PeerCommandPort* PeerListModel::commands() const { return !stopping() && m_commands_object ? m_commands : nullptr; }
+void PeerListModel::setCommands(PeerCommandPort* commands)
+{
+    if (stopping() || !commands || !commands->observerObject() || m_commands_object) return;
+    disconnect(m_commands_change); disconnect(m_commands_destroyed);
+    m_commands = commands; m_commands_object = commands->observerObject();
+    m_commands_change = commands->observe(this, [this] { Q_EMIT commandsChanged(); });
+    m_commands_destroyed = connect(m_commands_object, &QObject::destroyed, this, [this] { m_commands = nullptr; m_commands_object.clear(); Q_EMIT commandsChanged(); });
+    Q_EMIT commandsChanged();
+}
 QVariant PeerListModel::data(const QModelIndex& index, int role) const {
     if (role != StatsRole) return NativeListModel::data(index, role);
     const auto row = rowHandle(index); if (!row) return {};
@@ -115,7 +139,7 @@ Qt::ItemFlags PeerListModel::flags(const QModelIndex& index) const { return inde
 QHash<int, QByteArray> PeerListModel::roleNames() const {
     return {{StatsRole, "stats"}, {NetNodeId, "nodeId"}, {Age, "age"}, {Address, "address"}, {Direction, "direction"},
         {ConnectionType, "connectionType"}, {Network, "network"}, {Ping, "ping"}, {Sent, "sent"}, {Received, "received"},
-        {Subversion, "subversion"}, {Transport, "transport"}};
+        {Subversion, "subversion"}, {Transport, "transport"}, {ConnectionId, "connectionId"}, {NodeIdText, "nodeIdText"}};
 }
 void PeerListModel::watchDetails(qint64 id, PeerPresentationObserver* details) {
     if (!m_details || stopping() || !details || !details->observerObject()) return;

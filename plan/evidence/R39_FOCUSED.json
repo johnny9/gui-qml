@@ -1,0 +1,91 @@
+{
+  "state": "worker focused gate PASS; whole R39 pending R36 composition",
+  "tested_app": "9c49afa8ee08dd381618bd6c92f33bb55ed42521",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "qualified_base": "1b17c0b434f",
+  "findings": {
+    "draft098": {
+      "disposition": "Source-refuted/HOLD; not promoted to a reproduced UAF/RCE or newly fixed original defect",
+      "evidence": "Accepted615 already uses alias-owned StatsRole/cached presentation. Legal current connection/value/drain controls harden M28 without manufacturing UB."
+    },
+    "draft302": {
+      "disposition": "Original publicGUI failure reproduced and fixed on actual finalGUI",
+      "parent": "dbbc99fdc74550170c6948786471a69f83b45320",
+      "artifacts": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R39/red-parent-02/artifacts",
+      "trigger": "Numeric/unmatched projections complete; physical#1 querytimesoutactualcount0expected1. Same actualCore connection, identical optional#keystroke fixture. Parent01stagedunrun/superseded."
+    }
+  },
+  "current": {
+    "native": 59,
+    "qml": 68,
+    "QtTest": 127,
+    "functional_scenarios": 2,
+    "GUI_processes_inspected": 3,
+    "existing_multi_node_journeys": 9,
+    "skips": 0,
+    "empty_selections": 0
+  },
+  "exits": {
+    "build": 0,
+    "native": 0,
+    "qml": 0,
+    "functional": 0,
+    "bootstrap-autogen": 0,
+    "qml-lint": 0,
+    "tidy": 0
+  },
+  "source_clean_after": true,
+  "unit_build": {
+    "mode": "focused",
+    "requested_classes": [
+      "PeerCommandTests",
+      "PeerListModelTests",
+      "NodeModelTests"
+    ],
+    "compiled_classes": [
+      "NodeModelTests",
+      "PeerCommandTests",
+      "PeerListModelTests",
+      "StartupProfileTests"
+    ]
+  },
+  "cache": {
+    "before_unit_TUs": 111,
+    "after_unit_TUs": 8,
+    "actual": "Cacheable calls:  35 / 35 (100.0%)\n  Hits:            2 / 35 ( 5.71%)\n    Direct:        0 /  2 ( 0.00%)\n    Preprocessed:  2 /  2 (100.0%)\n  Misses:         33 / 35 (94.29%)\nLocal storage:\n  Hits:            2 / 35 ( 5.71%)\n  Misses:         33 / 35 (94.29%)\n",
+    "meaning": "All35calls cacheable;2preprocessedhits33misses.32GiB/content cache and meaningful flags retained; no full-hit/capacity claim."
+  },
+  "commands": {
+    "configure": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R39/gameboy/run-03/artifacts/configure-command.json",
+    "build": "cmake --build /review/build --target bitcoinqml_unit_tests bitcoinqml_qmltests bitcoin-core-app bitcoind bitcoin-node --parallel6",
+    "native": "python3 /review/source/test/run_focused.py --build-dir /review/build --manifest /r39/native.json --output-dir /r39/artifacts/native",
+    "qml": "python3 /review/source/test/run_focused.py --build-dir /review/build --manifest /r39/qml.json --output-dir /r39/artifacts/qml",
+    "functional": "Separate xvfb-run interface_qml_peers.py --case displayed-peer-id-search and --case peer-management-and-restart; exact argv/env in docker-command.json",
+    "tidy": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R39/gameboy/run-03/artifacts/tidy-command.json",
+    "qml_lint": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R39/gameboy/run-03/artifacts/qml-lint-command.json",
+    "lint": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R39/lint-04/COMMAND.json"
+  },
+  "static": {
+    "current_tidy_cpp": 4,
+    "current_fresh_MOCs": 7,
+    "prior_actual": "run01 12Cpp+7MOC; run02 4Cpp+7MOC. Raw/source scopes retained, not a blanket rebuilt claim.",
+    "qml_lint": "Fulltarget/variants/probesPASS",
+    "app_lint": "Exact9c49 lint04PASS; docs-only delivery requires final lint",
+    "Core_target_commands_identical": 370,
+    "Core_command_sha256": "6aaa119cbc9c488af101a2adbfe6edaaed7e71e3a39ec67609e4bcf3937ff5e0"
+  },
+  "limits": [
+    "R36 phase/lifecycle prerequisite and final composed gate pending",
+    "Separate stats validation/mutation is not an atomic connection API. Pinned monotonic IDs and backend drain bound guarantee; upstream note retained",
+    "Ban bool is not a new durable-write receipt; partial/unknown actual outcome retained. Recovery observes without mutation retry",
+    "Explicit external rawC++StatsRole loans retain their lifetime; new details/copies hold bounded Qt values without Native cleanup lease",
+    "Coverage/fullmatrices/sanitizers explicitly R42; no pass claimed"
+  ],
+  "historical_failures": {
+    "run01": "Native52/55,QML53/68,multi-nodePASS,#driver unsupported. Real model-owned Native lease bug corrected; original3quiescence testbytes retained. Popup lookup repaired with same physical/state/effect/timing oracles.",
+    "preflight02": "Missing mock Notify declarations, fixed03; raw retained",
+    "lint01": "Duplicate includes, fixed; raw retained"
+  },
+  "old_results_not_added": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R39/gameboy/run-02/artifacts",
+  "upstream": "plan/R39_PEER_OPERATIONS.md"
+}
