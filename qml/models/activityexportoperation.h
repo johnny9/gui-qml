@@ -75,6 +75,8 @@ public:
 Q_SIGNALS:
     void changed();
 private:
+    bool retiredWithoutWrite() const;
+    void retireImpl(bool notify);
     const QString m_id, m_revision;
     const int m_unit;
     BackupFileOperation* m_policy{nullptr};

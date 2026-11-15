@@ -67,14 +67,19 @@ ActivityExportOperation::ActivityExportOperation(activityexport::Request request
     m_policy = new BackupFileOperation(path, std::move(services), this);
     connect(m_policy, &BackupFileOperation::changed, this, &ActivityExportOperation::changed);
 }
-ActivityExportOperation::~ActivityExportOperation() { retire(); }
-BackupFileOperation::Phase ActivityExportOperation::phase() const { return m_policy ? m_policy->phase() : BackupFileOperation::Phase::Failed; }
-bool ActivityExportOperation::pending() const { return m_policy && m_policy->pending(); }
-bool ActivityExportOperation::confirmationRequired() const { return m_policy && m_policy->confirmationRequired(); }
+ActivityExportOperation::~ActivityExportOperation() { retireImpl(false); }
+bool ActivityExportOperation::retiredWithoutWrite() const
+{
+    return m_retired && m_policy && m_policy->phase() < BackupFileOperation::Phase::Succeeded && m_policy->backend()->retiredBeforeWrite();
+}
+BackupFileOperation::Phase ActivityExportOperation::phase() const { return retiredWithoutWrite() ? BackupFileOperation::Phase::Retired : m_policy ? m_policy->phase() : BackupFileOperation::Phase::Failed; }
+bool ActivityExportOperation::pending() const { return !retiredWithoutWrite() && m_policy && m_policy->pending(); }
+bool ActivityExportOperation::confirmationRequired() const { return !retiredWithoutWrite() && m_policy && m_policy->confirmationRequired(); }
 bool ActivityExportOperation::replacing() const { return m_policy && m_policy->replacing(); }
-bool ActivityExportOperation::cancelled() const { return m_policy && (m_policy->phase() == BackupFileOperation::Phase::Declined || m_policy->phase() == BackupFileOperation::Phase::Retired); }
+bool ActivityExportOperation::cancelled() const { return phase() == BackupFileOperation::Phase::Declined || phase() == BackupFileOperation::Phase::Retired; }
 ActivityExportOperation::Error ActivityExportOperation::errorCode() const
 {
+    if (retiredWithoutWrite()) return NoError;
     if (!m_policy) return Rejected;
     switch (m_policy->errorCode()) {
     case backup::Error::None: return NoError;
@@ -123,15 +128,18 @@ bool ActivityExportOperation::start()
 }
 bool ActivityExportOperation::approve() { return !m_retired && m_policy && m_policy->approve(); }
 bool ActivityExportOperation::refuse() { return !m_retired && m_policy && m_policy->refuse(); }
-void ActivityExportOperation::retire()
+void ActivityExportOperation::retire() { retireImpl(true); }
+void ActivityExportOperation::retireImpl(bool notify)
 {
     m_retired = true;
     if (!m_policy) return;
+    const QPointer<ActivityExportOperation> guard{this};
     const auto backend = m_policy->backend();
     const auto abandon = m_abandon;
-    if (!m_started) { backend->abandonBeforeStart(); if (abandon) abandon(); return; }
+    if (!m_started) { backend->abandonBeforeStart(); if (abandon) abandon(); if (notify && guard) Q_EMIT guard->changed(); return; }
     backend->retire();
     // An admitted write keeps the source until its actual Native outcome.
     // Retired-before-write is an atomic backend fact, never a GUI phase guess.
     if (backend->retiredBeforeWrite() && abandon) abandon();
+    if (notify && guard) Q_EMIT guard->changed();
 }

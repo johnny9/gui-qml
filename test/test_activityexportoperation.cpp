@@ -106,7 +106,9 @@ private Q_SLOTS:
         source.reset(); QVERIFY(retained.start()); closing.commands.drain(); closing.publish(); QVERIFY(retained.confirmationRequired());
         closing.commands.scheduler->closeOrdinaryAdmission(); retained.retire(); QVERIFY(!frame.expired());
         closing.commands.drain(); closing.publish(); QVERIFY(frame.expired()); QCOMPARE(closing.commands.scheduler->pending(), size_t{0});
-        QVERIFY(!retained.approve()); QCOMPARE(closing.installed, 0); QCOMPARE(Read(path), QByteArray{"old"});
+        QVERIFY(!retained.approve()); QCOMPARE(retained.phase(), BackupFileOperation::Phase::Retired);
+        QVERIFY(retained.resultPresent()); QVERIFY(retained.cancelled()); QVERIFY(retained.outcomeKnown());
+        QCOMPARE(closing.installed, 0); QCOMPARE(Read(path), QByteArray{"old"});
     }
     void failedProducerPreservesTheOriginalDestination()
     {
