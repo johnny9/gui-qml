@@ -12,6 +12,7 @@
 #include <QFile>
 #include <QSemaphore>
 #include <QSaveFile>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QtTest/QtTest>
@@ -148,6 +149,7 @@ private Q_SLOTS:
     void closedOrdinaryAdmissionRefusesANewExportWithoutAFileEffect()
     {
         QTemporaryDir directory; QVERIFY(directory.isValid()); Fixture f;
+        const auto cleanup = qScopeGuard([&] { f.commands.drain(); f.publish(); });
         auto source = Source(); const std::weak_ptr<const activityview::Snapshot> frame{source->snapshot};
         ActivityExportOperation operation{{directory.filePath("closed.csv"), source, 0}, f.files(), f.execution(), ActivityFilterProxyModel::WriteCsv};
         source.reset(); f.commands.scheduler->closeOrdinaryAdmission(); QVERIFY(!operation.start());
