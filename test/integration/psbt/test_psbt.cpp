@@ -204,6 +204,51 @@ private Q_SLOTS:
         QCOMPARE(qmltest::Rpc(m_app, "gettransaction", qmltest::Json("[\"" + final_txid + "\"]"), wallet->name()).find_value("fee").getValStr(), std::string{"-0.00010000"});
     }
 
+    void localSignOnlyPinsTheFinalizedCandidate_data()
+    {
+        QTest::addColumn<bool>("legacy");
+        QTest::newRow("legacy-scriptSig-identity") << true;
+        QTest::newRow("witness-identity") << false;
+    }
+    void localSignOnlyPinsTheFinalizedCandidate()
+    {
+        QFETCH(bool, legacy);
+        auto* wallet = qmltest::CreateWallet(m_app, "local-sign-review"); QVERIFY(wallet);
+        const auto mining = qmltest::NewAddress(m_app, wallet->name(), legacy ? "legacy" : "bech32");
+        qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[101,\"" + mining.toStdString() + "\"]"));
+        QVERIFY(QTest::qWaitFor([&] { return wallet->balanceSatoshi() > 0; }, 5'000));
+        const auto recipient = qmltest::NewAddress(m_app, wallet->name());
+        const auto encoded = qmltest::Rpc(m_app, "walletcreatefundedpsbt",
+            qmltest::Json("[[],[{\"" + recipient.toStdString() + "\":0.005}]]"), wallet->name()).find_value("psbt").get_str();
+        const auto bytes = qmltest::Call(m_app, [encoded](interfaces::Node*) {
+            const auto document = DecodeBase64PSBT(encoded);
+            if (!document) throw std::runtime_error("local sign-only fixture");
+            return psbtwork::SerializeRaw(*document);
+        });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto path = directory.filePath("unsigned.psbt");
+        QFile source{path}; QVERIFY(source.open(QIODevice::WriteOnly)); QCOMPARE(source.write(bytes), bytes.size()); source.close();
+        QCOMPARE(AwaitPsbtImport(*wallet, path), WalletQmlModel::PsbtImportResult::WalletCanSign);
+        QVERIFY(wallet->currentTransactionCanSignOnly());
+        const auto unsigned_identity = wallet->currentTransaction()->getWtx()->GetHash();
+        QVERIFY(wallet->requestSignOnlyTransaction());
+        QVERIFY(QTest::qWaitFor([&] { return !wallet->sendBusy(); }, 5'000));
+        QCOMPARE(wallet->sendState(), WalletQmlModel::SendState::SendSignedOnly);
+        QVERIFY(wallet->currentTransactionCanBroadcast());
+        const auto signed_transaction = wallet->currentTransaction()->getWtx(); QVERIFY(signed_transaction);
+        QCOMPARE(signed_transaction->GetHash() == unsigned_identity, !legacy);
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
+        const auto saved_path = directory.filePath("signed.psbt"); QVERIFY(AwaitPsbtSave(*wallet, saved_path));
+        QFile saved{saved_path}; QVERIFY(saved.open(QIODevice::ReadOnly));
+        const auto exported = qmltest::Rpc(m_app, "finalizepsbt", qmltest::Json("[\"" + saved.readAll().toBase64().toStdString() + "\"]"));
+        QVERIFY(exported.find_value("complete").get_bool());
+        const auto decoded = qmltest::Rpc(m_app, "decoderawtransaction", qmltest::Json("[\"" + exported.find_value("hex").get_str() + "\"]"));
+        QCOMPARE(decoded.find_value("hash").get_str(), signed_transaction->GetWitnessHash().ToString());
+        QVERIFY(AwaitPsbtBroadcast(*wallet));
+        const auto pool = qmltest::Rpc(m_app, "getrawmempool"); QCOMPARE(pool.size(), 1U);
+        QCOMPARE(pool[0].get_str(), signed_transaction->GetHash().ToString());
+        QVERIFY(!wallet->currentTransactionCanBroadcast()); QVERIFY(!wallet->currentTransactionCanSend());
+    }
     void nodeReadinessAndIndependentSpend_data()
     {
         QTest::addColumn<int>("scenario");
