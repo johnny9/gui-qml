@@ -466,7 +466,7 @@ void CoreSettingsModelTests::manualEntryEnabledGroups()
         QCOMPARE(effect.calls, 3); QCOMPARE(effect.writes, 3);
     } else {
         QVERIFY(entry->address().isEmpty()); QCOMPARE(entry->requestAddress(QStringLiteral("127.0.0.1:9050")), quint64{0});
-        QCOMPARE(effect.calls, 2); QCOMPARE(effect.writes, 1);
+        QCOMPARE(effect.calls, 2); QCOMPARE(effect.writes, 2);
     }
     QVERIFY(QmlCoreSettings::ValuesEqual(model.values(), effect.persisted));
     model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());

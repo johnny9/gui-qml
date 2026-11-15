@@ -36,6 +36,7 @@
 #include <util/translation.h>
 #include <util/string.h>
 
+#include <algorithm>
 #include <atomic>
 #include <array>
 #include <deque>
@@ -93,11 +94,34 @@ bool ApplyOnboardingModelRequest(const OnboardingOptionsModel& model,ArgsManager
 
 struct ManualSnapshotGraph {
     ManualRoutedExecution transport;
-    std::deque<std::function<void()>> posts;
+    struct Publication {
+        std::function<void()> callback;
+        std::optional<execution::TaskId> origin;
+        void operator()() { callback(); }
+    };
+    std::deque<Publication> posts;
+    std::optional<execution::TaskId> executing;
+
+    bool finish(execution::TaskId id)
+    {
+        executing = id;
+        const bool completed = transport.finishWork(id);
+        executing.reset();
+        return completed;
+    }
+
+    std::optional<Publication> takeTaskPost(execution::TaskId id)
+    {
+        const auto found = std::find_if(posts.begin(), posts.end(), [id](const auto& post) { return post.origin == id; });
+        if (found == posts.end()) return {};
+        auto publication = std::move(*found);
+        posts.erase(found);
+        return publication;
+    }
 
     execution::SnapshotServices services()
     {
-        return {transport.scheduler, [this](auto callback) { posts.push_back(std::move(callback)); }};
+        return {transport.scheduler, [this](auto callback) { posts.push_back({std::move(callback), executing}); }};
     }
 
     bool deliverOnePost()
@@ -109,7 +133,11 @@ struct ManualSnapshotGraph {
         return true;
     }
 
-    bool step(execution::Lane lane) { return transport.step(lane); }
+    bool step(execution::Lane lane)
+    {
+        const auto id = transport.dispatchNext(lane);
+        return id && finish(*id);
+    }
 
     // Follow the exact admitted task rather than counting unrelated Domain
     // cleanup receipts produced by retained snapshots in the same schedule.
@@ -123,7 +151,7 @@ struct ManualSnapshotGraph {
         if (!target) return {};
         for (size_t turn = 0; turn < 1024; ++turn) {
             const auto next = transport.dispatchNext(lane);
-            if (!next || !transport.finishWork(*next)) return {};
+            if (!next || !finish(*next)) return {};
             if (*next == *target) return target;
         }
         return {};
@@ -133,7 +161,7 @@ struct ManualSnapshotGraph {
     {
         for (size_t turn = 0; turn < 1024; ++turn) {
             const auto next = transport.dispatchNext(execution::Lane::Domain);
-            if (!next || !transport.finishWork(*next)) return false;
+            if (!next || !finish(*next)) return false;
             if (*next == target) return true;
         }
         return false;
@@ -2950,8 +2978,9 @@ void OptionsModelTests::onboardingStorageCheckDoesNotPublishStalePath()
         QVERIFY(disk);
         QVERIFY(graph.posts.empty());
         QVERIFY(graph.deliverTaskOutcome(*disk));
-        QCOMPARE(graph.posts.size(), size_t{1});
-        QVERIFY(graph.deliverOnePost());
+        auto disk_publication = graph.takeTaskPost(*disk);
+        QVERIFY(disk_publication);
+        (*disk_publication)();
         QVERIFY(model.validationPending());
         QVERIFY(model.storageCheckPending());
         QCOMPARE(model.storagePathMessage(), QStringLiteral("Directory already exists."));
@@ -2962,8 +2991,9 @@ void OptionsModelTests::onboardingStorageCheckDoesNotPublishStalePath()
         QVERIFY(successor_disk);
         QVERIFY(graph.posts.empty());
         QVERIFY(graph.deliverTaskOutcome(*successor_disk));
-        QCOMPARE(graph.posts.size(), size_t{1});
-        QVERIFY(graph.deliverOnePost());
+        auto successor_publication = graph.takeTaskPost(*successor_disk);
+        QVERIFY(successor_publication);
+        (*successor_publication)();
         QVERIFY(graph.drainLive());
 
         QCOMPARE(model.dataDir(), latest_path);
@@ -3009,8 +3039,12 @@ void OptionsModelTests::onboardingStorageProjectionCoalescesPublicPruneChoice()
         QVERIFY(disk);
         QVERIFY(graph.posts.empty());
         QVERIFY(graph.deliverTaskOutcome(*disk));
-        QCOMPARE(graph.posts.size(), size_t{1});
-        QVERIFY(graph.deliverOnePost());
+        auto disk_publication = graph.takeTaskPost(*disk);
+        QVERIFY(disk_publication);
+        (*disk_publication)();
+        // Other lifecycle publications share this post port. Release them
+        // while holding every further Domain effect and its projection.
+        while (graph.deliverOnePost()) {}
         // The disk read is complete, but its derived presentation is pending.
         QVERIFY(model.storageCheckPending());
         QVERIFY(graph.posts.empty());
@@ -3022,9 +3056,8 @@ void OptionsModelTests::onboardingStorageProjectionCoalescesPublicPruneChoice()
         QVERIFY(graph.posts.empty());
         QVERIFY(graph.deliverTaskOutcome(*projection));
         QVERIFY(model.storageCheckPending());
-        QCOMPARE(graph.posts.size(), size_t{1});
-        auto old_projection = std::move(graph.posts.front());
-        graph.posts.pop_front();
+        auto old_projection = graph.takeTaskPost(*projection);
+        QVERIFY(old_projection);
 
         const int statuses_before_user_choice = storage_changed.size();
         const bool selected_prune_choice = !model.prune();
@@ -3035,7 +3068,7 @@ void OptionsModelTests::onboardingStorageProjectionCoalescesPublicPruneChoice()
         const int statuses_before_old_publish = storage_changed.size();
         const int finish_signals_before_old_publish = can_finish_changed.size();
 
-        old_projection();
+        (*old_projection)();
         QCOMPARE(model.prune(), selected_prune_choice);
         QCOMPARE(storage_changed.size(), statuses_before_old_publish);
         QCOMPARE(can_finish_changed.size(), finish_signals_before_old_publish);
@@ -4195,8 +4228,10 @@ void OptionsModelTests::revertingToDefaultValuePersistsExplicitOverride()
     QTRY_VERIFY(!model.settingsPending());
     QVERIFY(QFile::exists(model_settings_dir.filePath(QStringLiteral("runtime-settings.json"))));
     const auto mempool_write = ReadRwSetting(args, "maxmempool");
-    QVERIFY(mempool_write.isStr());
-    QCOMPARE(mempool_write.get_str(), util::ToString(DEFAULT_MAX_MEMPOOL_SIZE_MB));
+    // maxmempool is a native integer setting; only dbcache/par/prune use
+    // the legacy numeric-string persistence representation.
+    QVERIFY(mempool_write.isNum());
+    QCOMPARE(mempool_write.getInt<int>(), DEFAULT_MAX_MEMPOOL_SIZE_MB);
 }
 
 void OptionsModelTests::languageCommandLineOverrideDoesNotPersist()

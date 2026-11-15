@@ -517,12 +517,21 @@ private Q_SLOTS:
         QTRY_VERIFY(!model.signerPathValidationPending());
         QVERIFY(model.signerPathError().isEmpty());
         QSignalSpy selected(&model, &OptionsQmlModel::dataDirSelectionFinished);
+        QString completed_directory;
+        connect(&model, &OptionsQmlModel::dataDirSelectionFinished, this, [&](bool success, const QString&) {
+            if (success) completed_directory = model.dataDir();
+        });
         const QString path = fixture.directory.filePath("new-directory");
         QVERIFY(model.selectCustomDataDir(path));
         QVERIFY(model.validationPending());
         QTRY_COMPARE(selected.size(), 1);
         QVERIFY(selected.front().front().toBool());
-        QCOMPARE(model.dataDir(), path);
+        // Capture the original selection result at its publication boundary.
+        // A later settings refresh correctly restores the effective -datadir
+        // fixture override; the saved GUI choice is for a later startup.
+        QCOMPARE(completed_directory, path);
+        QSettings saved;
+        QCOMPARE(saved.value(SettingsKeys::DATA_DIR).toString(), path);
         QVERIFY(QDir(path).exists());
     }
 };

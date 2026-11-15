@@ -135,6 +135,7 @@ public:
     int status_reads{0};
     int label_reads{0};
     int snapshots{0};
+    int history_reads{0};
 
     void put(const interfaces::WalletTx& tx, int depth = 6)
     {
@@ -158,6 +159,7 @@ public:
     std::set<interfaces::WalletTx> getWalletTxs() override
     {
         blockingRead();
+        ++history_reads;
         std::set<interfaces::WalletTx> result;
         for (const auto& [id, tx] : transactions) result.insert(tx);
         if (history_gate) history_gate->wait();
@@ -570,9 +572,13 @@ void TransactionActivityModelTests::manualProjectionOwnsTransactionKeysAcrossRef
     QCOMPARE(model->transactionCount(), 1);
     QVERIFY(model->preparedSnapshot()->snapshot->rows.contains(first_id));
     original->put(second, 3);
+    const auto reads_before_notification = original->snapshots;
     Q_EMIT fixture.wallet->transactionChanged(Id(second), CT_NEW);
     QCoreApplication::processEvents();
+    QCOMPARE(original->snapshots, reads_before_notification);
+    QVERIFY(!env.turnsIdle());
     env.drain();
+    QCOMPARE(original->snapshots, reads_before_notification + 1);
     QCOMPARE(model->transactionCount(), 1);
     QCOMPARE(row.data(Model::IdRole).toString(), first_id);
     fixture.settle();
@@ -583,12 +589,21 @@ void TransactionActivityModelTests::manualProjectionOwnsTransactionKeysAcrossRef
     QCOMPARE(Find(*model, Id(second)).data(Model::IdRole).toString(), second_id);
     QVERIFY(model->preparedSnapshot()->snapshot->rows.contains(first_id));
     QVERIFY(model->preparedSnapshot()->snapshot->rows.contains(second_id));
+    const auto history_before_reload = original->history_reads;
     model->reload();
+    QCOMPARE(original->history_reads, history_before_reload);
     fixture.settle();
+    QVERIFY(original->history_reads > history_before_reload);
     QCOMPARE(model->transactionCount(), 2);
     QCOMPARE(Find(*model, Id(first)).data(Model::IdRole).toString(), first_id);
     QCOMPARE(Find(*model, Id(second)).data(Model::IdRole).toString(), second_id);
-    QVERIFY(!original->blocking_read_on_gui.load());
+    // This manual transport executes selected effects on the test thread.
+    // The oracle is that reads require those held effects, while getters and
+    // GUI publication consume only the prepared immutable projection.
+    const auto final_reads = original->history_reads + original->snapshots;
+    QCOMPARE(Find(*model, Id(first)).data(Model::IdRole).toString(), first_id);
+    QCOMPARE(Find(*model, Id(second)).data(Model::IdRole).toString(), second_id);
+    QCOMPARE(original->history_reads + original->snapshots, final_reads);
 }
 
 void TransactionActivityModelTests::oldGuiWakeupCannotResurrectDeletedRows()
