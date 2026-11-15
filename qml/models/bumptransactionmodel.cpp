@@ -15,6 +15,7 @@ QString ErrorMessage(walletbump::Error error)
     case walletbump::Error::Invalid: return BumpTransactionModel::tr("Invalid fee-bump request.");
     case walletbump::Error::InvalidId: return BumpTransactionModel::tr("Invalid transaction ID.");
     case walletbump::Error::Ineligible: return BumpTransactionModel::tr("Transaction can no longer be bumped.");
+    case walletbump::Error::Unavailable: return BumpTransactionModel::tr("The transaction state could not be checked. Prepare it again before confirming.");
     case walletbump::Error::Create: return BumpTransactionModel::tr("Failed to create bump transaction.");
     case walletbump::Error::NeedsUnlock: return BumpTransactionModel::tr("Enter your wallet password to update this transaction.");
     case walletbump::Error::IncorrectPassphrase: return BumpTransactionModel::tr("The wallet password you entered was incorrect.");
@@ -304,7 +305,7 @@ void BumpTransactionModel::publishCommit(quint64 attempt, quint64 commit)
     if (result->error) value.error = walletbump::Error::Uncertain;
     const auto outcome = value.committed ? transactionattempt::Phase::Settled
         : value.error == walletbump::Error::NeedsUnlock || value.error == walletbump::Error::IncorrectPassphrase ? transactionattempt::Phase::NeedsUnlock
-        : value.error == walletbump::Error::Ineligible || value.error == walletbump::Error::Policy ? transactionattempt::Phase::NeedsRevalidation
+        : value.error == walletbump::Error::Ineligible || value.error == walletbump::Error::Unavailable || value.error == walletbump::Error::Policy ? transactionattempt::Phase::NeedsRevalidation
         : value.error == walletbump::Error::Uncertain || value.error == walletbump::Error::RelockFailed || result->error ? transactionattempt::Phase::Uncertain
         : transactionattempt::Phase::Failed;
     const auto owner = m_attempt_owner;

@@ -39,6 +39,10 @@ std::vector<COutPoint> Inputs(const CTransaction& transaction)
 Error CheckApprovedScope(interfaces::Wallet& wallet, const Prepared& review)
 {
     if (!wallet.transactionCanBeBumped(review.original)) return Error::Ineligible;
+    interfaces::WalletTxStatus status{};
+    int blocks{0}; int64_t block_time{0};
+    if (!wallet.tryGetTxStatus(review.original, status, blocks, block_time)) return Error::Unavailable;
+    if (status.is_abandoned || status.depth_in_main_chain != 0) return Error::Ineligible;
     const auto original = wallet.getTx(review.original);
     if (!original || original->GetHash() != review.original
         || Inputs(*original) != review.original_inputs) return Error::Ineligible;
@@ -106,6 +110,12 @@ Preparation Prepare(interfaces::Wallet& wallet, const QString& txid, unsigned in
         wallet::CCoinControl control;
         control.m_signal_bip125_rbf = true;
         control.m_confirm_target = target;
+        // Preserve the original transaction's absolute and relative timing
+        // through the public builder controls, before capturing a new review.
+        control.m_version = original_transaction->version;
+        control.m_locktime = original_transaction->nLockTime;
+        for (const auto& input : original_transaction->vin)
+            control.Select(input.prevout).SetSequence(input.nSequence);
         std::vector<bilingual_str> errors;
         if (!wallet.createBumpTransaction(original, control, errors, review->old_fee, review->new_fee, review->transaction)) {
             result.error = Error::Create; result.message = Message(errors); return result;
