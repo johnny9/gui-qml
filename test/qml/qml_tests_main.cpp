@@ -5627,6 +5627,7 @@ class MockActivityFilterProxyModel : public QSortFilterProxyModel
     Q_PROPERTY(bool busy READ busy NOTIFY sourceStateChanged)
     Q_PROPERTY(QString error READ error NOTIFY sourceStateChanged)
     Q_PROPERTY(ActivityExportOperation* exportOperation READ exportOperation NOTIFY exportChanged)
+    Q_PROPERTY(ActivityExportResult exportResult READ exportResult NOTIFY exportChanged)
     Q_PROPERTY(bool exportBusy READ exportBusy NOTIFY exportChanged)
     Q_PROPERTY(bool exportRejected READ exportRejected NOTIFY exportChanged)
     Q_PROPERTY(QString exportError READ exportError NOTIFY exportChanged)
@@ -5903,6 +5904,7 @@ public:
     ActivityExportOperation* exportOperation() const { return nullptr; }
     Q_INVOKABLE void clearDateFilter() { setDateFilter(DateAll); }
     bool exportBusy() const { return m_export_busy; }
+    ActivityExportResult exportResult() const { return {}; }
     bool exportRejected() const { return false; }
     QString exportError() const { return {}; }
     QString exportedPath() const { return m_export_path; }
@@ -6953,6 +6955,7 @@ public Q_SLOTS:
         qmlRegisterType<ReceiveQmlFixture>("org.bitcoincore.qt", 1, 0, "ControlledReceiveFixture");
         qmlRegisterType<OwnedQrImage>("org.bitcoincore.qt", 1, 0, "OwnedQrImage");
         qmlRegisterType<MockBitcoinAddress>("org.bitcoincore.qt", 1, 0, "BitcoinAddress");
+        qRegisterMetaType<ActivityExportResult>();
         qmlRegisterUncreatableType<ActivityExportOperation>("org.bitcoincore.qt", 1, 0, "ActivityExportOperation", "Owned by the original export action");
         qmlRegisterType<MockActivityFilterProxyModel>("org.bitcoincore.qt", 1, 0, "ActivityFilterProxyModel");
         qmlRegisterUncreatableType<MockTransactionActivityModel>("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Test fixture");

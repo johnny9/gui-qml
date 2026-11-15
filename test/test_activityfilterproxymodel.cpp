@@ -61,6 +61,8 @@ public:
     std::shared_ptr<walletopening::Session> opening() const override { return {}; }
     bool activityLoading() const override { return false; }
     QString activityError() const override { return {}; }
+    activityexport::Files activityFiles() const override { return m_files; }
+    void controlFiles(activityexport::Files files) { m_files = std::move(files); }
     int activityRowForId(const QString& id) const override {
         if (!m_snapshot) return -1;
         const auto found = m_snapshot->snapshot->source_positions.find(id);
@@ -208,6 +210,7 @@ private:
     std::shared_ptr<const activityview::Hold> m_snapshot;
     QList<ActivityRow> m_rows;
     quint64 m_revision{0};
+    activityexport::Files m_files;
 };
 
 qint64 TimestampForLocalDate(const QDate& date)
@@ -285,6 +288,7 @@ private Q_SLOTS:
     void skippedCivilDayDoesNotExcludeValidInclusiveEnd();
     void groupedAddressSearchPreservesOrdinaryNoteWhitespace();
     void clearDateLeavesSearchTypesAndAmountsUntouched();
+    void terminalExportReceiptSurvivesReentrantObserverDeletionAndSuccessorAdmission();
     void sourceDestructionRetiresCachedSnapshot();
     void reentrantSourceSwitchPreservesModelTransactions();
     void manualPublicationAndStaleFilterDecisions();
@@ -413,6 +417,36 @@ void ActivityFilterProxyModelTests::clearDateLeavesSearchTypesAndAmountsUntouche
     ActivityFilterProxyModel proxy; proxy.setSearchText("original"); proxy.setTypeFilter(ActivityFilterProxyModel::Received); QVERIFY(proxy.setAmountRange(10, 20)); QVERIFY(proxy.applyCustomRange("2026-01-01", "2026-01-03"));
     QSignalSpy dates{&proxy, &ActivityFilterProxyModel::dateFilterChanged}; proxy.clearDateFilter();
     QCOMPARE(proxy.dateFilter(), ActivityFilterProxyModel::DateAll); QCOMPARE(proxy.searchText(), QStringLiteral("original")); QCOMPARE(proxy.typeFilter(), ActivityFilterProxyModel::Received); QCOMPARE(proxy.minAmount(), CAmount{10}); QCOMPARE(proxy.maxAmount(), CAmount{20}); QCOMPARE(dates.count(), 1); proxy.clearDateFilter(); QCOMPARE(dates.count(), 1);
+}
+
+void ActivityFilterProxyModelTests::terminalExportReceiptSurvivesReentrantObserverDeletionAndSuccessorAdmission()
+{
+    ManualExecutionEnvironment env; int effects{0}, outcomes{0}; TestActivityModel source;
+    source.setRows({MakeRow("Original", Transaction::RecvWithAddress, 1, "original")});
+    activityexport::Files files;
+    files.inspect = [](const QString& path) { return backup::Proposal{path.toStdString(), {}, false, false, backup::Error::None}; };
+    files.install = [&](const auto&, bool, const auto& producer) { ++effects; return backup::WriteResult{producer("staged.csv") ? backup::Error::None : backup::Error::CoreBackup}; };
+    files.outcome = [&](const auto&) { ++outcomes; }; source.controlFiles(std::move(files));
+    ActivityFilterProxyModel::Services services; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    services.write = [](const auto& request) { return ActivityFilterProxyModel::CsvResult{true, request.path, {}}; };
+    ActivityFilterProxyModel proxy{services}; proxy.setSourceModel(&source); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents(); QVERIFY(!proxy.busy());
+    quint64 successor{0}; bool replaced{false};
+    connect(&proxy, &ActivityFilterProxyModel::exportChanged, &proxy, [&] {
+        if (replaced || !proxy.exportResult().present) return;
+        replaced = true; delete proxy.exportOperation();
+        successor = proxy.requestExportCsv(QStringLiteral("successor.csv"));
+    });
+    std::vector<std::pair<quint64, QString>> terminal;
+    connect(&proxy, &ActivityFilterProxyModel::exportFinished, &proxy, [&](quint64 ticket, bool saved, const QString& path, const QString& error) {
+        QVERIFY(saved); QVERIFY(error.isEmpty()); terminal.emplace_back(ticket, path);
+    });
+    const auto original = proxy.requestExportCsv(QStringLiteral("original.csv")); QVERIFY(original);
+    env.drain(); env.publishAll(); QVERIFY(replaced); QVERIFY(successor > original); QCOMPARE(terminal.size(), size_t{1});
+    QCOMPARE(terminal.front().first, original); QCOMPARE(terminal.front().second, QStringLiteral("original.csv"));
+    QCOMPARE(proxy.exportResult().finalPath, QStringLiteral("original.csv"));
+    env.drain(); env.publishAll(); QCOMPARE(terminal.size(), size_t{2}); QCOMPARE(terminal.back().first, successor); QCOMPARE(terminal.back().second, QStringLiteral("successor.csv"));
+    QCOMPARE(effects, 2); QCOMPARE(outcomes, 2); QCOMPARE(proxy.exportResult().finalPath, QStringLiteral("successor.csv"));
+    proxy.closeAdmission(); env.drain(); env.publishAll();
 }
 
 void ActivityFilterProxyModelTests::sourceDestructionRetiresCachedSnapshot()

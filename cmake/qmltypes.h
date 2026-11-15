@@ -278,6 +278,7 @@ struct BitcoinAddressForeign {
     QML_NAMED_ELEMENT(BitcoinAddress)
 };
 
+struct ActivityExportResultForeign { Q_GADGET QML_FOREIGN(ActivityExportResult) QML_ANONYMOUS };
 struct ActivityExportOperationForeign { Q_GADGET QML_FOREIGN(ActivityExportOperation) QML_NAMED_ELEMENT(ActivityExportOperation) QML_UNCREATABLE("Owned by the original export action") };
 struct ActivityFilterProxyModelForeign {
     Q_GADGET

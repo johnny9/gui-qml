@@ -8,6 +8,24 @@
 #include <qml/models/backuppolicyoperation.h>
 #include <qml/snapshotquery.h>
 
+class ActivityExportResult {
+    Q_GADGET
+    Q_PROPERTY(QString operationId MEMBER operationId)
+    Q_PROPERTY(QString snapshotRevision MEMBER snapshotRevision)
+    Q_PROPERTY(QString finalPath MEMBER finalPath)
+    Q_PROPERTY(QString errorText MEMBER errorText)
+    Q_PROPERTY(int displayUnit MEMBER displayUnit)
+    Q_PROPERTY(bool present MEMBER present)
+    Q_PROPERTY(bool saved MEMBER saved)
+    Q_PROPERTY(bool cancelled MEMBER cancelled)
+    Q_PROPERTY(bool outcomeKnown MEMBER outcomeKnown)
+public:
+    QString operationId, snapshotRevision, finalPath, errorText;
+    int displayUnit{0};
+    bool present{false}, saved{false}, cancelled{false}, outcomeKnown{true};
+};
+Q_DECLARE_METATYPE(ActivityExportResult)
+
 /** One original immutable Activity frame/unit and one versioned destination
  * consent. No file I/O, scan or CSV serialization occurs on GUI. */
 class ActivityExportOperation final : public QObject
@@ -22,6 +40,7 @@ class ActivityExportOperation final : public QObject
     Q_PROPERTY(bool replacing READ replacing NOTIFY changed)
     Q_PROPERTY(bool cancelled READ cancelled NOTIFY changed)
     Q_PROPERTY(Error errorCode READ errorCode NOTIFY changed)
+    Q_PROPERTY(ActivityExportResult result READ result NOTIFY changed)
     Q_PROPERTY(bool resultPresent READ resultPresent NOTIFY changed)
     Q_PROPERTY(bool saved READ saved NOTIFY changed)
     Q_PROPERTY(bool outcomeKnown READ outcomeKnown NOTIFY changed)
@@ -48,6 +67,7 @@ public:
     bool outcomeKnown() const;
     QString finalPath() const;
     QString error() const;
+    ActivityExportResult result() const;
     bool start();
     Q_INVOKABLE bool approve();
     Q_INVOKABLE bool refuse();

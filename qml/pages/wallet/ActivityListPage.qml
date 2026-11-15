@@ -80,9 +80,9 @@ Page {
     function exportResultTitle() { return exportSucceeded ? qsTr("Export complete") : qsTr("Export failed") }
     function exportResultDescription() {
         if (activityFilterProxy.exportRejected) return activityFilterProxy.exportError
-        if (csvExport && !csvExport.outcomeKnown) return qsTr("The export outcome is unknown. Check the original destination before trying again: %1").arg(csvExport.finalPath)
+        if (activityFilterProxy.exportResult.present && !activityFilterProxy.exportResult.outcomeKnown) return qsTr("The export outcome is unknown. Check the original destination before trying again: %1").arg(activityFilterProxy.exportResult.finalPath)
         return exportSucceeded ? qsTr("Your Activity CSV has been saved.")
-            : activityFilterProxy.exportError || qsTr("The Activity CSV could not be saved. Check the file path and try again.")
+            : activityFilterProxy.exportResult.present ? activityFilterProxy.exportResult.errorText : activityFilterProxy.exportError || qsTr("The Activity CSV could not be saved. Check the file path and try again.")
     }
 
     function exportActivity(path) {
@@ -95,7 +95,7 @@ Page {
     Connections {
         target: activityFilterProxy
         function onExportFinished(ticket, saved, path, error) {
-            if (root.csvExport && root.csvExport.cancelled) return
+            if (activityFilterProxy.exportResult.cancelled) return
             root.exportSucceeded = saved
             exportResultPopup.open()
         }

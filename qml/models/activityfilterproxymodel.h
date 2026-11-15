@@ -30,6 +30,7 @@ class ActivityFilterProxyModel : public QAbstractProxyModel
     Q_PROPERTY(bool busy READ busy NOTIFY stateChanged)
     Q_PROPERTY(QString error READ error NOTIFY stateChanged)
     Q_PROPERTY(ActivityExportOperation* exportOperation READ exportOperation NOTIFY exportChanged)
+    Q_PROPERTY(ActivityExportResult exportResult READ exportResult NOTIFY exportChanged)
     Q_PROPERTY(bool exportBusy READ exportBusy NOTIFY exportChanged)
     Q_PROPERTY(bool exportRejected READ exportRejected NOTIFY exportChanged)
     Q_PROPERTY(QString exportError READ exportError NOTIFY exportChanged)
@@ -97,6 +98,7 @@ public:
     QString error() const { return m_error.isEmpty() ? m_source_error : m_error; }
     bool exportBusy() const { return bool(m_export) || (m_export_operation && (m_export_operation->pending() || m_export_operation->confirmationRequired())); }
     ActivityExportOperation* exportOperation() const { return m_export_operation; }
+    ActivityExportResult exportResult() const { return m_export_result; }
     bool exportRejected() const { return m_export_rejected; }
     QString exportError() const { return m_export_error; }
     QString exportedPath() const { return m_exported_path; }
@@ -227,6 +229,7 @@ private:
     quint64 m_export_ticket{0}, m_copy_ticket{0};
     QString m_export_error, m_exported_path;
     bool m_export_rejected{false};
+    ActivityExportResult m_export_result;
     std::shared_ptr<const activityview::Hold> m_context;
     QString m_context_txid;
     quint64 m_context_token{0};

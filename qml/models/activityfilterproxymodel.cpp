@@ -669,13 +669,14 @@ quint64 ActivityFilterProxyModel::requestExportCsv(const QString& path)
             {m_execution.scheduler, m_services.execution.post}, m_services.write, this);
         m_export_operation = operation; m_export_error.clear(); m_exported_path.clear();
         auto finished = std::make_shared<bool>(false);
-        connect(operation, &ActivityExportOperation::changed, this, [observer, operation, ticket, finished] {
-            if (!observer || observer->m_closed || observer->m_export_operation != operation) return;
-            observer->m_export_rejected = false; observer->m_export_error = operation->error(); observer->m_exported_path = operation->saved() ? operation->finalPath() : QString{};
-            const bool terminal = operation->resultPresent();
-            if (terminal && !std::exchange(*finished, true)) {
+        connect(operation, &ActivityExportOperation::changed, this, [observer, original = QPointer<ActivityExportOperation>{operation}, ticket, finished] {
+            if (!observer || observer->m_closed || !original || observer->m_export_operation != original) return;
+            const auto receipt = original->result(); // Bounded immutable metadata survives reentrant observer destruction/successors.
+            observer->m_export_rejected = false; observer->m_export_error = receipt.errorText; observer->m_exported_path = receipt.saved ? receipt.finalPath : QString{};
+            if (receipt.present && !std::exchange(*finished, true)) {
+                observer->m_export_result = receipt;
                 Q_EMIT observer->exportChanged(); if (!observer || observer->m_closed) return;
-                Q_EMIT observer->exportFinished(ticket, operation->saved(), operation->finalPath(), operation->error());
+                Q_EMIT observer->exportFinished(ticket, receipt.saved, receipt.finalPath, receipt.errorText);
             } else Q_EMIT observer->exportChanged();
         });
         const bool admitted = operation->start(); Q_EMIT exportChanged(); return admitted ? ticket : 0;

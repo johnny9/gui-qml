@@ -83,6 +83,10 @@ QString ActivityExportOperation::error() const {
     }
     return {};
 }
+ActivityExportResult ActivityExportOperation::result() const
+{
+    return {m_id, m_revision, finalPath(), error(), m_unit, resultPresent(), saved(), cancelled(), outcomeKnown()};
+}
 bool ActivityExportOperation::start() { return m_policy && m_policy->start(); }
 bool ActivityExportOperation::approve() { return m_policy && m_policy->approve(); }
 bool ActivityExportOperation::refuse() { return m_policy && m_policy->refuse(); }
