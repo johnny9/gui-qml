@@ -2372,7 +2372,8 @@ private Q_SLOTS:
 
         const auto ticket = model->requestPrepareTransaction();
         QVERIFY(ticket > 0);
-        QCOMPARE(model->preparationState(), WalletQmlModel::PreparationState::PreparationFailed);
+        QTRY_COMPARE(model->preparationState(), WalletQmlModel::PreparationState::PreparationFailed);
+        QCOMPARE(model->preparationId(), ticket);
         QVERIFY(model->transactionError().contains(QStringLiteral("Select at least one coin")));
         QVERIFY(!model->currentTransaction());
         QCOMPARE(wallet->calls.createTransaction.load(), constructions);
@@ -2411,7 +2412,8 @@ private Q_SLOTS:
 
         const auto ticket = model->requestPrepareTransaction();
         QVERIFY(ticket > 0);
-        QCOMPARE(model->preparationState(), WalletQmlModel::PreparationState::PreparationFailed);
+        QTRY_COMPARE(model->preparationState(), WalletQmlModel::PreparationState::PreparationFailed);
+        QCOMPARE(model->preparationId(), ticket);
         QVERIFY(model->transactionError().contains(QStringLiteral("no longer available")));
         QCOMPARE(wallet->calls.createTransaction.load(), constructions);
     }
