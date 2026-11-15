@@ -60,17 +60,19 @@ Popup {
         opacity: root.opacity
     }
 
-    onOpened: {
+    onAboutToShow: {
         root.newTxid = ""
         root.originalModel = root.bumpModel
         root.ownedAttemptId = root.originalModel ? root.originalModel.requestPrepareFeeBump(root.txid, 1) : 0
         if (!root.ownedAttemptId) root.close()
     }
 
-    onBumpModelChanged: if (root.opened && root.originalModel && root.bumpModel !== root.originalModel) root.close()
+    onBumpModelChanged: if (root.visible && root.originalModel && root.bumpModel !== root.originalModel) root.close()
 
-    onClosed: {
+    onAboutToHide: {
         if (root.originalModel && root.originalModel.attemptId === root.ownedAttemptId) root.originalModel.reset()
+    }
+    onClosed: {
         root.ownedAttemptId = 0
         root.originalModel = null
     }
@@ -89,18 +91,24 @@ Popup {
 
     signal bumpSucceeded(string newTxid, int walletRecordState, int walletSubmissionState)
 
+    function presentNativeState() {
+        if (!root.opened || !root.ownsAttempt) return
+        if (root.originalModel.state === BumpTransactionModel.Succeeded) {
+            root.newTxid = root.originalModel.newTxid
+            root.walletRecordState = root.originalModel.walletRecordState
+            root.walletSubmissionState = root.originalModel.walletSubmissionState
+            root.close()
+            root.bumpSucceeded(root.newTxid, root.walletRecordState, root.walletSubmissionState)
+        } else if (root.originalModel.needsUnlock && !root.originalModel.busy) {
+            speedUpPassphrasePopup.open()
+        }
+    }
+    onOpened: root.presentNativeState()
+
     Connections {
         target: root.originalModel
         function onStateChanged() {
-            if (root.opened && root.ownsAttempt && root.bumpModel.state === BumpTransactionModel.Succeeded) {
-                root.newTxid = root.bumpModel.newTxid
-                root.walletRecordState = root.bumpModel.walletRecordState
-                root.walletSubmissionState = root.bumpModel.walletSubmissionState
-                root.close()
-                root.bumpSucceeded(root.newTxid, root.walletRecordState, root.walletSubmissionState)
-            } else if (root.opened && root.ownsAttempt && root.bumpModel.needsUnlock && !root.bumpModel.busy) {
-                speedUpPassphrasePopup.open()
-            }
+            root.presentNativeState()
         }
     }
 
