@@ -3033,7 +3033,7 @@ private Q_SLOTS:
         QVERIFY(receipts->finishOutcome(*read)); QCOMPARE(receipts->publicationCount(), size_t{1});
         QVERIFY(model->psbtActionBusy());
         QCOMPARE(model->psbtSubmittedTxid(), QString::fromStdString(signed_hash.ToString()));
-        QCOMPARE(review->getWtx()->GetHash(), document.GetUnsignedTx()->GetHash());
+        QCOMPARE(review->getWtx()->GetHash(), signed_hash);
         if (boundary == 1) edit();
         if (boundary == 2) model->discardCurrentTransaction();
         else QVERIFY(QTest::qWaitFor([&] {
@@ -3257,7 +3257,9 @@ private Q_SLOTS:
             QVERIFY(replacement_ticket); QCOMPARE(model->psbtActionId(), replacement_ticket);
             QCOMPARE(model->psbtActionState(), WalletQmlModel::PsbtActionState::PsbtImported);
             QVERIFY(model->currentTransaction());
-            QCOMPARE(model->currentTransaction()->getWtx()->GetHash(), replacement.GetUnsignedTx()->GetHash());
+            auto expected = replacement; CMutableTransaction finalized;
+            QVERIFY(FinalizeAndExtractPSBT(expected, finalized));
+            QCOMPARE(model->currentTransaction()->getWtx()->GetWitnessHash(), MakeTransactionRef(finalized)->GetWitnessHash());
             QVERIFY(model->currentTransaction()->feeKnown());
         }
         fixture.close(); QVERIFY2(environment.quiescent(), environment.trace().c_str());
@@ -3312,11 +3314,17 @@ private Q_SLOTS:
         QVERIFY(notified); QCOMPARE(old_fee_notifications.count(), 0);
         if (action == 3) QVERIFY(!model);
         else if (action == 1) { QVERIFY(!model->currentTransaction()); QVERIFY(!model->currentTransactionCanBroadcast()); }
-        else if (action == 2) { QVERIFY(replacement_ticket); QCOMPARE(model->currentTransaction()->getWtx()->GetHash(), replacement.GetUnsignedTx()->GetHash()); }
+        else if (action == 2) {
+            QVERIFY(replacement_ticket); auto expected = replacement; CMutableTransaction finalized;
+            QVERIFY(FinalizeAndExtractPSBT(expected, finalized));
+            QCOMPARE(model->currentTransaction()->getWtx()->GetWitnessHash(), MakeTransactionRef(finalized)->GetWitnessHash());
+        }
         else {
             auto* current = model->currentTransaction(); QVERIFY(current != previous);
             QCOMPARE(current->reviewedRecipients(), frozen); QCOMPARE(current->recipientLabels(), labels);
-            QCOMPARE(current->getWtx()->GetHash(), document.GetUnsignedTx()->GetHash());
+            auto expected = document; CMutableTransaction finalized;
+            QVERIFY(FinalizeAndExtractPSBT(expected, finalized));
+            QCOMPARE(current->getWtx()->GetWitnessHash(), MakeTransactionRef(finalized)->GetWitnessHash());
             QCOMPARE(current->getTransactionFee(), psbtfeefixture::ACTUAL_FEE);
             QCOMPARE(current->amountAmount()->satoshi(), qint64{1'500'000});
             QCOMPARE(current->totalAmount()->satoshi(), qint64{2'000'000});
@@ -3728,7 +3736,9 @@ private Q_SLOTS:
             QCOMPARE(model->psbtActionState(), WalletQmlModel::PsbtActionState::PsbtImported);
             QCOMPARE(model->currentTransaction()->getTransactionFee(), psbtfeefixture::ACTUAL_FEE);
             QVERIFY(model->currentTransactionCanBroadcast());
-            QCOMPARE(model->currentTransaction()->getWtx()->GetHash(), scenario == 5 ? replacement.GetUnsignedTx()->GetHash() : document.GetUnsignedTx()->GetHash());
+            auto expected = scenario == 5 ? replacement : document; CMutableTransaction finalized;
+            QVERIFY(FinalizeAndExtractPSBT(expected, finalized));
+            QCOMPARE(model->currentTransaction()->getWtx()->GetWitnessHash(), MakeTransactionRef(finalized)->GetWitnessHash());
         }
         fixture.close(); QVERIFY2(environment.quiescent(), environment.trace().c_str());
     }

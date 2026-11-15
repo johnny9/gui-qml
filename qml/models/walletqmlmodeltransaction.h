@@ -28,7 +28,7 @@ class WalletQmlModelTransaction : public QObject
     Q_PROPERTY(QString amount READ amount NOTIFY amountChanged)
     Q_PROPERTY(QString fee READ fee NOTIFY feeChanged)
     Q_PROPERTY(bool feeKnown READ feeKnown NOTIFY feeChanged)
-    Q_PROPERTY(QString nodePolicyStatus READ nodePolicyStatus CONSTANT)
+    Q_PROPERTY(QString nodePolicyStatus READ nodePolicyStatus NOTIFY nodePolicyChanged)
     Q_PROPERTY(QString total READ total NOTIFY totalChanged)
     Q_PROPERTY(QString label READ label CONSTANT)
     Q_PROPERTY(QString txid READ txid NOTIFY txidChanged)
@@ -69,7 +69,7 @@ public:
     const QSet<QString>& reviewedAddresses() const { return m_reviewed_addresses; }
     bool nodePolicyBlocked() const { return m_node_policy_blocked; }
     QString nodePolicyStatus() const { return m_node_policy_status; }
-    void setNodePolicyStatus(QString status, bool blocked) { m_node_policy_status = std::move(status); m_node_policy_blocked = blocked; }
+    void setNodePolicyStatus(QString status, bool blocked);
     std::shared_ptr<const void> retainedValues() const { return m_review_lifetime; }
     std::shared_ptr<const PartiallySignedTransaction> assessedPsbt() const { return m_assessed_psbt; }
     // The producer retains Native cleanup for this immutable analysis value.
@@ -95,6 +95,7 @@ Q_SIGNALS:
     void feeChanged();
     void totalChanged();
     void txidChanged();
+    void nodePolicyChanged();
     void reviewedRecipientsChanged();
     void presentationChanged();
 

@@ -125,6 +125,7 @@ private Q_SLOTS:
     void resolvedProofOwnsTheMatchingAssessmentAndRawCandidate()
     {
         QFETCH(int, scenario);
+        ECC_Context ecc;
         auto source = psbtfeefixture::Legacy(2, false);
         auto expected = source;
         CMutableTransaction transaction; QVERIFY(FinalizeAndExtractPSBT(expected, transaction));

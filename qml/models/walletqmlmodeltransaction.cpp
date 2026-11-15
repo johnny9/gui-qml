@@ -120,6 +120,13 @@ WalletQmlModelTransaction::WalletQmlModelTransaction(const WalletQmlModelTransac
     }
 }
 
+void WalletQmlModelTransaction::setNodePolicyStatus(QString status, bool blocked)
+{
+    if (m_node_policy_status == status && m_node_policy_blocked == blocked) return;
+    m_node_policy_status = std::move(status); m_node_policy_blocked = blocked;
+    Q_EMIT nodePolicyChanged();
+}
+
 BitcoinAmount* WalletQmlModelTransaction::amountAmount() const
 {
     return m_amount_amount;
