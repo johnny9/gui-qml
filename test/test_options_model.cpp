@@ -8,6 +8,7 @@
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 
 #include <QDir>
+#include <QDataStream>
 #include <QFile>
 #include <QScopeGuard>
 #include <QSemaphore>
@@ -355,6 +356,19 @@ private Q_SLOTS:
     void revertingToDefaultValueDeletesRwOverride();
     void languageCommandLineOverrideDoesNotPersist();
     void legacyQtSettingsMigrateToCoreSettings();
+    void knownSavedProfileFinishesOnlyRemainingDirectoryAndCleanup();
+    void capturedResetKeepsOriginalBackupAcrossCompletion();
+    void capturedResetRejectsChangedLegacySource();
+    void corruptStoredPreferenceFailsWithoutDefaultFallback();
+    void migrationChecksExactReplacementAndSources_data();
+    void migrationChecksExactReplacementAndSources();
+    void migrationCleanupOnlyFollowsDurableWriteAndIsIdempotent();
+    void profileRecoveryDoesNotReplayChangedReplacement();
+    void savedProfileReadFailureNeverSelectsDefault_data();
+    void savedProfileReadFailureNeverSelectsDefault();
+    void legacyNativeOrganizationDomainMatchesWriter();
+    void failedProfileHandoffRetainsLegacyMigrationSource_data();
+    void failedProfileHandoffRetainsLegacyMigrationSource();
     void coreApiHistoricalCacheMigration_data();
     void coreApiHistoricalCacheMigration();
     void legacyQtSettingsPreviewDoesNotRemoveQSettings();
@@ -466,11 +480,21 @@ private:
     QSettings::Format m_format;
 };
 
+QString HistoricalSettingsOrganization(QString organization)
+{
+#ifdef Q_OS_MACOS
+    if(QSettings::defaultFormat()==QSettings::NativeFormat){
+        if(organization==QStringLiteral("Bitcoin"))return QStringLiteral("bitcoin.org");
+        if(organization==QStringLiteral("BitcoinCore"))return QStringLiteral("bitcoincore.org");
+    }
+#endif
+    return organization;
+}
 class SavedNamedSettings
 {
 public:
     SavedNamedSettings(const QString& org, const QString& app)
-        : m_settings{QSettings::defaultFormat(), QSettings::UserScope, org, app}
+        : m_settings{QSettings::defaultFormat(), QSettings::UserScope, HistoricalSettingsOrganization(org), app}
     {
         for (const QString& key : m_settings.allKeys()) {
             m_values.insert(key, m_settings.value(key));
@@ -566,6 +590,14 @@ static void PrepareArgsForDataDir(ArgsManager& args, const QString& data_dir)
     QVERIFY2(PrepareTestArgs(args, TestArgvWithDataDir(data_dir), parse_error), parse_error.c_str());
     SelectParams(args.GetChainType());
     args.SelectConfigNetwork(args.GetChainTypeString());
+}
+
+// Staging is deliberately read-only. Successful replacement-write fixtures own
+// their physical target directory; failure fixtures prepare their own barrier.
+static bool EnsureReplacementParent(ArgsManager& args)
+{
+    fs::path path;
+    return args.GetSettingsPath(&path) && QDir{}.mkpath(QFileInfo{QString::fromStdString(path.utf8string())}.absolutePath());
 }
 
 static common::SettingsValue ReadRwSetting(ArgsManager& args, const std::string& name)
@@ -2334,6 +2366,7 @@ void OptionsModelTests::asynchronousOnboardingPreparation()
         QVERIFY(QDir().mkpath(data_dir.filePath("regtest/settings.json")));
     }
     QSignalSpy prepared{&model, &OnboardingOptionsModel::nodePrepared};
+    if(outcome!="settings-error")QTRY_VERIFY(model.canFinish());
     model.prepareNode(args, [&] {
         ++calls;
         off_gui = QThread::currentThread() != gui_thread;
@@ -2343,7 +2376,7 @@ void OptionsModelTests::asynchronousOnboardingPreparation()
         if (outcome == "unknown") throw 42;
         return outcome == "success";
     });
-    model.prepareNode(args, [&] { ++calls; return true; });
+    if(outcome!="settings-error")model.prepareNode(args, [&] { ++calls; return true; });
     if (outcome != "settings-error") {
         QTRY_VERIFY_WITH_TIMEOUT(entered.available() > 0, 5000);
         bool heartbeat{false};
@@ -4145,6 +4178,48 @@ void OptionsModelTests::languageCommandLineOverrideDoesNotPersist()
     }
 }
 
+void OptionsModelTests::failedProfileHandoffRetainsLegacyMigrationSource_data()
+{
+    QTest::addColumn<bool>("invalid_batch");
+    QTest::newRow("replacement-write-fails") << false;
+    QTest::newRow("whole-setup-validation-rejects") << true;
+}
+
+void OptionsModelTests::failedProfileHandoffRetainsLegacyMigrationSource()
+{
+    QFETCH(bool, invalid_batch);
+    SavedNamedSettings current{QStringLiteral("BitcoinCore"), QStringLiteral("BitcoinCore-App-regtest")};
+    SavedNamedSettings legacy{QStringLiteral("Bitcoin"), QStringLiteral("Bitcoin-Qt-regtest")};
+    legacy.settings().setValue(QStringLiteral("nDatabaseCache"), 600);
+    legacy.settings().setValue(QStringLiteral("fListen"), false);
+    legacy.settings().sync();
+    QCOMPARE(legacy.settings().status(), QSettings::NoError);
+    QTemporaryDir directory; QVERIFY(directory.isValid());
+    ArgsManager args; PrepareArgsForDataDir(args, directory.path());
+    if (invalid_batch) {
+        auto values = QmlCoreSettings::LoadEffectiveValues(args);
+        values.proxy_enabled = true;
+        values.proxy_address = QStringLiteral("invalid:0");
+        QString error;
+        QVERIFY(!QmlOnboardingSettings::ApplyToArgs(args, directory.path(), {QStringLiteral("proxy")}, values, &error));
+        QVERIFY(!error.isEmpty());
+    } else {
+        QVERIFY(EnsureReplacementParent(args));
+        fs::path target; QVERIFY(args.GetSettingsPath(&target));
+        QVERIFY(QDir{}.mkdir(QString::fromStdString(target.utf8string())+QStringLiteral(".tmp")));
+        const auto migration = QmlLegacySettings::MigrateCoreSettings(args, QmlLegacySettings::MigrationMode::Persist);
+        QVERIFY(migration.settings_changed);
+        QVERIFY2(migration.error.isEmpty(), qPrintable(migration.error));
+        std::vector<std::string> errors;
+        QVERIFY(!args.WriteSettingsFile(&errors));
+        QVERIFY(!errors.empty());
+    }
+    legacy.settings().sync();
+    QCOMPARE(legacy.settings().value(QStringLiteral("nDatabaseCache")).toInt(), 600);
+    QVERIFY(legacy.settings().contains(QStringLiteral("fListen")));
+    QCOMPARE(legacy.settings().value(QStringLiteral("fListen")).toBool(), false);
+}
+
 void OptionsModelTests::legacyQtSettingsMigrateToCoreSettings()
 {
 
@@ -4173,6 +4248,11 @@ void OptionsModelTests::legacyQtSettingsMigrateToCoreSettings()
         QmlLegacySettings::MigrateCoreSettings(args, QmlLegacySettings::MigrationMode::Persist)
     };
     QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+    std::vector<std::string> replacement_errors;
+    QVERIFY(EnsureReplacementParent(args));
+    QVERIFY(args.WriteSettingsFile(&replacement_errors));
+    QString cleanup_error;
+    QVERIFY2(QmlLegacySettings::CompleteCoreSettingsMigration(args,result,&cleanup_error),qPrintable(cleanup_error));
     QVERIFY(result.settings_changed);
 
     common::SettingsValue dbcache;
@@ -4287,6 +4367,11 @@ void OptionsModelTests::legacyQtSettingsCommandLineOverrideStillMigratesPersiste
         QmlLegacySettings::MigrateCoreSettings(args, QmlLegacySettings::MigrationMode::Persist)
     };
     QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+    std::vector<std::string> replacement_errors;
+    QVERIFY(EnsureReplacementParent(args));
+    QVERIFY(args.WriteSettingsFile(&replacement_errors));
+    QString cleanup_error;
+    QVERIFY2(QmlLegacySettings::CompleteCoreSettingsMigration(args,result,&cleanup_error),qPrintable(cleanup_error));
     QVERIFY(result.settings_changed);
 
     QCOMPARE(SettingToBool(args.GetPersistentSetting("listen")).value(), false);
@@ -4319,6 +4404,11 @@ void OptionsModelTests::legacyQtSettingsBitcoinConfBlocksMigration()
         QmlLegacySettings::MigrateCoreSettings(args, QmlLegacySettings::MigrationMode::Persist)
     };
     QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+    std::vector<std::string> replacement_errors;
+    QVERIFY(EnsureReplacementParent(args));
+    QVERIFY(args.WriteSettingsFile(&replacement_errors));
+    QString cleanup_error;
+    QVERIFY2(QmlLegacySettings::CompleteCoreSettingsMigration(args,result,&cleanup_error),qPrintable(cleanup_error));
     QVERIFY(!result.settings_changed);
 
     bool has_listen_override{true};
@@ -4326,7 +4416,7 @@ void OptionsModelTests::legacyQtSettingsBitcoinConfBlocksMigration()
         has_listen_override = core_settings.rw_settings.contains("listen");
     });
     QVERIFY(!has_listen_override);
-    QVERIFY(!legacy_settings.settings().contains(QStringLiteral("fListen")));
+    QVERIFY(legacy_settings.settings().contains(QStringLiteral("fListen"))); // Unimported source remains recoverable.
 }
 
 void OptionsModelTests::onboardingApplyMigratesLegacySettingsBeforeTouchedOverrides()
@@ -4359,12 +4449,15 @@ void OptionsModelTests::onboardingApplyMigratesLegacySettingsBeforeTouchedOverri
     QVERIFY2(ApplyOnboardingModelRequest(model,args,&apply_error), qPrintable(apply_error));
 
     bool has_listen_override{true};
-    common::SettingsValue server;
+    common::SettingsValue listen, server;
     args.LockSettings([&](common::Settings& core_settings) {
         has_listen_override = core_settings.rw_settings.contains("listen");
+        listen = core_settings.rw_settings.at("listen");
         server = core_settings.rw_settings.at("server");
     });
-    QVERIFY(!has_listen_override);
+    // R33 retains an explicit GUI command even when it equals the default.
+    QVERIFY(has_listen_override);
+    QCOMPARE(SettingToBool(listen).value(), true);
     QCOMPARE(SettingToBool(server).value(), true);
     QVERIFY(!legacy_settings.settings().contains(QStringLiteral("fListen")));
     QVERIFY(!legacy_settings.settings().contains(QStringLiteral("server")));
@@ -4544,6 +4637,11 @@ void OptionsModelTests::coreApiHistoricalCacheMigration()
     ArgsManager args; PrepareArgsForDataDir(args, directory.path());
     const auto result = QmlLegacySettings::MigrateCoreSettings(args, QmlLegacySettings::MigrationMode::Persist);
     QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+    std::vector<std::string> replacement_errors;
+    QVERIFY(EnsureReplacementParent(args));
+    QVERIFY(args.WriteSettingsFile(&replacement_errors));
+    QString cleanup_error;
+    QVERIFY2(QmlLegacySettings::CompleteCoreSettingsMigration(args,result,&cleanup_error),qPrintable(cleanup_error));
     QCOMPARE(result.settings_changed, persisted);
     const auto stored = args.GetPersistentSetting("dbcache");
     if (persisted) QCOMPARE(SettingTo<int64_t>(stored).value_or(-1), expected);
@@ -4552,6 +4650,166 @@ void OptionsModelTests::coreApiHistoricalCacheMigration()
         QCOMPARE(SettingTo<int64_t>(QmlCoreSettings::DefaultCoreSettingValue(QStringLiteral("dbcache"))).value_or(-1), expected);
     }
     QVERIFY(!legacy.settings().contains(QStringLiteral("nDatabaseCache")));
+}
+
+void OptionsModelTests::knownSavedProfileFinishesOnlyRemainingDirectoryAndCleanup()
+{
+    QTemporaryDir directory;QVERIFY(directory.isValid());
+    static bool reject=true;
+    static const auto format=QSettings::registerFormat(QStringLiteral("r35-recoverable-write"),
+        [](QIODevice& device,QSettings::SettingsMap& values){if(device.size()==0)return true;QDataStream stream{&device};stream>>values;return stream.status()==QDataStream::Ok;},
+        [](QIODevice& device,const QSettings::SettingsMap& values){if(reject)return false;QDataStream stream{&device};stream<<values;return stream.status()==QDataStream::Ok;});
+    QVERIFY(format!=QSettings::InvalidFormat);QSettings::setPath(format,QSettings::UserScope,directory.filePath(QStringLiteral("gui")));
+    SavedSettingsFormat saved_format{format};reject=true;const auto restore=qScopeGuard([]{reject=true;});
+    const auto config_path=directory.filePath(QStringLiteral("bitcoin.conf"));QFile config{config_path};QVERIFY(config.open(QIODevice::WriteOnly));
+    QVERIFY(config.write(QStringLiteral("regtest=1\ndatadir=%1\n").arg(directory.path()).toUtf8())>0);config.close();
+    ArgsManager args;std::string error;QVERIFY2(PrepareTestArgs(args,{"bitcoinqml","-conf="+config_path.toStdString()},error),error.c_str());
+    QmlOnboardingSettings::ApplyRequest request;request.data_dir={QmlDataDir::DefaultDataDirString(),QmlOnboardingSettings::DataDirSource::UserSelection};
+    auto original=QmlOnboardingSettings::PersistProfile(args,request);
+    QVERIFY(!original.completed);QVERIFY(original.replacement_written);QVERIFY(!original.directory_saved);QVERIFY(!original.error.isEmpty());
+    fs::path path;QVERIFY(args.GetSettingsPath(&path));QFile file{QString::fromStdString(path.utf8string())};QVERIFY(file.open(QIODevice::ReadOnly));const auto replacement=file.readAll();file.close();
+    reject=false;const auto finished=QmlOnboardingSettings::CompleteProfile(args,original);
+    QVERIFY2(finished.completed,qPrintable(finished.error));QVERIFY(finished.directory_saved);QVERIFY(finished.cleanup_completed);
+    QVERIFY(file.open(QIODevice::ReadOnly));QCOMPARE(file.readAll(),replacement);
+}
+void OptionsModelTests::capturedResetKeepsOriginalBackupAcrossCompletion()
+{
+    SavedNamedSettings current{QStringLiteral("BitcoinCore"),QStringLiteral("BitcoinCore-App-regtest")};
+    SavedNamedSettings legacy{QStringLiteral("Bitcoin"),QStringLiteral("Bitcoin-Qt-regtest")};
+    SavedNamedSettings legacy_default{QStringLiteral("Bitcoin"),QStringLiteral("Bitcoin-Qt")};
+    QTemporaryDir directory;QVERIFY(directory.isValid());ArgsManager args;PrepareArgsForDataDir(args,directory.path());
+    QmlCoreSettings::SetRwSetting(args,QStringLiteral("dbcache"),common::SettingsValue{int64_t{512}});
+    QmlCoreSettings::SetRwSetting(args,QStringLiteral("prune"),common::SettingsValue{int64_t{953}});
+    std::vector<std::string> errors;QVERIFY(EnsureReplacementParent(args));QVERIFY(args.WriteSettingsFile(&errors));
+    fs::path path;QVERIFY(args.GetSettingsPath(&path));QFile before{QString::fromStdString(path.utf8string())};QVERIFY(before.open(QIODevice::ReadOnly));const auto original_bytes=before.readAll();before.close();
+    args.ForceSetArg("-resetguisettings","1");QmlOnboardingSettings::ApplyRequest request;request.data_dir={directory.path(),QmlOnboardingSettings::DataDirSource::ExplicitArg};
+    const auto original=QmlOnboardingSettings::PersistProfile(args,request);QVERIFY2(original.completed,qPrintable(original.error));
+    const auto complete=QmlOnboardingSettings::CompleteProfile(args,original);QVERIFY2(complete.completed,qPrintable(complete.error));
+    QFile backup{QString::fromStdString(path.utf8string())+QStringLiteral(".bak")};QVERIFY(backup.open(QIODevice::ReadOnly));QCOMPARE(backup.readAll(),original_bytes);
+    QVERIFY(args.GetPersistentSetting("dbcache").isNull());QVERIFY(args.GetPersistentSetting("prune").isNull());
+}
+void OptionsModelTests::capturedResetRejectsChangedLegacySource()
+{
+    SavedNamedSettings current{QStringLiteral("BitcoinCore"),QStringLiteral("BitcoinCore-App-regtest")};
+    SavedNamedSettings legacy{QStringLiteral("Bitcoin"),QStringLiteral("Bitcoin-Qt-regtest")};
+    SavedNamedSettings legacy_default{QStringLiteral("Bitcoin"),QStringLiteral("Bitcoin-Qt")};
+    legacy.settings().setValue(QStringLiteral("nDatabaseCache"),600);legacy.settings().sync();
+    QTemporaryDir directory;QVERIFY(directory.isValid());ArgsManager args;PrepareArgsForDataDir(args,directory.path());
+    const auto reset=QmlLegacySettings::CaptureResetSettings(args);QVERIFY(reset.error.isEmpty());
+    QmlCoreSettings::SetRwSetting(args,QStringLiteral("qml_onboarded"),common::SettingsValue{false});
+    QmlLegacySettings::CaptureMigrationTarget(args,reset);std::vector<std::string> errors;QVERIFY(EnsureReplacementParent(args));QVERIFY(args.WriteSettingsFile(&errors));
+    legacy.settings().setValue(QStringLiteral("nDatabaseCache"),601);legacy.settings().sync();QString error;
+    QVERIFY(!QmlLegacySettings::CompleteCoreSettingsMigration(args,reset,&error));QVERIFY(!error.isEmpty());
+    QCOMPARE(legacy.settings().value(QStringLiteral("nDatabaseCache")).toInt(),601);
+}
+
+void OptionsModelTests::corruptStoredPreferenceFailsWithoutDefaultFallback()
+{
+    SavedSettingsFormat format{QSettings::IniFormat};const auto application=QCoreApplication::applicationName();
+    QCoreApplication::setApplicationName(QStringLiteral("R35MalformedStoredProfile"));
+    const auto restore=qScopeGuard([&]{QCoreApplication::setApplicationName(application);});
+    QSettings settings;const auto path=settings.fileName();QVERIFY(QDir{}.mkpath(QFileInfo(path).absolutePath()));
+    QFile corrupt{path};QVERIFY(corrupt.open(QIODevice::WriteOnly));QVERIFY(corrupt.write("[unterminated\nstrDataDir=/original/profile\n")>0);corrupt.close();
+    const auto remove=qScopeGuard([&]{QFile::remove(path);});
+    const auto source=QmlDataDir::ReadGuiDataDirWithSource();QVERIFY(!source.error.isEmpty());QVERIFY(source.path.isEmpty());
+    const auto startup=QmlOnboardingSettings::ResolveOnboardingStartupStatus({"bitcoin-qt","-regtest"},false);
+    QVERIFY(!startup.ok);QVERIFY(!startup.error.isEmpty());
+}
+
+void OptionsModelTests::migrationChecksExactReplacementAndSources_data()
+{
+    QTest::addColumn<QString>("change");
+    for(const auto* name:{"replacement-missing","replacement-changed","proxy-enabled-inserted","source-version-changed","source-value-changed"})
+        QTest::newRow(name)<<QString::fromLatin1(name);
+}
+void OptionsModelTests::migrationChecksExactReplacementAndSources()
+{
+    QFETCH(QString,change);
+    SavedNamedSettings current{QStringLiteral("BitcoinCore"),QStringLiteral("BitcoinCore-App-regtest")};
+    SavedNamedSettings legacy{QStringLiteral("Bitcoin"),QStringLiteral("Bitcoin-Qt-regtest")};
+    legacy.settings().setValue("nDatabaseCache",600);
+    legacy.settings().setValue("addrProxy",QStringLiteral("10.23.45.67:9150"));legacy.settings().sync();
+    QTemporaryDir directory;QVERIFY(directory.isValid());ArgsManager args;PrepareArgsForDataDir(args,directory.path());
+    const auto migration=QmlLegacySettings::MigrateCoreSettings(args,QmlLegacySettings::MigrationMode::Persist);
+    QVERIFY2(migration.error.isEmpty(),qPrintable(migration.error));QVERIFY(migration.settings_changed);
+    // Source remains intact even after staging has supplied Core's next values.
+    QCOMPARE(legacy.settings().value("nDatabaseCache").toInt(),600);
+    std::vector<std::string> errors;QVERIFY(EnsureReplacementParent(args));QVERIFY(args.WriteSettingsFile(&errors));
+    fs::path target;QVERIFY(args.GetSettingsPath(&target));
+    if(change=="replacement-missing")QVERIFY(QFile::remove(QString::fromStdString(target.utf8string())));
+    else if(change=="replacement-changed"){QmlCoreSettings::SetRwSetting(args,QStringLiteral("dbcache"),common::SettingsValue{int64_t{700}});QVERIFY(args.WriteSettingsFile(&errors));}
+    else if(change=="proxy-enabled-inserted")legacy.settings().setValue("fUseProxy",true);
+    else if(change=="source-version-changed")legacy.settings().setValue("nSettingsVersion",1);
+    else legacy.settings().setValue("nDatabaseCache",601);
+    legacy.settings().sync();QString error;
+    QVERIFY(!QmlLegacySettings::CompleteCoreSettingsMigration(args,migration,&error));QVERIFY(!error.isEmpty());
+    QVERIFY(legacy.settings().contains("nDatabaseCache"));QVERIFY(legacy.settings().contains("addrProxy"));
+}
+void OptionsModelTests::migrationCleanupOnlyFollowsDurableWriteAndIsIdempotent()
+{
+    SavedNamedSettings current{QStringLiteral("BitcoinCore"),QStringLiteral("BitcoinCore-App-regtest")};
+    SavedNamedSettings legacy{QStringLiteral("Bitcoin"),QStringLiteral("Bitcoin-Qt-regtest")};
+    legacy.settings().setValue("nDatabaseCache",600);legacy.settings().setValue("fListen",false);legacy.settings().sync();
+    QTemporaryDir directory;QVERIFY(directory.isValid());ArgsManager args;PrepareArgsForDataDir(args,directory.path());
+    const auto migration=QmlLegacySettings::MigrateCoreSettings(args,QmlLegacySettings::MigrationMode::Persist);
+    QVERIFY(migration.settings_changed);QString error;
+    QVERIFY(!QmlLegacySettings::CompleteCoreSettingsMigration(args,migration,&error));
+    QCOMPARE(legacy.settings().value("nDatabaseCache").toInt(),600);
+    std::vector<std::string> errors;QVERIFY(EnsureReplacementParent(args));QVERIFY(args.WriteSettingsFile(&errors));
+    QVERIFY2(QmlLegacySettings::CompleteCoreSettingsMigration(args,migration,&error),qPrintable(error));
+    legacy.settings().sync();QVERIFY(!legacy.settings().contains("nDatabaseCache"));
+    QVERIFY(!legacy.settings().contains("fListen"));
+    QVERIFY2(QmlLegacySettings::CompleteCoreSettingsMigration(args,migration,&error),qPrintable(error));
+    QVERIFY(args.ReadSettingsFile(&errors));
+    QCOMPARE(SettingTo<int64_t>(args.GetPersistentSetting("dbcache")).value_or(-1),int64_t{600});
+    QCOMPARE(SettingToBool(args.GetPersistentSetting("listen")).value_or(true),false);
+}
+void OptionsModelTests::profileRecoveryDoesNotReplayChangedReplacement()
+{
+    SavedGuiDataDirSettings saved_settings;
+    SavedNamedSettings current{QStringLiteral("BitcoinCore"),QStringLiteral("BitcoinCore-App-regtest")};
+    SavedNamedSettings legacy{QStringLiteral("Bitcoin"),QStringLiteral("Bitcoin-Qt-regtest")};
+    legacy.settings().setValue("nDatabaseCache",600);legacy.settings().sync();
+    QTemporaryDir directory;QVERIFY(directory.isValid());ArgsManager args;PrepareArgsForDataDir(args,directory.path());
+    QmlOnboardingSettings::ApplyRequest request;request.data_dir={directory.path(),QmlOnboardingSettings::DataDirSource::ExplicitArg};
+    request.values=QmlCoreSettings::LoadEffectiveValues(args);
+    const auto original=QmlOnboardingSettings::PersistProfile(args,request);
+    QVERIFY2(original.completed,qPrintable(original.error));QVERIFY(original.replacement_written);
+    QmlCoreSettings::SetRwSetting(args,QStringLiteral("dbcache"),common::SettingsValue{int64_t{701}});
+    std::vector<std::string> errors;QVERIFY(EnsureReplacementParent(args));QVERIFY(args.WriteSettingsFile(&errors));
+    const auto queried=QmlOnboardingSettings::QueryProfile(args,original);
+    QVERIFY(!queried.completed);QVERIFY(queried.replacement_written);QVERIFY(!queried.error.isEmpty());
+    const auto completed=QmlOnboardingSettings::CompleteProfile(args,original);
+    QVERIFY(!completed.completed);QVERIFY(completed.replacement_written);
+    QVERIFY(args.ReadSettingsFile(&errors));QCOMPARE(SettingTo<int64_t>(args.GetPersistentSetting("dbcache")).value_or(-1),int64_t{701});
+}
+void OptionsModelTests::savedProfileReadFailureNeverSelectsDefault_data()
+{
+    QTest::addColumn<QVariant>("stored");
+    QTest::newRow("empty-present")<<QVariant{QStringLiteral("")};
+    QTest::newRow("wrong-type")<<QVariant{42};
+    QTest::newRow("unavailable-drive")<<QVariant{QStringLiteral("/a-disconnected-bitcoin-profile-r35")};
+}
+void OptionsModelTests::savedProfileReadFailureNeverSelectsDefault()
+{
+    QFETCH(QVariant,stored);SavedGuiDataDirSettings saved;QSettings settings;
+    settings.setValue(SettingsKeys::DATA_DIR,stored);settings.sync();
+    const auto status=QmlOnboardingSettings::ResolveOnboardingStartupStatus({"bitcoin-qt","-regtest"},false);
+    QVERIFY(!status.ok);QVERIFY(!status.error.isEmpty());
+    QCOMPARE(settings.value(SettingsKeys::DATA_DIR),stored);
+    if(stored.typeId()==QMetaType::QString&&!stored.toString().isEmpty())QVERIFY(status.error.contains(stored.toString()));
+}
+void OptionsModelTests::legacyNativeOrganizationDomainMatchesWriter()
+{
+    // This is a real NativeFormat component control, including Darwin's
+    // organizationDomain selection. Restore the one historical key exactly.
+    SavedSettingsFormat format{QSettings::NativeFormat};
+    const auto organization=QCoreApplication::organizationName();const auto domain=QCoreApplication::organizationDomain();const auto application=QCoreApplication::applicationName();
+    QCoreApplication::setOrganizationName(QStringLiteral("Bitcoin"));QCoreApplication::setOrganizationDomain(QStringLiteral("bitcoin.org"));QCoreApplication::setApplicationName(QStringLiteral("Bitcoin-Qt"));
+    QSettings writer;const bool present=writer.contains(SettingsKeys::DATA_DIR);const auto original=writer.value(SettingsKeys::DATA_DIR);
+    const auto restore=qScopeGuard([&]{if(present)writer.setValue(SettingsKeys::DATA_DIR,original);else writer.remove(SettingsKeys::DATA_DIR);writer.sync();QCoreApplication::setOrganizationName(organization);QCoreApplication::setOrganizationDomain(domain);QCoreApplication::setApplicationName(application);});
+    QTemporaryDir directory;QVERIFY(directory.isValid());writer.setValue(SettingsKeys::DATA_DIR,directory.path());writer.sync();QCOMPARE(writer.status(),QSettings::NoError);
+    QCOMPARE(QmlLegacySettings::ReadLegacyGuiDataDir(),directory.path());
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

@@ -63,5 +63,6 @@
         <file>tst_walletpassphrasepopup.qml</file>
         <file>tst_walletpasswordsettings.qml</file>
         <file>tst_walletselect.qml</file>
-    </qresource>
+      <file>tst_onboardinghandoff.qml</file>
+  </qresource>
 </RCC>

@@ -81,10 +81,12 @@ void OnboardingAsyncTests::manualPreparationOwnershipAndSignalOrder()
     auto publish=[&]{if(gui.empty())return false;auto turn=std::move(gui.front());gui.pop_front();turn();return true;};
     auto settle=[&]{for(int turn=0;turn<100;++turn){if(!transport.queuedIdle()){transport.stepNext();continue;}if(publish())continue;return true;}return false;};
     QVERIFY(settle());QVERIFY(!model.validationPending());
+    model.configureSettingsCommit(args);QVERIFY(model.canFinish());model.commitSettings();QVERIFY(settle());QVERIFY(model.setupCommitted());
     QStringList signals;connect(&model,&OnboardingOptionsModel::nodePrepared,this,[&]{signals<<"prepared";});
     connect(&model,&OnboardingOptionsModel::shutdownFinished,this,[&]{signals<<"shutdown";});
     int calls{0};model.prepareNode(args,[&]{++calls;if(outcome=="exception")throw std::runtime_error("owned preparation failure");return outcome=="success";});
     QCOMPARE(model.preparationState(),OnboardingOptionsModel::PreparationPending);QCOMPARE(calls,0);
+    QVERIFY(transport.step(execution::Lane::Domain));
     model.beginShutdown();QVERIFY(signals.empty());
     QVERIFY(transport.step(execution::Lane::Core));QCOMPARE(calls,1);QVERIFY(signals.empty());
     QCOMPARE(model.preparationState(),outcome=="success"?OnboardingOptionsModel::PreparationSucceeded:
@@ -188,6 +190,7 @@ void OnboardingAsyncTests::shutdownDuringPreparationPreservesCompletion()
     QStringList signals;
     connect(&model, &OnboardingOptionsModel::nodePrepared, this, [&] { signals.append(QStringLiteral("prepared")); });
     connect(&model, &OnboardingOptionsModel::shutdownFinished, this, [&] { signals.append(QStringLiteral("shutdown")); });
+    QTRY_VERIFY(model.canFinish());
     model.prepareNode(args, [&] {
         ++calls;
         entered.release();
@@ -250,6 +253,7 @@ void OnboardingAsyncTests::shutdownObserverCanDestroyPreparedModel()
         prepared_at_shutdown = prepared;
         delete model.data();
     });
+    QTRY_VERIFY(model->canFinish());
     model->prepareNode(args, [&] { entered.release(); release.acquire(); return true; });
     QTRY_VERIFY(entered.available() > 0);
     entered.acquire();

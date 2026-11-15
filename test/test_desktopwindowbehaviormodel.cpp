@@ -8,6 +8,7 @@
 #include <qml/backendexecutor.h>
 #include <test/mocks/manualexecutionenvironment.h>
 #include <stdexcept>
+#include <QScopeGuard>
 
 namespace {
 struct ManualGuiDispatcher {
@@ -50,6 +51,7 @@ private Q_SLOTS:
     void manualRetryQueriesWithoutReplayingAWrite();
     void externalWriterRefreshesExistingModel();
     void manualRefreshWaitsForWriteAndCoalesces();
+    void heldNativeWorkKeepsOriginalPreferenceNamespace();
     void nativeWritePreservesUnrelatedExternalPreference();
     void manualPreferencesOwnOutcomesAfterClose();
     void manualPreferencesRejectAndRetryLoad();
@@ -391,6 +393,25 @@ void DesktopWindowBehaviorModelTests::nativeWritePreservesUnrelatedExternalPrefe
     QSettings actual;actual.sync();QVERIFY(actual.value("fMinimizeOnClose").toBool());QVERIFY(actual.value("fHideTrayIcon").toBool());
     QVERIFY(model.minimizeOnClose());QVERIFY(!model.showTrayIcon());
     model.closeAdmission();env.drain();gui.drain();
+}
+
+void DesktopWindowBehaviorModelTests::heldNativeWorkKeepsOriginalPreferenceNamespace()
+{
+    const auto original=QCoreApplication::applicationName();
+    const auto restore=qScopeGuard([&]{QCoreApplication::setApplicationName(original);});
+    QCoreApplication::setApplicationName(QStringLiteral("R35DesktopOriginal"));
+    QSettings first;first.clear();first.setValue("fHideTrayIcon",true);first.sync();
+    QCoreApplication::setApplicationName(QStringLiteral("R35DesktopSuccessor"));
+    QSettings second;second.clear();second.setValue("fMinimizeOnClose",false);second.sync();
+    const auto cleanup_stores=qScopeGuard([&]{first.clear();first.sync();second.clear();second.sync();});
+    QCoreApplication::setApplicationName(QStringLiteral("R35DesktopOriginal"));
+    ManualRoutedExecution transport;ManualGuiDispatcher gui;
+    DesktopWindowBehaviorModel model{true,{transport.scheduler,[&](auto turn){gui.post(std::move(turn));}},{}};
+    QCoreApplication::setApplicationName(QStringLiteral("R35DesktopSuccessor"));
+    transport.drain();gui.drain();QVERIFY(model.settingsReady());QVERIFY(!model.showTrayIcon());
+    model.setMinimizeOnClose(true);transport.drain();gui.drain();QVERIFY(model.minimizeOnClose());
+    first.sync();second.sync();QVERIFY(first.value("fMinimizeOnClose").toBool());QVERIFY(!second.value("fMinimizeOnClose").toBool());
+    model.closeAdmission();transport.drain();gui.drain();QVERIFY(transport.quiescent());
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

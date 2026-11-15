@@ -64,6 +64,7 @@ add_executable(bitcoinqml_unit_tests
   test_flowdetailsmodel.cpp
   test_startupeffects.cpp
   test_startuppolicy.cpp
+  test_startupprofile.cpp
   test_qtlogsink.cpp
   test_bitcoinaddress.cpp
   test_blockclockdial.cpp
@@ -96,6 +97,7 @@ add_executable(bitcoinqml_unit_tests
   test_async_options.cpp
   test_onboarding_storage.cpp
   test_onboardingasync.cpp
+  test_onboardingflow.cpp
   test_banlistmodel.cpp
   test_display_settings.cpp
   test_qtinfolog.cpp

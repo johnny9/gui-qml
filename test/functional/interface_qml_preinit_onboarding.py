@@ -532,9 +532,17 @@ def run_native_startup_failure_reopens_saved_setup_flow():
         gui.wait_for_page("proxySettingsPage")
         gui.wait_for_property("proxyEnableSwitch", "checked", True)
         gui.click("proxyEnableSwitch")
+        gui.wait_for_property("proxyEnableSwitch", "checked", False)
+        gui.wait_for_property("proxySettingsPage", "proxyDraft.pending", False)
+        gui.wait_for_property("proxySettingsSaveButton", "enabled", True)
         gui.click("proxySettingsSaveButton")
         gui.wait_for_page("connectionSettingsPage")
+        # A visible underlying page during the stack transition does not prove
+        # the asynchronous draft was applied. Observe its authoritative model.
+        gui.wait_for_property("connectionSettingsPage", "settingsModel.proxyEnabled", False)
+        gui.wait_for_property("connectionSettingsPage", "coreSettingsModel.pending", False)
         gui.click("onboardingConnectionSettingsCloseButton")
+        gui.wait_for_property("onboardingConnectionSettingsPopup", "visible", False)
         click_onboarding_button(gui, "onboardingConnectionButton")
         gui = recovered.wait_for_main_window_reconnect()
         assert_node_shell_visible(gui)
@@ -548,11 +556,15 @@ def run_native_startup_failure_reopens_saved_setup_flow():
         check_gui_exit(recovered.process.returncode, stderr.decode("utf8", errors="replace"), socket_path=recovered.socket_path)
         print("Recovered original saved setup: actual Core ready; marker=true; exact550MiB retained; exit=0", flush=True)
     except Exception:
-        if failed.driver is not None:
-            dump_qml_tree(failed.driver)
-        failed.stop(cleanup=False)
-        stdout, stderr = failed.process.communicate()
-        print(f"Failed process diagnostic exit={failed.process.returncode}\n" + stdout.decode("utf8", errors="replace") + stderr.decode("utf8", errors="replace"), flush=True)
+        print("Retained actual setup settings: " + repr(read_settings_json(datadir)), flush=True)
+        for label, harness in (("original", failed), ("recovery", recovered)):
+            if harness is None:
+                continue
+            if harness.driver is not None:
+                dump_qml_tree(harness.driver)
+            harness.stop(cleanup=False)
+            stdout, stderr = harness.process.communicate()
+            print(f"{label} process diagnostic exit={harness.process.returncode}\n" + stdout.decode("utf8", errors="replace") + stderr.decode("utf8", errors="replace"), flush=True)
         raise
     finally:
         failed.stop(cleanup=False)
@@ -561,10 +573,39 @@ def run_native_startup_failure_reopens_saved_setup_flow():
         cleanup_test_directory(tmpdir)
 
 
+
+def run_reset_retains_original_backup_through_finish():
+    """A single reset handoff must retain the actual pre-reset Core settings."""
+    from qml_process_checks import check_gui_exit
+    tmpdir = create_test_directory(prefix="qml_reset_receipt_", dir="/tmp")
+    datadir = setup_datadir(tmpdir)
+    original = {"qml_onboarded": True, "prune": 953, "dbcache": 512, "wallet": []}
+    write_settings_json(datadir, original)
+    harness = QmlTestHarness(datadir=datadir, tmpdir=tmpdir, reset_settings=True,
+                             start_onboarded=False, extra_args=["-regtest", "-disablewallet", "-lang=en"])
+    try:
+        harness.start()
+        click_existing_profile_to_connection(harness.driver, datadir, expect_custom_storage=False)
+        click_onboarding_button(harness.driver, "onboardingConnectionButton")
+        gui = harness.wait_for_main_window_reconnect()
+        assert_node_shell_visible(gui)
+        with open(os.path.join(datadir, "regtest", "settings.json.bak"), encoding="utf8") as backup:
+            actual = {key: value for key, value in json.load(backup).items() if key != "_warning_"}
+        assert actual == original, (actual, original)
+        assert read_settings_json(datadir).get("qml_onboarded") is True
+        harness.stop(cleanup=False)
+        _, stderr = harness.process.communicate()
+        check_gui_exit(harness.process.returncode, stderr.decode("utf8", errors="replace"), socket_path=harness.socket_path)
+        print("Reset receipt: original backup retained; marker=true; process exit=0; stderr inspected", flush=True)
+    finally:
+        harness.stop(cleanup=False)
+        cleanup_test_directory(tmpdir)
+
 if __name__ == "__main__":
     raise SystemExit(run_scenarios('Pre-init onboarding engine and persisted configuration boundaries', [
         scenario("wallet-onboarding", 4, run_wallet_enabled_flow),
         scenario("node-onboarding", 2, run_wallet_disabled_flow),
+        scenario("reset-retains-original-backup", 2, run_reset_retains_original_backup_through_finish),
         scenario("native-startup-failure-recovery", 2, run_native_startup_failure_reopens_saved_setup_flow),
         scenario("existing-profile-onboarding", 2, run_existing_profile_full_onboarding_flow),
         scenario("configured-datadir-source", 2, run_configured_datadir_preserves_config_source_flow),
