@@ -170,6 +170,101 @@ TestCase {
     function editSetting(view, key, value) { const input = findChild(view, key + "SettingInput"); verify(input !== null); input.text = value; input.textEdited(); tryCompare(view.settingsEditor.entry(key), "text", value); tryCompare(view.settingsEditor, "inputPending", false) }
     function saveSettings(view) { tryCompare(view.settingsEditor, "canSave", true); const before = view.settingsEditor.saveResult.operationId; findChild(view, "settingsSaveBatchButton").clicked(); tryVerify(() => view.settingsEditor.saveResult.persisted && view.settingsEditor.saveResult.operationId !== before); tryCompare(view.settingsEditor, "busy", false) }
 
+    function publishSettingsDomain() {
+        for (let turn = 0; turn < 128; ++turn) {
+            if (!optionsModel.stepControlledSettingsDomainForTest()) {
+                verify(optionsModel.publishControlledSettingsForTest())
+                return
+            }
+        }
+        fail("Controlled settings Domain did not become idle")
+    }
+
+    function clickDoneControl(view, enabled) {
+        const button = findChild(view, "settingsDoneButton")
+        verify(button !== null)
+        tryVerify(() => button.width > 0 && button.height > 0)
+        compare(button.enabled, enabled)
+        settingsWindow.requestActivate()
+        tryCompare(settingsWindow, "active", true)
+        for (let item = button; item !== null; item = item.parent) {
+            verify(item.visible)
+            if (item.clip) {
+                const center = button.mapToItem(item, button.width / 2, button.height / 2)
+                verify(center.x >= 0 && center.y >= 0 && center.x < item.width && center.y < item.height)
+            }
+        }
+        mouseClick(button, button.width / 2, button.height / 2)
+    }
+
+    function test_settingsDoneCapturesOnlySafeNavigation_data() {
+        return [{ tag: "held-initial-read", state: "loading" },
+                { tag: "dirty-consent", state: "dirty" },
+                { tag: "held-save-review", state: "saving" }]
+    }
+
+    function test_settingsDoneCapturesOnlySafeNavigation(data) {
+        verify(optionsModel.beginControlledSettingsForTest())
+        let view = null
+        let doneCalls = 0
+        try {
+            view = createTemporaryObject(settingsViewComponent, settingsWindow.contentItem)
+            verify(view !== null)
+            view.doneClicked.connect(() => { doneCalls += 1 })
+            publishSettingsDomain() // Actual initial read is queued but held.
+            const editor = view.settingsEditor
+            compare(editor.phase, SettingsEditorModel.Loading)
+            compare(editor.busy, true)
+            compare(editor.dirty, false)
+            compare(optionsModel.settingsWritesForTest(), 0)
+            if (data.state === "loading") {
+                clickDoneControl(view, true)
+                compare(doneCalls, 1)
+                compare(editor.busy, true) // Navigation did not cancel/finish the read.
+                compare(optionsModel.settingsWritesForTest(), 0)
+                verify(optionsModel.settleControlledSettingsForTest())
+                compare(editor.fresh, true)
+            } else {
+                verify(optionsModel.settleControlledSettingsForTest())
+                compare(editor.fresh, true)
+                editor.entry("dbcache").editText("512")
+                publishSettingsDomain()
+                compare(editor.entry("dbcache").text, "512")
+                compare(editor.dirty, true)
+                compare(editor.canSave, true)
+                if (data.state === "dirty") {
+                    clickDoneControl(view, true)
+                    publishSettingsDomain()
+                    compare(doneCalls, 0)
+                    compare(editor.closeQuestion, true)
+                    compare(optionsModel.settingsWritesForTest(), 0)
+                    editor.answerClose(editor.closeToken, SettingsEditorModel.KeepEditing)
+                    publishSettingsDomain()
+                    compare(editor.closeQuestion, false)
+                    compare(editor.entry("dbcache").text, "512")
+                    compare(editor.dirty, true)
+                    compare(view.settingsNavigationPending, false)
+                } else {
+                    editor.save()
+                    compare(findChild(view, "settingsDoneButton").enabled, false) // Busy ingress, before Domain.
+                    publishSettingsDomain() // Hold the original Core review.
+                    compare(editor.phase, SettingsEditorModel.Checking)
+                    clickDoneControl(view, false)
+                    compare(doneCalls, 0)
+                    compare(editor.busy, true)
+                    compare(optionsModel.settingsWritesForTest(), 0)
+                    verify(optionsModel.settleControlledSettingsForTest())
+                    compare(editor.saveResult.persisted, true)
+                    compare(editor.saveResult.outcomeKnown, true)
+                    compare(optionsModel.settingsWritesForTest(), 1)
+                    compare(editor.entry("dbcache").committedText, "512")
+                }
+            }
+        } finally {
+            verify(optionsModel.endControlledSettingsForTest())
+        }
+    }
+
     function test_displayUnitCommandKeepsCanonicalAmount_data() {
         return [{tag: "BTC", unit: 0}, {tag: "mBTC", unit: 1}, {tag: "bits", unit: 2}, {tag: "sat", unit: 3}]
     }
@@ -323,6 +418,9 @@ TestCase {
         tryCompare(check, "text", "Save and check")
         check.clicked()
         tryVerify(() => view.settingsEditor.saveResult.persisted)
+        tryVerify(() => view.settingsEditor.saveResult.outcomeKnown)
+        compare(optionsModel.settingsWritesForTest(), 1)
+        compare(view.settingsEditor.entry("signer").committedText, successor)
         tryVerify(() => walletController.signers.pending)
         compare(page.signerConnected, false)
         tryCompare(indicator, "color", Theme.color.neutral7)

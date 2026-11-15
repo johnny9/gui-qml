@@ -63,3 +63,39 @@ second Clear oracles remain, strengthened with unchanged draft, retained input
 focus and no RPC after Escape. Worker04's actual failed row remains evidence;
 it is not reclassified as a pass. This presentation issue does not require a
 new public Core capability.
+
+
+## Accepted-owner composition
+
+The first complete R36/R37/R39 composition ran all128 intended Qt rows and two
+real GUI privacy journeys. Three rows failed; every independent group continued.
+The raw composed01 evidence remains unchanged. No process timed out.
+
+- `nodeInformationRowsAvoidChainmanBeforeInitialization` still correctly forbids
+  header/height/time/local-address reads before successful initialization. Its
+  old additional zero-network-read assumption conflicts with R36's independent,
+  safe public network observation. The repaired fixture holds actual injected
+  executor work: the original Unknown-network/zero-read oracle is checked before
+  observation, then the existing public mock's false value is observed exactly
+  once. All four Chainman-dependent zero-call oracles remain unchanged.
+- The real `navigationStaysResponsiveDuringRpc` journey could open Settings but
+  could not use Done while its initial read remained busy behind an admitted
+  RPC. Done now uses a bounded typed binding that permits only a clean Loading
+  read as the busy exception. Pending local edits, save ingress, Checking,
+  Saving, Retiring, and owned navigation/dirty-consent gates remain fenced. Three
+  controlled physical-button cases cover held initial read, dirty Keep Editing,
+  and held save review including the immediate ingress interval; exact writes,
+  retained editor values and physical Native drain are asserted.
+- The QML signer fixture incorrectly derived a completed save's effective path
+  from a later live editor field. Its mock write also claimed live runtime
+  confirmation while leaving the effective readback old. The fixture now posts
+  the original confirmed signer value captured from that exact immutable write,
+  after releasing its Store lock, and gives live fields consistent actual
+  effective readback. It does not parse a display summary or forge a production
+  state. Existing pending/grey indicator/configuration-write/enumeration/effective
+  path oracles remain and known outcome/exact persisted value are added.
+
+No Core or Qt code, persisted format, native component, animation, watchdog,
+warning allowance or test selection is weakened. These are app composition and
+fixture boundaries, not missing Wallet/WalletLoader capabilities. Broad coverage,
+platform matrices and sanitizers remain final R42 work by the approved cadence.

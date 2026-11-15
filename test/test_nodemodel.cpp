@@ -2963,12 +2963,18 @@ void NodeModelTests::nodeInformationRowsAvoidChainmanBeforeInitialization()
     node.ExpectNoCalls(node.calls.getNumBlocks);
     node.ExpectNoCalls(node.calls.getLastBlockTime);
     node.ExpectNoCalls(node.calls.getNetLocalAddresses);
-    node.ExpectNoCalls(node.calls.getNetworkActive);
+    node.ExpectExactly(node.calls.getNetworkActive, 1);
 
-    NodeModel model{node};
-    const auto drain = qScopeGuard([&] { DrainNodeModel(model); });
-    QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
-    WaitForInitialMempoolRefresh(mempool);
+    ManualExecutionEnvironment env;
+    NodeModel::Services services;
+    services.execution = {env.scheduler, [&env](auto turn) { env.post(std::move(turn)); }};
+    services.schedule = [](NodeModel::Poll, std::chrono::milliseconds, std::function<void()>) {};
+    services.cancel = [](NodeModel::Poll) {};
+    NodeModel model{node, true, std::move(services)};
+    const auto drain = qScopeGuard([&] { model.beginShutdown(); env.drain(); env.publishAll(); });
+    // Hold the actual initial Core reads. Before an observation, network state
+    // remains Unknown and no GUI information getter may touch any backend.
+    QCOMPARE(node.calls.getNetworkActive.load(), 0);
 
     const QVariantList rows = model.nodeInformationRows();
     QVERIFY(!rows.empty());
@@ -2981,6 +2987,13 @@ void NodeModelTests::nodeInformationRowsAvoidChainmanBeforeInitialization()
             map.value(QStringLiteral("value")).toString() == QStringLiteral("Unknown");
     }
     QVERIFY(saw_unknown_network_active);
+    QCOMPARE(node.calls.getNetworkActive.load(), 0);
+    QVERIFY(DrainManualTipTurns(env));
+    QVERIFY(model.notificationsReady());
+    QCOMPARE(InformationValue(model, QStringLiteral("Network active")), QStringLiteral("No"));
+    // R36 independently reads safe network availability; Chainman-dependent
+    // getters above must still remain unused until initialization succeeds.
+    QCOMPARE(node.calls.getNetworkActive.load(), 1);
 }
 
 void NodeModelTests::nodeInformationRowsExposeDiagnostics()
