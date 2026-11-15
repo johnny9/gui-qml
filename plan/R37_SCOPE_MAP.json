@@ -1,0 +1,36 @@
+{
+  "scope": "draft-230-D230",
+  "original_title": "The File menu works under the modal Add-Wallet wizard",
+  "original_source": ".validation/issue-prioritization-20261109/source-issue-drafts.md:7397",
+  "primary_owner": "R37",
+  "contract": "M20",
+  "disposition": "confirmed public File-command/page-navigation variant fixed; OS-native event/platform matrix not established",
+  "actual_parent": {
+    "Core_selector": "navigation.enabled.nativeFileRouteCannotNavigateBehindTheOwnedWalletModal",
+    "QML_selectors": [
+      "MainRouting::test_modal_creation_keeps_file_navigation_on_the_original_page",
+      "MainRouting::test_modal_creation_rejects_a_delayed_direct_route_then_restores_admission",
+      "MainRouting::test_owned_runtime_question_blocks_navigation_without_blocking_its_answer"
+    ],
+    "impact": "The same MenuCommand used by the native File menu changes the underlying selected page while the Add-Wallet form remains owned by its modal. Exact draft/selection and zero creation/close-effect oracles are retained.",
+    "evidence": [
+      "bazzite-01/artifacts/red/results/report.json",
+      "macos-01/artifacts/red/focused/report.json"
+    ],
+    "app": "e4765b25e0645328d7edc05343261455955c4a21",
+    "Core": "44901d8f64cb617714707bd025ecd83f108353c2"
+  },
+  "result": "One typed root admission binding disables all relevant native File/page commands and guards final direct routes; shutdown remains available. Existing admitted operations/receipts remain model-owned.",
+  "additional_confirmed_owner_repairs": [
+    "Node settings context was destroyed on pop; same original editor/draft now retained (actual node negative and wallet positive control).",
+    "Old desktop Qt.callLater route overrode a newer section/close-consent source; consumed latest route now owned by its loader (actual source04 failure and private source04 repeat).",
+    "An onboarding chooser could be dropped behind an existing runtime prompt; pending intent now retained/cancelled by original context (private source04 negative plus successor-catalog control).",
+    "The introduced inline node-shell route failed the existing Qt6.4 Core/UI Settings oracle; ordinary external typed app component preserves the route. Exact original production baseline passes; final current public button signal/page oracle passes. No upstream Qt defect cause is claimed."
+  ],
+  "limits": [
+    "No demonstrated incorrect payment, unrecoverable wallet data or process failure is alleged.",
+    "Backup/error and PSBT-overlay consequences are not separately reproduced as new funds/data defects; the shared File admission mechanism prevents new covered File actions during owned modality.",
+    "Real OS-native menu event delivery/full Qt/platform/config matrices and exhaustive coverage/sanitizers remain R42.",
+    "Native QFileDialog uses Qt itself; existing Qt-only TSan risk remains documented in earlier plan, not repaired or waived here."
+  ]
+}
