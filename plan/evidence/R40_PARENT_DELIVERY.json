@@ -1,0 +1,39 @@
+{
+  "parent_app": "c5b9cdfb28304617e7d418ac089098c2a5897559",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "app_sha256": "05ea044a0d228df06fd963c87eb8a4fc647ecf9da767d9cdc6b9714a18495107",
+  "processes_executed": 1,
+  "wallet_enabled": true,
+  "uri": "bitcoin:bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9?amount=0.01000000&label=parent-uri&message=explicit-inspection-only",
+  "main_window_ready": true,
+  "intended_delivery_red": true,
+  "normal_quit_requested": true,
+  "forced_termination": false,
+  "forced_kill": false,
+  "limitation": "A direct argv URI only; no installed native association/platform claim",
+  "current_page": "desktopWalletsPage",
+  "mailbox_state_observation": {
+    "error": "get_enum_property('desktopRequestsBar', 'mailbox.state') failed: Enum property owner is unavailable"
+  },
+  "delivery_wait": {
+    "error": "wait_for_property('desktopRequestsBar', 'visible') timed out; last value: False",
+    "seconds": 3.012600880989339
+  },
+  "before": {
+    "objectName": "desktopRequestsBar",
+    "visible": false,
+    "mailbox": null
+  },
+  "after": {
+    "objectName": "desktopRequestsBar",
+    "visible": false,
+    "mailbox": null
+  },
+  "no_wallet_or_mempool_effects": true,
+  "app_exit": 0,
+  "exit_and_stderr_check": "passed",
+  "established_parent_delivery_failure": true,
+  "artifact_root": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/parent-argv-02",
+  "prior_unproven_probe": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/parent-argv/results/RESULT.json",
+  "prior_probe_note": "The initial parse-rejection hypothesis was not established. Only the later visible delivery-loss oracle promotes D245."
+}

@@ -135,6 +135,27 @@ PageStack {
         root.openWhileShown(sendPage.openPaymentRequestImport)
     }
 
+    function acceptDesktopImport(mailbox: DesktopIntentModel): bool {
+        if (!mailbox || !root.visible || !root.wallet || !root.wallet.available || !root.recipient
+                || root.wallet.recipients.importPending) return false
+        const originalWallet = root.wallet
+        const originalRecipient = root.recipient
+        sendPage.cancelUriAction()
+        if (root.wallet !== originalWallet || root.recipient !== originalRecipient || !root.visible) return false
+        const operation = mailbox.takeInspection(sendPage)
+        if (!operation) return false
+        sendPage.m_importOperation = operation
+        sendPage.m_importWallet = originalWallet
+        sendPage.m_importSource = qsTr("desktop")
+        if (root.wallet !== originalWallet || root.recipient !== originalRecipient || !root.visible || !originalWallet.available) {
+            operation.cancel()
+            return false
+        }
+        operation.chooseTarget(originalWallet, originalRecipient)
+        operation.use()
+        return true
+    }
+
     function openPsbtFileImport() {
         root.returnToSendForm()
         root.openWhileShown(sendPage.openPsbtFileImport)

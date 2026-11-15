@@ -18,6 +18,7 @@
 
 class QQmlApplicationEngine;
 class QQuickWindow;
+class ArgsManager;
 
 namespace startup {
 using DiagnosticLoss = std::shared_ptr<std::atomic_bool>;
@@ -62,7 +63,17 @@ struct Migration {
     std::function<SettingsWrite()> complete{};
 };
 enum class PreparationOutcome { Ready, ConfigurationFailed, MigrationFailed, SettingsWriteFailed, BaseInitializationFailed };
-// Every port is required. The whole operation runs on the original Native
+// Native-only read/capture. Unlike common::InitConfig, this does not create
+// directories or read/write the dynamic settings file. Its profile identity
+// follows Core's config and chain selection before those mutation effects.
+struct ProfileIdentity {
+    QString directory;
+    QString network;
+    bool operator==(const ProfileIdentity&) const = default;
+};
+ProfileIdentity ReadProfileIdentity(ArgsManager& args);
+ProfileIdentity CurrentProfileIdentity(const ArgsManager& args);
+// The original preparation ports are required. The operation runs on its Native
 // startup action; errors stop its effects in order and exceptions propagate to
 // that action's owned outcome. No port is called while a GUI lock is held.
 struct PreparationPorts {
@@ -76,6 +87,11 @@ struct PreparationPorts {
     std::function<bool()> reset_requested;
     std::function<bool()> reset_window_settings;
     std::function<void(const bilingual_str&)> warning;
+    // Optional for existing synchronous consumers. The async transport path
+    // binds this to its captured identity and checks it after InitConfig,
+    // before migration/base initialization. This is not an atomic config-file
+    // transaction: InitConfig itself can already have written settings.
+    std::function<bool()> profile_matches{};
 };
 PreparationOutcome PrepareNode(const PreparationPorts& ports);
 struct WindowSettingsPorts {

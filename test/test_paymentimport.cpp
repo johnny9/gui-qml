@@ -398,7 +398,9 @@ private Q_SLOTS:
         Fixture f; f.owner->inspect({paymentimport::Input::Kind::Text, Uri()});
         QVERIFY(f.source.step(execution::Lane::Domain));
         f.owner->chooseTarget(f.port); f.owner->close();
-        while (f.source.step(execution::Lane::Domain)) {}
+        // Deliver reserved close through Cleanup while the original Core read
+        // stays held. Its lifecycle decision still runs only on Domain.
+        while (f.source.step(execution::Lane::Cleanup) || f.source.step(execution::Lane::Domain)) {}
         QCOMPARE(f.reads, 0); QCOMPARE(f.snapshot.phase, paymentimport::Phase::Closing); QCOMPARE(f.retired, 0);
         f.drain(); QCOMPARE(f.snapshot.phase, paymentimport::Phase::Closed); QCOMPARE(f.retired, 1);
         QCOMPARE(f.writes, 0); QVERIFY(!f.snapshot.can_apply);
@@ -471,6 +473,69 @@ private Q_SLOTS:
             operation->cancel(); commands.drain(); QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall); commands.drain();
         }
         importer.closeAdmission(); commands.drain();
+    }
+    void fullOrdinaryBudgetCannotStrandRetainedTypedSourceFacades_data() {
+        QTest::addColumn<bool>("operation_first");
+        QTest::newRow("operation-then-factory") << true;
+        QTest::newRow("factory-then-operation") << false;
+    }
+    void fullOrdinaryBudgetCannotStrandRetainedTypedSourceFacades() {
+        QFETCH(bool, operation_first);
+        auto limits = execution::Limits::Bounded(); limits.ordinary.tasks = 8;
+        ManualRoutedExecution commands{limits}; std::deque<std::function<void()>> gui;
+        const auto drain = [&] {
+            do {
+                commands.drain();
+                while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+            } while (!commands.queuedIdle() || !commands.activeIdle());
+        };
+        BitcoinUriModel importer; QObject view;
+        importer.setServices({commands.scheduler, [&](auto turn) { gui.push_back(std::move(turn)); }});
+        auto* operation = importer.requestImport({paymentimport::Input::Kind::Text, Uri()}, {}, &view); QVERIFY(operation);
+        drain(); QCOMPARE(operation->state(), PaymentImportOperation::State::Inspecting);
+        for (size_t index{0}; index < limits.ordinary.tasks; ++index)
+            QVERIFY(execution::Submit(*commands.scheduler, [] {}, [] {}, {}, {execution::Lane::Domain, 1024}));
+        QVERIFY(!execution::Submit(*commands.scheduler, [] {}, [] {}, {}, {execution::Lane::Domain, 1024}));
+        if (operation_first) { operation->closeAdmission(); importer.closeAdmission(); }
+        else { importer.closeAdmission(); operation->closeAdmission(); }
+        drain();
+        QCOMPARE(commands.scheduler->pending(), size_t{0});
+        QVERIFY(operation); // Both Qt facades deliberately remain alive.
+    }
+    void closeWithFullOrdinaryBudgetKeepsOriginalOwnerUntilDomainRetirement() {
+        auto limits = execution::Limits::Bounded(); limits.ordinary.tasks = 8;
+        ManualRoutedExecution commands{limits}; paymentimport::Snapshot observed; int retired{0};
+        paymentimport::Services services; services.scheduler = commands.scheduler;
+        auto owner = paymentimport::Owner::Create(88, std::move(services), [&](auto value) { observed = std::move(value); }, [&](auto) { ++retired; });
+        QVERIFY(owner); QVERIFY(owner->inspect({paymentimport::Input::Kind::Text, Uri()})); commands.drain();
+        QCOMPARE(observed.phase, paymentimport::Phase::Inspecting);
+        for (size_t index{0}; index < limits.ordinary.tasks; ++index)
+            QVERIFY(execution::Submit(*commands.scheduler, [] {}, [] {}, {}, {execution::Lane::Domain, 1024}));
+        QVERIFY(!execution::Submit(*commands.scheduler, [] {}, [] {}, {}, {execution::Lane::Domain, 1024}));
+        const auto first = owner->close(); QVERIFY(first); const auto repeated = owner->close(); QVERIFY(repeated); QCOMPARE(first.id, repeated.id);
+        const std::weak_ptr<paymentimport::Owner> original{owner}; owner.reset();
+        commands.drain(); QCOMPARE(observed.phase, paymentimport::Phase::Closed); QCOMPARE(retired, 1); QVERIFY(original.expired());
+        observed = {}; commands.drain(); QCOMPARE(commands.scheduler->pending(), size_t{0});
+    }
+    void closeReservationFailureAndUnusedActorCannotRetainScope() {
+        auto limits = execution::Limits::Bounded(); limits.cleanup_reservations.tasks = 1;
+        ManualRoutedExecution refused{limits}; paymentimport::Services services; services.scheduler = refused.scheduler;
+        QVERIFY(!paymentimport::Owner::Create(89, std::move(services), {}));
+        refused.drain(); QCOMPARE(refused.scheduler->pending(), size_t{0});
+        ManualRoutedExecution unused; services = {}; services.scheduler = unused.scheduler;
+        auto owner = paymentimport::Owner::Create(90, std::move(services), {}); QVERIFY(owner);
+        const std::weak_ptr<paymentimport::Owner> original{owner}; owner.reset();
+        unused.drain(); QVERIFY(original.expired()); QCOMPARE(unused.scheduler->pending(), size_t{0});
+    }
+    void throwingRetireKeepsOriginalChildOutcomeAndDoesNotDispatchAgain() {
+        Fixture f; f.inspect(); f.lose_reply = true;
+        QVERIFY(f.owner->apply()); f.drain(); QCOMPARE(f.writes, 1);
+        int retire_calls{0};
+        f.port->retire = [&](auto, auto) { ++retire_calls; throw std::runtime_error{"Retirement transport failed"}; };
+        QVERIFY(f.owner->close()); f.drain();
+        QCOMPARE(retire_calls, 1); QCOMPARE(f.queries, 1); QCOMPARE(f.writes, 1); QCOMPARE(f.dispatches, 1);
+        QCOMPARE(f.snapshot.phase, paymentimport::Phase::Closed); QCOMPARE(f.retired, 1);
+        QVERIFY(f.snapshot.result); QCOMPARE(f.snapshot.result->outcome, paymentimport::Outcome::Applied);
     }
     void realThreadSourceReadAndDomainDecisionsStayOutsideGui() {
         BackendExecutor executor{execution::Limits::Bounded()};

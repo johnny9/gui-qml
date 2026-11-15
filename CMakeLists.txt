@@ -214,6 +214,7 @@ target_link_libraries(bitcoinqml
   PRIVATE
     bitcoin_cli
     $<TARGET_NAME_IF_EXISTS:bitcoin_wallet>
+    $<$<PLATFORM_ID:Windows>:advapi32>
     $<$<PLATFORM_ID:Darwin>:-framework\ AppKit>
 )
 

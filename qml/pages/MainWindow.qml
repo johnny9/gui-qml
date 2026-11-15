@@ -46,6 +46,20 @@ ApplicationWindow {
     property bool postOnboardingWalletRouteResolved: false
     property bool onboardingWalletPresentationPending: false
     property bool shutdownInProgress: false
+    footer: DesktopRequestsBar {
+        mailbox: ApplicationModels.desktopIntentModel
+        visible: !appWindow.shutdownInProgress && mailbox !== null
+            && (mailbox.pendingCount > 0 || mailbox.hasInspection || mailbox.error.length > 0)
+        enabled: appWindow.menuNavigationEnabled
+        continuationAvailable: appWindow.desktopWalletMode && appWindow.menuNavigationEnabled
+            && appWindow.menuWalletController !== null && appWindow.menuWalletController.selectedWallet !== null
+            && appWindow.menuWalletController.selectedWallet.available
+        onContinueRequested: {
+            if (!continuationAvailable) return
+            const shell = main.currentItem as DesktopWallets
+            if (shell) shell.continueDesktopImport(mailbox)
+        }
+    }
     readonly property var menuEditTarget: appWindow.editTarget(appWindow.activeFocusItem)
     readonly property var menuWalletController: appWindow.desktopWalletMode ? ApplicationModels.walletController : null
     readonly property DesktopWallets desktopShell: main.currentItem as DesktopWallets

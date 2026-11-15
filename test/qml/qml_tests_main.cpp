@@ -7099,6 +7099,7 @@ class MockApplicationModels : public QObject
     Q_PROPERTY(SignerDiscoveryModel* signers READ signers CONSTANT)
     Q_PROPERTY(MockWalletListModel* walletListModel READ walletListModel CONSTANT)
     Q_PROPERTY(MockDesktopWindowBehaviorModel* desktopWindowBehaviorModel READ desktopWindowBehaviorModel CONSTANT)
+    Q_PROPERTY(QObject* desktopIntentModel READ desktopIntentModel CONSTANT)
     Q_PROPERTY(QObject* desktopTrayIconController READ desktopTrayIconController CONSTANT)
     Q_PROPERTY(MockOptionsModel* onboardingOptionsModel READ onboardingOptionsModel CONSTANT)
     Q_PROPERTY(bool testAutomationEnabled READ testAutomationEnabled CONSTANT)
@@ -7130,6 +7131,7 @@ public:
     MockWalletController* walletController() const { return m_context->contextProperty(QStringLiteral("walletController")).value<MockWalletController*>(); }
     MockWalletListModel* walletListModel() const { return m_context->contextProperty(QStringLiteral("walletListModel")).value<MockWalletListModel*>(); }
     MockDesktopWindowBehaviorModel* desktopWindowBehaviorModel() const { return m_context->contextProperty(QStringLiteral("desktopWindowBehaviorModel")).value<MockDesktopWindowBehaviorModel*>(); }
+    QObject* desktopIntentModel() const { return m_context->contextProperty(QStringLiteral("desktopIntentModel")).value<QObject*>(); }
     QObject* desktopTrayIconController() const { return m_context->contextProperty(QStringLiteral("desktopTrayIconController")).value<QObject*>(); }
     MockOptionsModel* onboardingOptionsModel() const { return m_context->contextProperty(QStringLiteral("optionsModel")).value<MockOptionsModel*>(); }
     bool testAutomationEnabled() const { return m_context->contextProperty(QStringLiteral("testAutomationEnabled")).toBool(); }

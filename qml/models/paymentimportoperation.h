@@ -49,6 +49,8 @@ public:
     enum class NativeDisposition { NoHandoff, LiteralPaste, RestoreOnly, RestoreImport };
     Q_ENUM(NativeDisposition)
     ~PaymentImportOperation() override;
+    // Synchronous admission/lifetime fence. Publication is a separate turn.
+    void closeAdmission();
     quint64 requestId() const { return m_identity; }
     State state() const { return static_cast<State>(m_snapshot.phase); }
     SourceKind sourceKind() const { return static_cast<SourceKind>(m_snapshot.kind); }

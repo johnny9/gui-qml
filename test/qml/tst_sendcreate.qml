@@ -21,6 +21,7 @@ TestCase {
 
         SendCreate { wallet: testWalletModel }
     }
+    Component { id: desktopMailboxComponent; DesktopIntentModel {} }
 
     Component {
         id: reviewComponent
@@ -2351,6 +2352,39 @@ TestCase {
     }
     function test_validation_echo_preserves_original_import_intent_data() {
         return [{tag: "explicit-derived-total", paste: false}, {tag: "paste-validation-revision", paste: true}]
+    }
+    function test_desktop_inspection_uses_one_original_source_data() {
+        return [{tag: "accepted", action: "accept"}, {tag: "selection-during-handoff", action: "replace"},
+                {tag: "hidden-before-handoff", action: "hide"}]
+    }
+    function test_desktop_inspection_uses_one_original_source(data) {
+        const page = createControlledSendPage()
+        const operation = BitcoinUri.requestImportText("bitcoin:bcrt1qsendtoaddress?amount=0.007&message=Desktop", null, null, page)
+        tryCompare(operation, "state", PaymentImportOperation.Inspecting)
+        const applications = testSendRecipient.appliedPaymentRequestCalls
+        const replacementApplications = testSecondWalletModel.recipients.current.appliedPaymentRequestCalls
+        const mailbox = createTemporaryObject(desktopMailboxComponent, page, {inspection: operation, beforeReturn: function(receiver) {
+            compare(receiver, findChild(page, "walletSendPage"))
+            if (data.action === "replace") page.wallet = testSecondWalletModel
+        }})
+        verify(mailbox !== null)
+        if (data.action === "hide") page.visible = false
+        const accepted = page.acceptDesktopImport(mailbox)
+        if (data.action === "accept") {
+            compare(accepted, true)
+            compare(mailbox.takenCount, 1)
+            confirmExplicitImport(findChild(page, "walletSendPage"))
+            tryCompare(testSendRecipient, "appliedPaymentRequestCalls", applications + 1)
+            compare(testSendRecipient.amount.satoshi, 700000)
+            compare(testSendRecipient.message, "Desktop")
+        } else {
+            compare(accepted, false)
+            compare(mailbox.takenCount, data.action === "hide" ? 0 : 1)
+            compare(testSendRecipient.appliedPaymentRequestCalls, applications)
+        }
+        compare(testSecondWalletModel.recipients.current.appliedPaymentRequestCalls, replacementApplications)
+        compare(testWalletModel.sendTransactionCalls, 0)
+        compare(testSecondWalletModel.sendTransactionCalls, 0)
     }
     function test_validation_echo_preserves_original_import_intent(data) {
         const page = createControlledSendPage()

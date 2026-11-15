@@ -1,0 +1,84 @@
+{
+  "tested_app": "69406815c90174d5cda351e2182e33a78f9d5270",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "kind": "focused component checkpoint, not R40 acceptance",
+  "runtime_actual_bodies": 38,
+  "runtime_selections": 6,
+  "runtime_summary": {
+    "failed": 0,
+    "incomplete": 0,
+    "passed": 6,
+    "selections": 6,
+    "status": "pass"
+  },
+  "runtime_receipt": "gui-focused-14/actual/report.json",
+  "static_entries": 11,
+  "static_exit_codes": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "static_receipt": "gui-static-14/tidy/results.json",
+  "exact_app_lint": {
+    "command": [
+      "python3",
+      "ci/lint.py",
+      "--scope",
+      "app",
+      "--no-build",
+      "--image",
+      "qt6-r17-linter-core449:20261114"
+    ],
+    "exit": 0,
+    "seconds": 2.6361431070254184,
+    "app": "69406815c90174d5cda351e2182e33a78f9d5270",
+    "branch": "",
+    "status": "",
+    "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+    "Core_status": ""
+  },
+  "counterexamples": [
+    {
+      "receipt": "gui-fence-red-12/actual",
+      "tested_app": "56a58282222",
+      "actual_bodies": 2,
+      "failed": 1,
+      "cause": "Native admission closes after Domain handoff, before held GUI factory"
+    },
+    {
+      "receipt": "release-red-13/actual",
+      "tested_app": "d8408cd3e42",
+      "actual_bodies": 1,
+      "failed": 1,
+      "cause": "ordinary Domain rejection loses original presentation release"
+    },
+    {
+      "receipt": "stop-red-14/actual",
+      "tested_app": "d45216d4519",
+      "actual_bodies": 2,
+      "failed": 2,
+      "classification": "Parent stop genuine full-budget failure; initial Source fixture budget1 prevents setup, not an additional production defect."
+    }
+  ],
+  "retained_nonpass": "gui-focused-13: sticky simulated Domain rejection also rejects successor Source inspection; replaced by genuine8-slot ordinary saturation while preserving secondSourceID2 oracle. All raw failures retained.",
+  "pending": [
+    "actual startup/onboarding composition",
+    "Source Owner close under ordinary saturation",
+    "four actual application/process ingress cases",
+    "final source composition evidence"
+  ],
+  "deferred_R42": [
+    "exhaustive coverage",
+    "full configuration/platform suites",
+    "native Windows",
+    "sanitizers including known native Qt picker TSan"
+  ]
+}
