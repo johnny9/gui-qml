@@ -28,6 +28,7 @@
 #include <QUrl>
 #include <QtTest/QtTest>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <functional>
@@ -54,6 +55,21 @@ PartiallySignedTransaction Document(bool complete = false)
     PartiallySignedTransaction document{transaction, 2};
     document.inputs[0].non_witness_utxo = parent;
     if (complete) document.inputs[0].final_script_sig = CScript{} << std::vector<unsigned char>{};
+    return document;
+}
+
+PartiallySignedTransaction ManyOutputDocument(size_t output_count)
+{
+    CMutableTransaction previous;
+    previous.vin.emplace_back(COutPoint{Txid::FromUint256(uint256::ONE), 0});
+    previous.vout.emplace_back(static_cast<CAmount>(output_count + 10'000), CScript{} << OP_TRUE);
+    const auto parent = MakeTransactionRef(previous);
+    CMutableTransaction transaction;
+    transaction.vin.emplace_back(COutPoint{parent->GetHash(), 0});
+    for (size_t i{0}; i < output_count; ++i) transaction.vout.emplace_back(1, CScript{} << OP_TRUE);
+    PartiallySignedTransaction document{transaction, 2};
+    document.inputs[0].non_witness_utxo = parent;
+    document.inputs[0].final_script_sig = CScript{} << std::vector<unsigned char>{};
     return document;
 }
 
@@ -728,9 +744,45 @@ private Q_SLOTS:
         QCOMPARE(result.code, psbtwork::Error::None);
         QVERIFY(result.snapshot); QVERIFY(result.snapshot->error.isEmpty());
         QVERIFY(result.snapshot->proof->amount); QCOMPARE(*result.snapshot->proof->amount, FEE);
-        QVERIFY(result.snapshot->summary.contains(
+        QVERIFY(result.snapshot->initial_summary_page.rows.contains(
             QString{"Analysis: PSBT is not valid. Input 0 spends unspendable output"}));
         QCOMPARE(wallet.inspect_calls, 1);
+    }
+
+    void largeInspectionSummaryKeepsOnlyBoundedFormattedPages()
+    {
+        constexpr size_t OUTPUTS{4096};
+        WorkWallet wallet;
+        wallet.owned_outputs = true;
+        const auto result = psbtwork::Execute(&wallet, Request(psbtwork::Kind::Inspect, ManyOutputDocument(OUTPUTS)), {});
+        QCOMPARE(result.code, psbtwork::Error::None);
+        QVERIFY(result.snapshot);
+        const auto& snapshot = *result.snapshot;
+        QVERIFY(snapshot.summary_source);
+        QCOMPARE(snapshot.summary_count, snapshot.summary_source->row_count);
+        QCOMPARE(snapshot.summary_source->owned_outputs.size(), static_cast<int>(OUTPUTS));
+        QCOMPARE(snapshot.summary_source->owned_outputs.count(true), static_cast<int>(OUTPUTS));
+        QCOMPARE(snapshot.initial_summary_page.total, snapshot.summary_count);
+        QCOMPARE(snapshot.initial_summary_page.offset, 0);
+        QCOMPARE(snapshot.initial_summary_page.rows.size(), 128);
+
+        QStringList all_rows;
+        for (int offset{0}; offset < snapshot.summary_count; offset += 128) {
+            const auto page = psbtwork::ProjectSummaryPage(snapshot.summary_source, offset, 128, 17, static_cast<quint64>(offset / 128 + 1));
+            QVERIFY2(page.error.isEmpty(), qPrintable(page.error));
+            QCOMPARE(page.generation, quint64{17});
+            QCOMPARE(page.request, static_cast<quint64>(offset / 128 + 1));
+            QCOMPARE(page.total, snapshot.summary_count);
+            QVERIFY(page.rows.size() <= 128);
+            all_rows.append(page.rows);
+        }
+        QCOMPARE(all_rows.size(), snapshot.summary_count);
+        QCOMPARE(all_rows.first(), snapshot.initial_summary_page.rows.first());
+        QVERIFY(all_rows.first().startsWith(QStringLiteral("Sends ")));
+        QVERIFY(all_rows.first().contains(QStringLiteral("(own address)")));
+        QVERIFY(std::any_of(all_rows.begin(), all_rows.end(), [](const QString& row) {
+            return row.startsWith(QStringLiteral("Total output amount: "));
+        }));
     }
 
     void translatedMetadataFailureCannotGrantBroadcastAuthority()

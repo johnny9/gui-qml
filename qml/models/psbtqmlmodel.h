@@ -12,6 +12,7 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <mutex>
 
 class BackendExecutor;
 namespace psbtdocument { class Owner; }
@@ -26,6 +27,8 @@ class PsbtQmlModel : public QObject
     Q_PROPERTY(QStringList summary READ summary NOTIFY changed)
     Q_PROPERTY(int summaryCount READ summaryCount NOTIFY changed)
     Q_PROPERTY(int summaryOffset READ summaryOffset NOTIFY changed)
+    Q_PROPERTY(bool summaryPending READ summaryPending NOTIFY changed)
+    Q_PROPERTY(QString summaryError READ summaryError NOTIFY changed)
     Q_PROPERTY(bool canSign READ canSign NOTIFY changed)
     Q_PROPERTY(bool canBroadcast READ canBroadcast NOTIFY changed)
     Q_PROPERTY(bool complete READ complete NOTIFY changed)
@@ -58,8 +61,10 @@ public:
     QString status() const { return m_status; }
     QString error() const;
     QStringList summary() const { return m_summary_window; }
-    int summaryCount() const { return m_snapshot ? m_snapshot->summary.size() : 0; }
+    int summaryCount() const { return m_snapshot ? m_snapshot->summary_count : 0; }
     int summaryOffset() const { return m_summary_offset; }
+    bool summaryPending() const { return m_summary_pending; }
+    QString summaryError() const { return m_summary_error; }
     bool canSign() const { return !busy() && !m_closed && m_phase != Phase::Uncertain && !m_signing_blocked && m_snapshot && m_snapshot->can_sign; }
     bool canBroadcast() const { return !busy() && !m_closed && m_snapshot && m_snapshot->can_broadcast && !m_broadcast_blocked; }
     bool complete() const { return m_snapshot && m_snapshot->complete; }
@@ -109,7 +114,10 @@ private:
     void releaseSnapshot();
     void retireDocumentOwner();
     void ensureServices();
-    void updateSummaryWindow();
+    void prepareSummaryPaging();
+    void ensureSummaryQuery();
+    void publishSummaryPage(quint64 generation, quint64 epoch);
+    struct SummaryRequestState;
     using Operation = execution::OwnedCommand<psbtwork::Result>;
     struct Receipt {
         std::mutex mutex;
@@ -131,13 +139,18 @@ private:
     std::shared_ptr<Operation> m_active;
     std::optional<execution::ResourceLease> m_active_lease, m_snapshot_lease;
     std::shared_ptr<const psbtwork::Snapshot> m_snapshot;
+    std::shared_ptr<SummaryRequestState> m_summary_request_state;
+    std::shared_ptr<execution::SnapshotQuery<psbtwork::SummaryPage>> m_summary_query;
     std::shared_ptr<psbtdocument::Owner> m_document_owner;
     quint64 m_operation_id{0}, m_generation{0}, m_active_generation{0};
+    quint64 m_summary_epoch{0}, m_summary_request_id{0};
     psbtwork::Kind m_active_kind{psbtwork::Kind::Inspect};
     Phase m_phase{Phase::Idle};
     QString m_status, m_error, m_matched_txid, m_saved_path, m_submitted_txid;
+    QString m_summary_error;
     QStringList m_summary_window;
     int m_summary_offset{0}, m_summary_size{128};
+    bool m_summary_pending{false};
     bool m_submitted{false}, m_saved{false}, m_broadcast_blocked{false}, m_signing_blocked{false};
 };
 #endif // BITCOIN_QML_MODELS_PSBTQMLMODEL_H

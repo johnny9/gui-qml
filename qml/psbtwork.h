@@ -30,6 +30,15 @@ struct BroadcastResult {
 using Broadcast = std::function<BroadcastResult(CTransactionRef)>;
 Broadcast NodeBroadcast(interfaces::Node* node);
 QString SaveFile(const PartiallySignedTransaction& document, const QString& path);
+// Summary pages are deterministic projections of Native-captured immutable
+// values. Capture calls the public Wallet ownership query and must run on Core;
+// page formatting is pure and may run on the Domain lane.
+std::shared_ptr<const SummarySource> CaptureSummarySource(
+    std::shared_ptr<const PartiallySignedTransaction> assessment,
+    std::shared_ptr<const psbtfee::Analysis> proof,
+    interfaces::Wallet* wallet);
+SummaryPage ProjectSummaryPage(std::shared_ptr<const SummarySource> source, int offset, int count,
+                               quint64 generation = 0, quint64 request = 0);
 // Credential materialization is a Native effect. Keep its failure independent
 // of wallet unlock/signing and injectable without exhausting process memory.
 using Materialize = std::function<SecureString(const secretinput::Captured&)>;

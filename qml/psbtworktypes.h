@@ -6,6 +6,7 @@
 #define BITCOIN_QML_PSBTWORKTYPES_H
 
 #include <qml/models/psbtfee.h>
+#include <QBitArray>
 #include <QString>
 #include <QStringList>
 #include <memory>
@@ -20,6 +21,24 @@ struct InspectionFacts {
     QString requested_status;
 };
 enum class SignatureState { Unverified, Incomplete, Invalid, Verified };
+struct SummarySource {
+    enum class Kind { Transaction, MissingTransaction, InvalidFee };
+    Kind kind{Kind::Transaction};
+    std::shared_ptr<const PartiallySignedTransaction> assessment;
+    std::shared_ptr<const psbtfee::Analysis> proof;
+    // Ownership is captured on Native with the exact inspected document. A
+    // bit per output avoids materializing a GUI-sized list of formatted rows.
+    QBitArray owned_outputs;
+    QString analysis_error;
+    int unsigned_inputs{0};
+    int row_count{0};
+};
+struct SummaryPage {
+    quint64 generation{0}, request{0};
+    int offset{0}, total{0};
+    QStringList rows;
+    QString error;
+};
 struct Snapshot {
     std::shared_ptr<const PartiallySignedTransaction> document;
     // Metadata/finalization belongs to analysis of this exact document. Copy
@@ -27,7 +46,9 @@ struct Snapshot {
     std::shared_ptr<const PartiallySignedTransaction> assessment;
     std::shared_ptr<const psbtfee::Analysis> proof;
     QString status, error;
-    QStringList summary;
+    std::shared_ptr<const SummarySource> summary_source;
+    SummaryPage initial_summary_page;
+    int summary_count{0};
     // complete preserves finalized-field compatibility, excluding known-invalid
     // signatures. Only signature_state establishes verified completion.
     bool can_sign{false}, can_broadcast{false}, complete{false};
