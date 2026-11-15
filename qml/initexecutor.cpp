@@ -94,17 +94,46 @@ QmlInitExecutor::QmlInitExecutor(interfaces::Node& node,SubscriptionFactory subs
     effects.describe=[loss=m_diagnostic_loss](std::exception_ptr error){return PrepareRunawayException(error,loss);};
     const QPointer<QmlInitExecutor> observer{this};const auto post=presentation::ReliablePost(presentation::QueuedPost());
     m_driver=std::make_unique<nodelifecycle::Driver>(execution::SnapshotServices{m_executor.scheduler(),post},std::move(effects),
-        [observer,post,receipt=m_lifecycle_failed](nodelifecycle::Projection value){
+        [observer,post,receipt=m_lifecycle_failed,admission_closed=m_admission_closed](nodelifecycle::Projection value){
             // This process receipt survives a missing GUI observer and performs
             // no Core/settings work. Native settings receipts remain separate.
             if(value.phase==nodelifecycle::Phase::StartupFailed||value.phase==nodelifecycle::Phase::Fatal)receipt->store(true);
+            switch(value.phase){
+            case nodelifecycle::Phase::StartupFailed:
+            case nodelifecycle::Phase::Stopping:
+            case nodelifecycle::Phase::Draining:
+            case nodelifecycle::Phase::Stopped:
+            case nodelifecycle::Phase::Fatal:admission_closed->store(true);break;
+            case nodelifecycle::Phase::Constructed:
+            case nodelifecycle::Phase::Initializing:
+            case nodelifecycle::Phase::Ready:break;
+            }
             post([observer,value=std::move(value)]()mutable{if(observer)observer->publish(std::move(value));});
         });
 }
-QmlInitExecutor::~QmlInitExecutor(){m_driver.reset();m_executor.shutdown();}
-void QmlInitExecutor::initialize(){if(m_initialize_requested||m_interrupt_requested||m_shutdown_requested||m_runaway_exception)return;m_initialize_requested=true;if(!m_driver||!m_driver->initialize())diagnosticTransportFailed();}
-void QmlInitExecutor::interrupt(){if(m_interrupt_requested||m_runaway_exception)return;m_interrupt_requested=true;if(!m_driver||!m_driver->interrupt())diagnosticTransportFailed();}
-void QmlInitExecutor::shutdown(){if(m_shutdown_requested||m_runaway_exception)return;m_shutdown_requested=true;if(!m_driver||!m_driver->shutdown())diagnosticTransportFailed();}
+QmlInitExecutor::~QmlInitExecutor(){m_admission_closed->store(true);m_driver.reset();m_executor.shutdown();}
+void QmlInitExecutor::closeAdmission(){m_admission_closed->store(true);publishAdmission();}
+void QmlInitExecutor::initialize(){if(m_initialize_requested||!admissionOpen())return;m_initialize_requested=true;if(!m_driver||!m_driver->initialize())diagnosticTransportFailed();}
+void QmlInitExecutor::interrupt()
+{
+    if(m_interrupt_requested||m_runaway_exception)return;
+    m_interrupt_requested=true;
+    const QPointer<QmlInitExecutor> observer{this};closeAdmission();if(!observer)return;
+    if(!m_driver||!m_driver->interrupt())diagnosticTransportFailed();
+}
+void QmlInitExecutor::shutdown()
+{
+    if(m_shutdown_requested||m_runaway_exception)return;
+    m_shutdown_requested=true;
+    const QPointer<QmlInitExecutor> observer{this};closeAdmission();if(!observer)return;
+    if(!m_driver||!m_driver->shutdown())diagnosticTransportFailed();
+}
+void QmlInitExecutor::publishAdmission()
+{
+    const bool open=admissionOpen();
+    if(m_admission_projection_open==open)return;
+    m_admission_projection_open=open;Q_EMIT admissionChanged();
+}
 void QmlInitExecutor::publish(nodelifecycle::Projection value)
 {
     if(m_runaway_exception)return;
@@ -117,14 +146,15 @@ void QmlInitExecutor::publish(nodelifecycle::Projection value)
     // A queued Ready frame cannot cross an already admitted GUI stop intent.
     // Domain owns the eventual Stopping frame; this fence owns only readiness
     // admission while that frame is in transit.
-    const bool fenced_ready=value.phase==nodelifecycle::Phase::Ready&&(m_interrupt_requested||m_shutdown_requested);
+    const bool fenced_ready=value.phase==nodelifecycle::Phase::Ready&&!admissionOpen();
     if(!fenced_ready&&m_phase!=value.phase){m_phase=value.phase;Q_EMIT phaseChanged();if(!observer)return;}
+    publishAdmission();if(!observer)return;
     switch(value.event){
     case nodelifecycle::Event::Initialized:
         if(value.initialization){
             m_initialization=std::move(value.initialization);Q_EMIT initializationChanged();if(!observer)return;
             const auto result=*m_initialization;
-            const bool stopping=m_interrupt_requested||m_shutdown_requested||m_phase!=nodelifecycle::Phase::Ready;
+            const bool stopping=!admissionOpen()||m_phase!=nodelifecycle::Phase::Ready;
             Q_EMIT initializeResult(result.success&&!stopping,result.tip,result.initial_block_download,result.shutdown_requested||stopping);
         }break;
     case nodelifecycle::Event::Interrupted:Q_EMIT interruptResult();break;
@@ -140,7 +170,11 @@ void QmlInitExecutor::handleRunawayException(const QString& message)
 {
     const QPointer<QmlInitExecutor> observer{this};
     const auto release=qScopeGuard([observer]{if(observer)observer->m_fatal_diagnostic_scheduler.reset();});
-    if(m_runaway_exception)return;m_runaway_exception=true;Q_EMIT runawayException(message);
+    if(m_runaway_exception)return;
+    m_runaway_exception=true;m_admission_closed->store(true);
+    if(m_phase!=nodelifecycle::Phase::Fatal){m_phase=nodelifecycle::Phase::Fatal;Q_EMIT phaseChanged();if(!observer)return;}
+    publishAdmission();if(!observer)return;
+    Q_EMIT runawayException(message);
 }
 void QmlInitExecutor::diagnosticTransportFailed(std::shared_ptr<execution::Scheduler> original_diagnostic_scope)
 {
@@ -152,5 +186,7 @@ void QmlInitExecutor::finishShutdown()
 {
     if(m_runaway_exception||!m_app_shutdown_complete||m_shutdown_result_emitted||!m_executor.isDrained())return;
     m_shutdown_result_emitted=true;const QPointer<QmlInitExecutor> observer{this};
-    m_phase=nodelifecycle::Phase::Stopped;Q_EMIT phaseChanged();if(observer)Q_EMIT shutdownResult();
+    m_admission_closed->store(true);
+    m_phase=nodelifecycle::Phase::Stopped;Q_EMIT phaseChanged();if(!observer)return;
+    publishAdmission();if(observer)Q_EMIT shutdownResult();
 }

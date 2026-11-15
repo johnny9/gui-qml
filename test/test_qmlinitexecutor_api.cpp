@@ -96,17 +96,35 @@ private Q_SLOTS:
         QmlInitExecutor executor{node,{},{},[&](auto){native_receipt.release();}};
         bool requested{false};int late_ready{0};
         const auto disconnect=qScopeGuard([&]{QObject::disconnect(&executor,nullptr,this,nullptr);});
+        QSignalSpy admission{&executor,&QmlInitExecutor::admissionChanged};
+        QVERIFY(executor.admissionOpen());
         connect(&executor,&QmlInitExecutor::phaseChanged,this,[&]{
             if(executor.phase()!=nodelifecycle::Phase::Ready)return;
             if(requested)++late_ready;
-            if(at_ready_signal&&!requested){requested=true;executor.interrupt();}
+            if(at_ready_signal&&!requested){requested=true;executor.interrupt();QVERIFY(!executor.admissionOpen());}
         });
         QSignalSpy initialized{&executor,&QmlInitExecutor::initializeResult};executor.initialize();
-        if(!at_ready_signal){QVERIFY(native_receipt.tryAcquire(1,SIGNAL_TIMEOUT));requested=true;executor.interrupt();}
+        if(!at_ready_signal){QVERIFY(native_receipt.tryAcquire(1,SIGNAL_TIMEOUT));requested=true;executor.interrupt();QVERIFY(!executor.admissionOpen());}
         QTRY_COMPARE(initialized.count(),1);QVERIFY(requested);QCOMPARE(late_ready,0);
         QVERIFY(!initialized.front().front().toBool());QVERIFY(initialized.front().at(3).toBool());
         QVERIFY(executor.initializationOutcome());QVERIFY(executor.initializationAttempted());QVERIFY(executor.initializationSucceeded());
         QCOMPARE(node.calls.appInitMain.load(),1);QTRY_COMPARE(node.calls.startShutdown.load(),1);
+        QVERIFY(!executor.admissionOpen());QCOMPARE(admission.count(),1);
+    }
+    void admissionNotificationMayRetireTheObserver_data(){
+        QTest::addColumn<bool>("shutdown");QTest::newRow("interrupt")<<false;QTest::newRow("shutdown")<<true;
+    }
+    void admissionNotificationMayRetireTheObserver(){
+        QFETCH(bool,shutdown);PassiveStartupNode node;
+        const auto drain=qScopeGuard([]{DrainRetiredExecutors();});
+        auto executor=std::make_unique<QmlInitExecutor>(node);int notices{0};bool closed{false};
+        connect(executor.get(),&QmlInitExecutor::admissionChanged,this,[&]{
+            ++notices;closed=!executor->admissionOpen();executor.reset();
+        });
+        if(shutdown)executor->shutdown();else executor->interrupt();
+        QVERIFY(!executor);QVERIFY(closed);QCOMPARE(notices,1);
+        DrainRetiredExecutors();
+        QCOMPARE(node.calls.appInitMain.load(),0);QCOMPARE(node.calls.startShutdown.load(),0);QCOMPARE(node.calls.appShutdown.load(),0);
     }
     void nativeCoreExitStatusPrecedesGuiDelivery_data() {
         QTest::addColumn<int>("status");QTest::addColumn<bool>("drop_observer");
@@ -133,10 +151,11 @@ private Q_SLOTS:
         });
         QSignalSpy initialized{executor.get(),&QmlInitExecutor::initializeResult},shutdown{executor.get(),&QmlInitExecutor::shutdownResult};
         executor->initialize();QTRY_COMPARE(initialized.count(),1);executor->shutdown();
+        QVERIFY(!executor->admissionOpen());
         // Hold queued GUI delivery while the actual Native receipt arrives.
         QVERIFY(captured.tryAcquire(1,SIGNAL_TIMEOUT));QCOMPARE(shutdown.count(),0);
         QCOMPARE(recorded.load(),status);QVERIFY(read_after_shutdown.load());QVERIFY(native_only.load());
-        if(drop_observer)executor.reset();else QTRY_COMPARE(shutdown.count(),1);
+        if(drop_observer)executor.reset();else {QTRY_COMPARE(shutdown.count(),1);QCOMPARE(executor->phase(),nodelifecycle::Phase::Stopped);QVERIFY(!executor->admissionOpen());}
         executor.reset();DrainRetiredExecutors();QCOMPARE(reads.load(),1);QCOMPARE(recorded.load(),status);
     }
     void nativeCoreExitReceiptFailureIsExplicit() {
@@ -163,6 +182,7 @@ private Q_SLOTS:
         const auto expected=scenario==0?QmlInitExecutor::StartupOutcome::Ready:scenario==2?QmlInitExecutor::StartupOutcome::Cancelled:scenario==4?QmlInitExecutor::StartupOutcome::Uncertain:QmlInitExecutor::StartupOutcome::Failed;
         QCOMPARE(recorded.load(),int(expected));QVERIFY(!gui_record.load());
         if(scenario==4){QTRY_COMPARE(fatal.count(),1);QCOMPARE(initialized.count(),0);}else{QTRY_COMPARE(initialized.count(),1);QCOMPARE(initialized.front().front().toBool(),scenario==0);}
+        QCOMPARE(executor.admissionOpen(),scenario==0);
     }
     void runawayExtractionAndExceptionRetirementStayNative_data() {
         QTest::addColumn<int>("phase");
@@ -482,6 +502,7 @@ void QmlInitExecutorApiTests::shutdownEmitsResultAndRunsOffMainThread()
     QVERIFY(!shutdown_spy.isEmpty() || shutdown_spy.wait(SIGNAL_TIMEOUT));
     QCOMPARE(shutdown_spy.count(), 1);
     QCOMPARE(runaway_spy.count(), 0);
+    QCOMPARE(executor.phase(),nodelifecycle::Phase::Stopped);QVERIFY(!executor.admissionOpen());
     QVERIFY(shutdown_thread.load() != QCoreApplication::instance()->thread());
     QVERIFY(SameThreadAddress(shutdown_thread.load(), initialization_thread.load()));
     QCOMPARE(node.calls.appShutdown.load(), 1);
@@ -565,6 +586,7 @@ void QmlInitExecutorApiTests::asynchronousRetirementPrecedesInterrupt()
     QmlShutdownCoordinator coordinator{executor};
     bool fenced{false}, began{false};
     std::function<void()> acknowledge;
+    coordinator.addAdmissionFence([&] { executor.closeAdmission(); });
     coordinator.addAdmissionFence([&] { fenced = true; });
     coordinator.addBeforeInterruptTask([&](std::function<void()> done) {
         QVERIFY(fenced);
@@ -575,6 +597,7 @@ void QmlInitExecutorApiTests::asynchronousRetirementPrecedesInterrupt()
     coordinator.requestShutdown();
     coordinator.requestShutdown();
     QVERIFY(began);
+    QVERIFY(!executor.admissionOpen());
     QCoreApplication::processEvents();
     QCOMPARE(node.calls.startShutdown.load(), 0);
     QCOMPARE(node.calls.appShutdown.load(), 0);
@@ -608,6 +631,7 @@ void QmlInitExecutorApiTests::shutdownWaitsForInterruptionAndEveryParticipant()
     coordinator.requestShutdown();
     coordinator.requestShutdown();
     QTRY_VERIFY_WITH_TIMEOUT(hook_entered.load(), SIGNAL_TIMEOUT);
+    QVERIFY(!executor.admissionOpen());QVERIFY(executor.phase()!=nodelifecycle::Phase::Stopped);
     bool gui_progress{false};
     QTimer::singleShot(0, this, [&] { gui_progress = true; });
     QTRY_VERIFY_WITH_TIMEOUT(gui_progress, SIGNAL_TIMEOUT);
@@ -622,6 +646,7 @@ void QmlInitExecutorApiTests::shutdownWaitsForInterruptionAndEveryParticipant()
     QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, SIGNAL_TIMEOUT);
     QCOMPARE(node.calls.startShutdown.load(), 1);
     QCOMPARE(node.calls.appShutdown.load(), 1);
+    QCOMPARE(executor.phase(),nodelifecycle::Phase::Stopped);QVERIFY(!executor.admissionOpen());
 }
 
 void QmlInitExecutorApiTests::portMappingDrainsBeforeSingleInterruption()

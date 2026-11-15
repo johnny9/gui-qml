@@ -20,6 +20,7 @@ class QmlInitExecutor : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(nodelifecycle::Phase phase READ phase NOTIFY phaseChanged)
+    Q_PROPERTY(bool admissionOpen READ admissionOpen NOTIFY admissionChanged)
     Q_PROPERTY(bool initializationAttempted READ initializationAttempted NOTIFY initializationChanged)
     Q_PROPERTY(bool initializationSucceeded READ initializationSucceeded NOTIFY initializationChanged)
     Q_PROPERTY(bool initializationCancelled READ initializationCancelled NOTIFY initializationChanged)
@@ -34,11 +35,15 @@ public:
     ~QmlInitExecutor() override;
     std::shared_ptr<execution::Scheduler> fatalDiagnosticScheduler() const { return m_fatal_diagnostic_scheduler; }
     nodelifecycle::Phase phase() const { return m_phase; }
+    // Constructed/Initializing may accept bounded intents for later readiness.
+    // A stop/failure closes ingress immediately; it never reopens this owner.
+    bool admissionOpen() const { return !m_admission_closed->load(); }
     const std::optional<nodelifecycle::NativeInitialization>& initializationOutcome() const { return m_initialization; }
     bool initializationAttempted() const { return m_initialization && m_initialization->attempted; }
     bool initializationSucceeded() const { return m_initialization && m_initialization->success; }
     bool initializationCancelled() const { return m_initialization && m_initialization->cancelled; }
 public Q_SLOTS:
+    void closeAdmission();
     void initialize();
     void interrupt();
     void shutdown();
@@ -48,13 +53,16 @@ Q_SIGNALS:
     void shutdownResult();
     void runawayException(const QString& message);
     void phaseChanged();
+    void admissionChanged();
     void initializationChanged();
 private:
     void publish(nodelifecycle::Projection projection);
     void handleRunawayException(const QString& message);
     void diagnosticTransportFailed(std::shared_ptr<execution::Scheduler> original_diagnostic_scope={});
     void finishShutdown();
+    void publishAdmission();
     std::shared_ptr<std::atomic_bool> m_diagnostic_loss,m_lifecycle_failed;
+    const std::shared_ptr<std::atomic_bool> m_admission_closed{std::make_shared<std::atomic_bool>(false)};
     BackendExecutor m_executor;
     std::unique_ptr<nodelifecycle::Driver> m_driver;
     std::shared_ptr<execution::Scheduler> m_fatal_diagnostic_scheduler;
@@ -63,5 +71,6 @@ private:
     // Ingress idempotence and physical-delivery receipts, never Core outcomes.
     bool m_initialize_requested{false},m_interrupt_requested{false},m_shutdown_requested{false};
     bool m_app_shutdown_complete{false},m_shutdown_result_emitted{false},m_runaway_exception{false};
+    bool m_admission_projection_open{true};
 };
 #endif // BITCOIN_QML_INITEXECUTOR_H

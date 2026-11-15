@@ -907,6 +907,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &QmlInitExecutor::initialize);
         QObject::connect(&node_model, &NodeModel::requestedShutdown,
                          &shutdown_coordinator, &QmlShutdownCoordinator::requestShutdown);
+        shutdown_coordinator.addAdmissionFence([&] { init_executor.closeAdmission(); });
         shutdown_coordinator.addAdmissionFence([&] { node_model.closeAdmission(); });
         shutdown_coordinator.addAdmissionFence([amount_admission] { *amount_admission = true; });
         shutdown_coordinator.addAdmissionFence([&] { bitcoin_uri_model.closeAdmission(); });
