@@ -118,5 +118,11 @@
     "066 remains deferred;263 retains candidate provenance, not a blanket historical-defect promotion.",
     "No current full interface_gui/sanitizer/coverage/platform/config matrix pass claimed; R42 pending."
   ],
-  "integration_acceptance": false
+  "integration_acceptance": false,
+  "coordinator_composition": {
+    "app": "eec5c0292fb1331d7fac1b4bee39cf57579d4295",
+    "status": "focusedaccepted",
+    "actual_bodies": 95,
+    "evidence": "evidence/R35_COMPOSED.json"
+  }
 }

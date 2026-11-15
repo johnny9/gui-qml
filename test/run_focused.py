@@ -693,6 +693,27 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return args
 
 
+def unit_build_scope(build_dir: Path) -> dict[str, Any]:
+    path = build_dir / "test" / "unit-build-selection.json"
+    if not path.is_file():
+        return {"mode": "unrecorded"}
+    try:
+        raw = path.read_bytes()
+        scope = json.loads(raw)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RunnerError(f"invalid unit build scope: {error}") from error
+    if not isinstance(scope, dict) or scope.get("mode") not in {"complete", "focused"}:
+        raise RunnerError("invalid unit build scope mode")
+    for key in ("requested_classes", "compiled_classes"):
+        names = scope.get(key, [])
+        if not isinstance(names, list) or any(not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) for name in names):
+            raise RunnerError(f"invalid unit build scope {key}")
+    if scope["mode"] == "focused" and (not scope.get("requested_classes") or
+            not set(scope["requested_classes"]) <= set(scope.get("compiled_classes", []))):
+        raise RunnerError("focused unit build scope has no complete class selection")
+    return {**scope, "path": str(path), "sha256": _sha256(raw)}
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     build_dir = args.build_dir.resolve()
@@ -707,8 +728,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         raw_manifest = manifest_path.read_bytes()
         selections = validate_manifest(json.loads(raw_manifest))
+        build_scope = unit_build_scope(build_dir)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, RunnerError) as error:
-        print(f"invalid manifest: {error}", file=sys.stderr)
+        print(f"invalid manifest or build scope: {error}", file=sys.stderr)
         return 2
     output_dir = output_input.resolve()
     if output_dir.exists():
@@ -728,6 +750,9 @@ def main(argv: list[str] | None = None) -> int:
         class_entry = ctest_entries.get("bitcoinqml_unit_tests")
         unit_classes, discovery["unit_classes"] = _run_unit_class_discovery(
             class_entry, build_dir, output_dir / "_discovery_unit_classes", args.timeout)
+        if build_scope["mode"] == "focused" and unit_classes is not None and unit_classes != set(build_scope["compiled_classes"]):
+            discovery["unit_classes"].update(status="fail", issue="binary classes differ from the configured focused build scope")
+            unit_classes = None
     elif any(selection["suite"] == "unit" for selection in selections):
         discovery["unit_classes"] = {"status": "fail", "issue": "CTest discovery did not produce a unit command"}
 
@@ -752,6 +777,7 @@ def main(argv: list[str] | None = None) -> int:
         "started_utc": started_utc,
         "finished_utc": datetime.now(timezone.utc).isoformat(),
         "build_dir": str(build_dir),
+        "unit_build_scope": build_scope,
         "manifest": {"path": str(manifest_path), "sha256": _sha256(raw_manifest)},
         "output_dir": str(output_dir),
         "timeout_seconds": args.timeout,

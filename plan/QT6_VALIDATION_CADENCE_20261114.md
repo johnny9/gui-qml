@@ -67,3 +67,7 @@ setup. `ci/clang_tidy.py --files PATH ...` replaces temporary driver rewrites
 while retaining app MOCs and pinned checks. See the [shared tooling guide](../doc/focused-testing.md).
 These changes affect test infrastructure only; they do not start R11, change
 Core, or close the remaining final R42 qualifications.
+
+## Unit compilation targeting
+
+The general `APP_UNIT_TEST_CLASSES` CMake option now narrows compilation of the existing registered unit executable, with no replacement test harness. [Qualification](evidence/FOCUSED_UNIT_BUILD.json) proves115→7 unit source inputs for the selected classes,425 byte-identical Core compiler commands,19 actual bodies, complete111-class restoration and explicit unavailable/stale-scope rejection. Shared probe providers remain compiled and recorded. Use all classes required by the focused manifest; the shared runner records and verifies the configured scope against the real binary. Clear the option with `-DAPP_UNIT_TEST_CLASSES=` before full suites and R42. Focused changed-scope static checks and relevant integration remain mandatory. See [commands and limits](../doc/focused-testing.md).

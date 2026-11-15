@@ -215,3 +215,5 @@ picker's affected TSan result stays unresolved. Mac font/Qt6.11 diagnostics and
 warnings outside the current QML-console CTest regex remain recorded; a focused
 component pass is not a full compatibility pass. No silent exclusions, broad
 suppression, Qt replacement component or new Core exception is authorized.
+
+General compilation targeting: use `-DAPP_UNIT_TEST_CLASSES=ClassA;ClassB` with the existing executable/registry/manifest runner when production headers would otherwise rebuild unrelated unit files. Quote the semicolon list in a shell. Keep required shared providers; retain explicit scope/discovery metadata. Default and R42 use `-DAPP_UNIT_TEST_CLASSES=`. [Exact qualification](evidence/FOCUSED_UNIT_BUILD.json) records19 focused bodies,8 pinned static entries, app lint,425 unchanged Core commands and full111-class reset. This does not reduce behavior assertions or qualify unexecuted classes.
