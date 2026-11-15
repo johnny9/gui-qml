@@ -10,6 +10,7 @@
 #include <QScopeGuard>
 
 #include <set>
+#include <exception>
 
 namespace walletsend {
 namespace {
@@ -692,5 +693,248 @@ Result ApproveInto(interfaces::Wallet& wallet, const Request& request, std::shar
     if (result.document) result.document = std::shared_ptr<const PartiallySignedTransaction>{owner, result.document.get()};
     if (result.signed_transaction) result.signed_transaction = CTransactionRef{owner, result.signed_transaction.get()};
     return result;
+}
+
+struct ApprovalOwner::State {
+    uint64_t sequence{0};
+    uint64_t current_review{0}, current_view{0};
+    uint64_t attempt_id{0}, attempt_review{0}, attempt_view{0};
+    ApprovalPhase phase{ApprovalPhase::Idle};
+    Error error{Error::None};
+    bool signer_not_found{false}, in_flight{false}, publishable{false}, closed{false};
+    std::shared_ptr<Request> request;
+    std::shared_ptr<const walletopening::Session::Action> action;
+    std::shared_ptr<Result> output;
+    std::shared_ptr<const Result> result;
+};
+
+namespace {
+bool IsStaleApproval(uint64_t attempt_id, uint64_t attempt_review, uint64_t attempt_view,
+                     uint64_t current_review, uint64_t current_view)
+{
+    return attempt_id && (attempt_review != current_review || attempt_view != current_view);
+}
+
+Error ApprovalExecutionError(std::exception_ptr error)
+{
+    if (!error) return Error::Uncertain;
+    try { std::rethrow_exception(error); }
+    catch (const execution::NotStarted&) { return Error::Failed; }
+    catch (...) { return Error::Uncertain; }
+}
+}
+
+ApprovalOwner::ApprovalOwner(std::shared_ptr<walletopening::Session> opening, Notify notify)
+    : m_opening(std::move(opening)), m_notify(std::move(notify)), m_state(std::make_shared<State>())
+{
+}
+
+ApprovalSnapshot ApprovalOwner::project(const State& state)
+{
+    ApprovalSnapshot result;
+    result.sequence = state.sequence;
+    result.attempt_id = state.attempt_id;
+    result.attempt_review = state.attempt_review;
+    result.attempt_view = state.attempt_view;
+    result.current_review = state.current_review;
+    result.current_view = state.current_view;
+    result.phase = state.phase;
+    result.error = state.error;
+    result.signer_not_found = state.signer_not_found;
+    result.in_flight = state.in_flight;
+    result.publishable = state.publishable && !state.closed && !IsStaleApproval(state.attempt_id,
+        state.attempt_review, state.attempt_view, state.current_review, state.current_view);
+    result.result = state.result;
+    return result;
+}
+
+void ApprovalOwner::publish(const std::shared_ptr<State>& state, const Notify& notify)
+{
+    if (notify) notify(project(*state));
+}
+
+execution::Admission ApprovalOwner::reviewChanged(uint64_t review_id, uint64_t view_revision)
+{
+    if (!m_opening || m_close_requested.load()) return {{}, execution::Rejection::Closed};
+    const auto state = m_state;
+    const auto notify = m_notify;
+    return m_opening->postDomain([state, notify, review_id, view_revision] {
+        if (state->closed || (review_id < state->current_review) ||
+            (review_id == state->current_review && view_revision < state->current_view)) return;
+        if (state->current_review == review_id && state->current_view == view_revision) return;
+        state->current_review = review_id;
+        state->current_view = view_revision;
+        if (state->in_flight) {
+            if (IsStaleApproval(state->attempt_id, state->attempt_review, state->attempt_view,
+                                state->current_review, state->current_view)) {
+                state->phase = ApprovalPhase::Cancelling;
+                state->publishable = false;
+            }
+        } else if (IsStaleApproval(state->attempt_id, state->attempt_review, state->attempt_view,
+                                   state->current_review, state->current_view)) {
+            state->attempt_id = 0;
+            state->attempt_review = review_id;
+            state->attempt_view = view_revision;
+            state->phase = state->closed ? ApprovalPhase::Closed : ApprovalPhase::Idle;
+            state->error = Error::None;
+            state->signer_not_found = false;
+            state->publishable = false;
+            state->result.reset();
+            state->request.reset();
+            state->action.reset();
+            state->output.reset();
+        }
+        ++state->sequence;
+        publish(state, notify);
+    }, 512);
+}
+
+execution::Admission ApprovalOwner::request(uint64_t attempt_id, uint64_t review_id, uint64_t view_revision,
+                                             std::shared_ptr<Request> retained_request)
+{
+    if (!m_opening || m_close_requested.load() || attempt_id == 0 || !retained_request)
+        return {{}, execution::Rejection::Invalid};
+    const auto opening = m_opening;
+    const auto state = m_state;
+    const auto notify = m_notify;
+    return opening->postDomain([opening, state, notify, attempt_id, review_id, view_revision,
+                                retained_request = std::move(retained_request)]() mutable {
+        const auto reject = [&](Error error, ApprovalPhase phase = ApprovalPhase::Failed) {
+            state->attempt_id = attempt_id;
+            state->attempt_review = review_id;
+            state->attempt_view = view_revision;
+            state->phase = phase;
+            state->error = error;
+            state->signer_not_found = error == Error::SignerNotFound;
+            state->in_flight = false;
+            state->publishable = review_id == state->current_review && view_revision == state->current_view && !state->closed;
+            state->result.reset();
+            state->request.reset();
+            state->action.reset();
+            state->output.reset();
+            ++state->sequence;
+            publish(state, notify);
+        };
+        if (state->closed || !opening->available()) {
+            reject(Error::Failed, ApprovalPhase::Closed);
+            return;
+        }
+        if (state->in_flight || attempt_id <= state->attempt_id || state->phase == ApprovalPhase::Uncertain) {
+            retained_request.reset();
+            ++state->sequence;
+            publish(state, notify);
+            return;
+        }
+        if (state->current_review != review_id || state->current_view != view_revision) {
+            reject(Error::Failed);
+            return;
+        }
+        if (!retained_request->reviewed || !retained_request->proof || !retained_request->approved_fee) {
+            reject(Error::InvalidFee);
+            return;
+        }
+
+        state->attempt_id = attempt_id;
+        state->attempt_review = review_id;
+        state->attempt_view = view_revision;
+        state->phase = ApprovalPhase::Preparing;
+        state->error = Error::None;
+        state->signer_not_found = false;
+        state->in_flight = true;
+        state->publishable = false;
+        state->result.reset();
+        state->request = std::move(retained_request);
+        ++state->sequence;
+        publish(state, notify);
+
+        state->action = opening->startAction();
+        if (!state->action) {
+            reject(Error::Failed, opening->available() ? ApprovalPhase::Failed : ApprovalPhase::Closed);
+            return;
+        }
+        state->output = walletopening::RetainValues<Result>(opening, [] { return std::make_unique<Result>(); });
+        if (!state->output) {
+            reject(Error::Failed);
+            return;
+        }
+
+        state->phase = ApprovalPhase::WaitingDevice;
+        ++state->sequence;
+        publish(state, notify);
+
+        const auto action = state->action;
+        const auto request = state->request;
+        const auto output = state->output;
+        const auto finish = [opening, state, notify, attempt_id](Result value) {
+            if (state->attempt_id != attempt_id) return;
+            state->phase = ApprovalPhase::Verifying;
+            ++state->sequence;
+            publish(state, notify);
+            if (state->closed || !opening->observationOpen() || IsStaleApproval(state->attempt_id,
+                    state->attempt_review, state->attempt_view, state->current_review, state->current_view)) {
+                state->phase = state->closed || !opening->observationOpen() ? ApprovalPhase::Closed : ApprovalPhase::Idle;
+                state->error = Error::None;
+                state->signer_not_found = false;
+                state->in_flight = false;
+                state->publishable = false;
+                state->result.reset();
+                state->request.reset();
+                state->action.reset();
+                state->output.reset();
+                ++state->sequence;
+                publish(state, notify);
+                return;
+            }
+            state->result = std::make_shared<const Result>(std::move(value));
+            state->error = state->result->error;
+            state->signer_not_found = state->error == Error::SignerNotFound;
+            state->in_flight = false;
+            state->publishable = true;
+            state->phase = state->error == Error::Uncertain ? ApprovalPhase::Uncertain
+                : state->error != Error::None ? ApprovalPhase::Failed
+                : state->result->partial ? ApprovalPhase::Partial : ApprovalPhase::Complete;
+            state->request.reset();
+            state->action.reset();
+            state->output.reset();
+            ++state->sequence;
+            publish(state, notify);
+        };
+        const auto failed = [finish](std::exception_ptr error) {
+            Result value;
+            value.error = ApprovalExecutionError(std::move(error));
+            finish(std::move(value));
+        };
+        const auto admission = opening->perform(action, [request, output](interfaces::Wallet& wallet) {
+            return ApproveInto(wallet, *request, output);
+        }, finish, failed);
+        if (!admission) {
+            Result value;
+            value.error = Error::Failed;
+            finish(std::move(value));
+        }
+    }, 1024);
+}
+
+execution::Admission ApprovalOwner::close()
+{
+    if (m_close_requested.exchange(true)) return {{}, execution::Rejection::Invalid};
+    if (!m_opening) return {{}, execution::Rejection::Closed};
+    const auto state = m_state;
+    const auto notify = m_notify;
+    return m_opening->postDomain([state, notify] {
+        if (state->closed) return;
+        state->closed = true;
+        state->publishable = false;
+        if (state->in_flight) state->phase = ApprovalPhase::Cancelling;
+        else state->phase = ApprovalPhase::Closed;
+        state->result.reset();
+        if (!state->in_flight) {
+            state->request.reset();
+            state->action.reset();
+            state->output.reset();
+        }
+        ++state->sequence;
+        publish(state, notify);
+    }, 256);
 }
 } // namespace walletsigning
