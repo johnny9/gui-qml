@@ -84,7 +84,7 @@ public:
     Q_ENUM(SendSubmission)
     enum class SendRecord { SendRecordUnknown, SendRecordAbsentAtObservation, SendRecordRecorded };
     Q_ENUM(SendRecord)
-    enum class SendState { SendIdle, SendPending, SendNeedsConfirmation, SendNeedsUnlock, SendFailed, SendCommitted, SendSignedOnly, SendPartiallySigned, SendUncertain, SendClosed };
+    enum class SendState { SendIdle, SendPending, SendNeedsConfirmation, SendNeedsUnlock, SendFailed, SendCommitted, SendSignedOnly, SendPartiallySigned, SendUncertain, SendClosed, SendUnverified };
     enum class ApprovalState { ApprovalInitial, ApprovalWaiting, ApprovalSigned, ApprovalPartiallySigned, ApprovalFailed, ApprovalClosed, ApprovalOtherReview, ApprovalUncertain, ApprovalUnverified };
     Q_ENUM(ApprovalState)
     Q_ENUM(SendState)
@@ -206,7 +206,7 @@ private:
     Q_PROPERTY(quint64 preparationId READ preparationId NOTIFY preparationChanged)
     Q_PROPERTY(bool preparationBusy READ preparationBusy NOTIFY preparationChanged)
     Q_PROPERTY(ApprovalState signerApprovalState READ signerApprovalState NOTIFY signerApprovalChanged)
-    Q_PROPERTY(QString signerUnverifiedResultToken READ signerUnverifiedResultToken NOTIFY signerApprovalChanged)
+    Q_PROPERTY(QString signerUnverifiedResultToken READ signerUnverifiedResultToken NOTIFY unverifiedSigningResultChanged)
     Q_PROPERTY(quint64 signerApprovalId READ signerApprovalId NOTIFY signerApprovalChanged)
     Q_PROPERTY(QString signerApprovalError READ signerApprovalError NOTIFY signerApprovalChanged)
     Q_PROPERTY(bool signerApprovalSignerNotFound READ signerApprovalSignerNotFound NOTIFY signerApprovalChanged)
@@ -492,6 +492,7 @@ Q_SIGNALS:
     void receivingAddressStateChanged();
     void externalSignerApprovalSucceeded();
     void signerApprovalChanged();
+    void unverifiedSigningResultChanged();
     void preparationChanged();
     void coinSelectionChanged();
     void psbtActionChanged();

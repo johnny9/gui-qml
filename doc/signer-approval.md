@@ -42,3 +42,10 @@ success or an automatic signer retry. The export chooser captures the original
 approval/review/view token; a late answer cannot export a successor result.
 Known-invalid contributions are rejected. The public-interface limitation and
 future verification/outcome API are recorded in `plan/QT6_UPSTREAM_IMPROVEMENTS.md`.
+
+
+Local SignOnly and standalone PSBT Sign use the same contribution boundary.
+Unchanged imported fields do not become new verified contributions. New
+signatures require validity and relevance to a supported captured script policy.
+Missing/complex context stays unverified and separately exportable. Export does
+not replace the review or make it complete; full script verification is required.

@@ -54,6 +54,7 @@ psbtwork::Result psbtdocument::Owner::consume(std::uint64_t operation, psbtwork:
         // A completed effect keeps its scalar receipt. Structural data from a
         // retired generation is released here, without entering GUI delivery.
         result.snapshot.reset();
+        result.quarantined_document.reset();
         return result;
     }
     m_snapshot.operation = operation;

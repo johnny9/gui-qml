@@ -1,0 +1,127 @@
+{
+  "status": "Signing-result component repairs of R21/R22 and R24 policy-context follow-up focused-qualified; coordinator integration/whole-order accounting required",
+  "tested_app": "55a054a367662d5af505d23458e9cd316799de2b",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "runtime": [
+    {
+      "selection": "wallet-send-contributions-and-owners",
+      "executed": 148,
+      "passed": 148,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "selection": "standalone-native-signing",
+      "executed": 176,
+      "passed": 176,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "selection": "standalone-domain-document",
+      "executed": 20,
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "selection": "standalone-model-owned-exports",
+      "executed": 15,
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "selection": "wallet-model-owned-exports",
+      "executed": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "selection": "review-export-qml",
+      "executed": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "selection": "signer-qml",
+      "executed": 8,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "selection": "actual-core-sign-save-broadcast-known",
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "total_actual_bodies": 374,
+  "red": {
+    "source": "3d6efacd810",
+    "production_parent": "596de11d8dc3072497ed0910d910266c5cb10f58",
+    "executed": 18,
+    "valid_controls_passed": 6,
+    "invalid_or_missing_context_installation_failures": 12,
+    "skipped": 0,
+    "submitted_transactions": 0,
+    "evidence": "contribution-red-01/actual/report.json"
+  },
+  "nonpass_attempt": {
+    "selection": "whole Core PSBT module",
+    "limit_seconds": 180,
+    "result": "timeout/incomplete XML; not a module pass",
+    "complete_XML_body_count": null,
+    "raw_completed_positive_rows": 27,
+    "evidence": "contribution-green-01/actual/psbt-real-core",
+    "final_exact_target": "contribution-core-02/focused/report.json;1 actual import/sign/save/broadcast/known body passes",
+    "configuration_unchanged": true
+  },
+  "static": {
+    "passed": 17,
+    "handwritten_CPP": 10,
+    "fresh_MOC": 7,
+    "tool": "pinned clang-tidy23.1.6, Core449 checks and Bitcoin plugin",
+    "evidence": "contribution-final-01/tidy/results.json"
+  },
+  "app_lint": {
+    "source": "55a054a367662d5af505d23458e9cd316799de2b",
+    "exit": 0,
+    "scope": "app",
+    "evidence": "contribution-lint-01",
+    "post_lint_revision_Core_status": "recorded/clean"
+  },
+  "qml_lint": {
+    "exit": 0,
+    "files_per_variant": 259,
+    "variants": [
+      "qt65",
+      "qt62"
+    ],
+    "warnings_or_errors": 0,
+    "evidence": "contribution-green-01/qml-lint"
+  },
+  "actual_processes": {
+    "passed": 4,
+    "source": "55a054a367662d5af505d23458e9cd316799de2b",
+    "cases": [
+      "signer-substitution-send",
+      "signer-substitution-speed-up",
+      "bridge-protocol",
+      "runtime-block-write-failure-exit-status"
+    ],
+    "outer_stderr_bytes": 0,
+    "normal_GUI_exit": 0,
+    "expected_Core_fatal_exit": 1,
+    "evidence": "contribution-final-01/{functional,lifecycle}.{stdout,stderr,exit}"
+  },
+  "guarantee": "New/replaced contributions require supported policy relevance and signature validity; unchanged imported fields gain no new authority. Unknown bytes remain separately Native-owned and explicitly exportable under original operation/review/generation tokens. Valid does not prove ownership, sufficient keys, completion, node acceptance or relay.",
+  "limits": "Unsupported script/execution/MuSig context stays Unknown. Full finalized script verification governs completion. No Core/Qt edit or physical-device qualification. R42 exhaustive coverage/full suites/platform/configuration/native Windows/sanitizers pending.",
+  "upstream_note": "plan/QT6_UPSTREAM_IMPROVEMENTS.md#r24-verified-partial-signing-outcomes--app-verification-and-quarantine",
+  "artifact_root": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R24",
+  "lease_release": "CONTRIBUTION_LEASE_RELEASE.json"
+}
