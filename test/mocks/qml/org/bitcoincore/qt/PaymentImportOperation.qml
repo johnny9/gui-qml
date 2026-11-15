@@ -21,6 +21,7 @@ QtObject {
     property bool canReconcile: false
     property int promptToken: 0
     property int resultId: 0
+    readonly property string resultToken: resultId ? requestId + ":" + resultId : ""
     property string error: ""
     property string address: ""
     property string publicLabel: ""

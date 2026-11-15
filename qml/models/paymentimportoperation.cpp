@@ -21,7 +21,7 @@ void PaymentImportOperation::chooseTarget(WalletQmlModel* wallet, SendRecipient*
     const QPointer<PaymentImportOperation> self{this};
     const auto actor = m_owner;
     const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
-    if (self && !self->m_closed && self->m_owner == actor) actor->chooseTarget(target);
+    if (self && !self->m_closed && self->m_owner == actor) self->command([target](auto& original) { return original.chooseTarget(target); });
 }
 void PaymentImportOperation::command(const std::function<execution::Admission(paymentimport::Owner&)>& submit)
 {

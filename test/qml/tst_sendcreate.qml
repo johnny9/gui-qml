@@ -28,6 +28,13 @@ TestCase {
         SendTransactionReview { wallet: testWalletModel }
     }
 
+    function confirmExplicitImport(form) {
+        const operation = form.m_importOperation
+        if (operation && operation.promptToken) {
+            compare(operation.state, PaymentImportOperation.AwaitingReplacement)
+            operation.replace(operation.promptToken)
+        }
+    }
     function init() {
         testWalletTransaction.setNodePolicyStatusForTest("")
         testSetup.failOnWarnings()
@@ -984,6 +991,9 @@ TestCase {
             "bitcoin:bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9?amount=0.02000000&label=uri-label",
             "clipboard"
         )
+
+        tryVerify(function() { return sendPage.m_importOperation && !sendPage.m_importOperation.pending })
+        confirmExplicitImport(sendPage)
 
         // The mocked amount input still emits one schedule request when the
         // imported amount updates the bound field. The explicit URI-import
@@ -2239,6 +2249,7 @@ TestCase {
             compare(testSendRecipient.appliedPaymentRequestCalls, applications)
             compare(testSendRecipient.address.address, address)
             BitcoinUri.releasePublications()
+            confirmExplicitImport(form)
             compare(form.uriActionPending, false)
             compare(testSendRecipient.appliedPaymentRequestCalls, applications + (data.valid ? 1 : 0))
             if (data.valid) {
@@ -2281,6 +2292,7 @@ TestCase {
         try {
             form.applyPaymentRequestFromText("bitcoin:bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9?amount=0.09&message=original", "clipboard")
             BitcoinUri.releasePublications()
+            confirmExplicitImport(form)
             compare(changed, true)
             compare(testSendRecipient.appliedPaymentRequestCalls, originalApplications + 1)
             compare(testSendRecipient.address.address, "bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9")
@@ -2608,6 +2620,7 @@ TestCase {
             compare(editor.addressField.pastePending, false)
             compare(testSendRecipient.appliedPaymentRequestCalls, applications)
             BitcoinUri.releasePublications()
+            confirmExplicitImport(form)
             compare(form.uriActionPending, false)
             compare(testSendRecipient.appliedPaymentRequestCalls, applications + (data.literal ? 0 : 1))
             compare(testSendRecipient.address.address, data.literal ? originalAddress : "bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4")

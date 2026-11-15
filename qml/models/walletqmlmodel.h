@@ -142,6 +142,7 @@ private:
     Q_PROPERTY(SendRecipientsListModel* recipients READ sendRecipientList CONSTANT)
     Q_PROPERTY(quint64 importedReviewOwner READ importedReviewOwner NOTIFY currentTransactionChanged)
     Q_PROPERTY(quint64 importedReviewChild READ importedReviewChild NOTIFY currentTransactionChanged)
+    Q_PROPERTY(QString importedReviewToken READ importedReviewToken NOTIFY currentTransactionChanged)
     Q_PROPERTY(SignVerifyMessageModel* signVerifyMessageModel READ signVerifyMessageModel CONSTANT)
     Q_PROPERTY(PaymentRequest* currentPaymentRequest READ currentPaymentRequest CONSTANT)
     Q_PROPERTY(PaymentRequest* receivingAddress READ receivingAddress CONSTANT)
@@ -281,6 +282,8 @@ public:
     std::shared_ptr<const paymentimport::TargetPort> importTarget(SendRecipient* recipient);
     quint64 importedReviewOwner() const { return m_imported_review_owner; }
     quint64 importedReviewChild() const { return m_imported_review_child; }
+    QString importedReviewToken() const { return m_imported_review_owner && m_imported_review_child
+        ? QString::number(m_imported_review_owner) + QLatin1Char(':') + QString::number(m_imported_review_child) : QString{}; }
     WalletReceiveModel* receive() const { return m_receive; }
     Q_INVOKABLE ReceiveRequestOperation* commitPaymentRequest();
     Q_INVOKABLE ReceiveRequestOperation* commitPaymentRequestWithPassphrase(const QString& passphrase);

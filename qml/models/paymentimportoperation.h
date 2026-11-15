@@ -23,6 +23,7 @@ class PaymentImportOperation final : public QObject
     Q_PROPERTY(bool canReconcile READ canReconcile NOTIFY changed)
     Q_PROPERTY(quint64 promptToken READ promptToken NOTIFY changed)
     Q_PROPERTY(quint64 resultId READ resultId NOTIFY changed)
+    Q_PROPERTY(QString resultToken READ resultToken NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
     Q_PROPERTY(QString address READ address NOTIFY changed)
     Q_PROPERTY(QString publicLabel READ publicLabel NOTIFY changed)
@@ -45,6 +46,7 @@ public:
     bool canReconcile() const { return m_snapshot.can_reconcile; }
     quint64 promptToken() const { return m_snapshot.prompt ? m_snapshot.prompt->id : 0; }
     quint64 resultId() const { return m_snapshot.result ? m_snapshot.result->result : 0; }
+    QString resultToken() const { return resultId() ? QString::number(m_identity) + QLatin1Char(':') + QString::number(resultId()) : QString{}; }
     QString error() const { return m_transport_error.isEmpty() ? m_snapshot.error : m_transport_error; }
     QString address() const { return m_snapshot.inspection ? m_snapshot.inspection->payment.address : QString{}; }
     QString publicLabel() const { return m_snapshot.inspection ? m_snapshot.inspection->payment.label : QString{}; }

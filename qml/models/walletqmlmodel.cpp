@@ -2458,6 +2458,7 @@ transactionattempt::CurrentFacts WalletQmlModel::preparationFacts() const
 bool WalletQmlModel::setCurrentTransaction(WalletQmlModelTransaction* transaction, bool from_preparation)
 {
     if (m_current_transaction == transaction) return false;
+    m_imported_review_owner = 0; m_imported_review_child = 0;
     invalidateImportReview();
     if (m_send_review && m_send_review != transaction && m_send_consent) m_send_consent->withdraw();
     if (m_send_review && m_send_review != transaction && m_send_operation &&
@@ -3389,7 +3390,6 @@ void WalletQmlModel::publishSendOperation()
 
 void WalletQmlModel::invalidateImportReview()
 {
-    m_imported_review_owner = 0; m_imported_review_child = 0;
     m_import_review_current->store(false);
     m_import_review_current = std::make_shared<std::atomic_bool>(true);
 }

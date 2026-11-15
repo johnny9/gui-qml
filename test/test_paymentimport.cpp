@@ -377,6 +377,8 @@ private Q_SLOTS:
         publish(target_gui);
         if (boundary == 0) {
             QVERIFY(model.currentTransaction()); QVERIFY(model.currentTransactionIsImportedPsbt());
+            QCOMPARE(model.importedReviewOwner(), operation->requestId()); QCOMPARE(model.importedReviewChild(), operation->resultId());
+            QCOMPARE(model.importedReviewToken(), operation->resultToken());
             QCOMPARE(psbtwork::SerializeRaw(*model.currentTransaction()->assessedPsbt()), bytes);
             QVERIFY(!model.currentTransactionCanSend()); // Mock owns no inputs; import carries no send intent.
         } else QVERIFY(!model.currentTransaction());

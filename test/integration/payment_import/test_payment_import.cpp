@@ -61,6 +61,37 @@ private Q_SLOTS:
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), size_t{0});
     }
 
+    void typedExplicitImportPreservesPrivateNoteAndPublicMetadata() {
+        auto* recipient = m_wallet->sendRecipientList()->currentRecipient();
+        recipient->editPrivateNote(QStringLiteral("Private bookkeeping"));
+        const QString uri = "bitcoin:" + m_address + "?amount=0.01234567&label=Public%20invoice&message=Merchant%20message";
+        auto* page = qmltest::Find(m_app, "walletSendPage"); QVERIFY(page);
+        QVERIFY(QMetaObject::invokeMethod(page, "applyPaymentRequestFromText", Q_ARG(QVariant, uri), Q_ARG(QVariant, "explicit request")));
+        QTRY_COMPARE(recipient->amount()->satoshi(), 1'234'567);
+        QCOMPARE(recipient->label(), QStringLiteral("Private bookkeeping"));
+        QCOMPARE(recipient->paymentRequestLabel(), QStringLiteral("Public invoice"));
+        QCOMPARE(recipient->message(), QStringLiteral("Merchant message"));
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
+    }
+
+    void typedPsbtFileCreatesOriginalReviewWithoutSigningOrSubmission() {
+        QVERIFY(qmltest::FundWallet(m_app, *m_wallet));
+        const auto encoded = qmltest::Rpc(m_app, "walletcreatefundedpsbt",
+            qmltest::Json("[[],[{\"" + m_address.toStdString() + "\":0.005}],0,{\"fee_rate\":2}]"), m_wallet->name()).find_value("psbt").get_str();
+        QTemporaryDir directory; QVERIFY(directory.isValid()); const auto path = directory.filePath("original.psbt");
+        { QFile file{path}; QVERIFY(file.open(QIODevice::WriteOnly)); const auto bytes = QByteArray::fromStdString(encoded); QCOMPARE(file.write(bytes), bytes.size()); }
+        auto* page = qmltest::Find(m_app, "walletSendPage"); QVERIFY(page);
+        QVERIFY(QMetaObject::invokeMethod(page, "applyPaymentRequestFromFile", Q_ARG(QVariant, path)));
+        QTRY_VERIFY(m_wallet->currentTransaction()); QVERIFY(m_wallet->currentTransactionIsImportedPsbt());
+        QVERIFY(m_wallet->importedReviewOwner() > 0); QVERIFY(m_wallet->importedReviewChild() > 0);
+        QVERIFY(m_wallet->currentTransaction()->feeKnown());
+        const auto view = m_wallet->currentTransaction();
+        auto* review_popup = qmltest::Find(m_app, "transactionReviewPopup"); QVERIFY(review_popup);
+        QTRY_VERIFY(review_popup->property("opened").toBool());
+        QCOMPARE(m_wallet->currentTransaction(), view);
+        QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
+    }
+
     void clipboardPasteRequiresConfirmationBeforeOverwriting()
     {
         QVERIFY(qmltest::SetText(m_app, "sendNoteInput", "My private note"));

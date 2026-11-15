@@ -547,7 +547,7 @@ PageStack {
         property PaymentImportOperation m_importOperation: null
         property WalletQmlModel m_importWallet: null
         property string m_importSource: ""
-        property double m_importPresentedResult: 0
+        property string m_importPresentedResult: ""
         readonly property string importError: m_importOperation ? m_importOperation.error : ""
         property BitcoinUriParseOperation m_uriOperation: null
         property BitcoinUriParseOperation m_clipboardOperation: null
@@ -600,9 +600,8 @@ PageStack {
             const operation = m_importOperation
             if (!operation || operation.state !== PaymentImportOperation.ReviewOpened || !m_importWallet
                     || root.wallet !== m_importWallet || !m_importWallet.available
-                    || m_importWallet.importedReviewOwner !== operation.requestId
-                    || m_importWallet.importedReviewChild !== operation.resultId || m_importPresentedResult === operation.resultId) return
-            m_importPresentedResult = operation.resultId
+                    || m_importWallet.importedReviewToken !== operation.resultToken || m_importPresentedResult === operation.resultToken) return
+            m_importPresentedResult = operation.resultToken
             root.openTransactionReview()
         }
         function probeContext(recipient, field, payload) {
@@ -626,7 +625,7 @@ PageStack {
             if (m_importOperation) m_importOperation.cancel()
             m_importOperation = null
             m_importWallet = null
-            m_importPresentedResult = 0
+            m_importPresentedResult = ""
             if (m_uriOperation) m_uriOperation.cancel()
             m_uriOperation = null
             if (m_uriPasteOwner && m_uriPayload && m_uriPasteOwner.intent === m_uriPayload) m_uriPasteOwner.cancel()
