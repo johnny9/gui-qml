@@ -420,3 +420,34 @@ confirmations refuse commit. The separate unrelated payment remains in the
 mempool. These app-only adapters remain owned by the original opening and
 recorded in the R25 checkpoint; retire them only when the public Core behavior
 and its corresponding independent-writer/timing tests supply the same contract.
+
+
+### R25 unknown outcomes and read-only recovery
+
+The public commitBumpTransaction boolean is not a complete effect receipt.
+Pinned wallet/feebumper.cpp::CommitTransaction calls wallet.CommitTransaction
+before MarkReplaced; the latter can fail after a transaction was recorded.
+This is source-permitted behavior, not an independently reproduced Core database
+fault. False/exception cannot authorize blindly repeating the write or asserting
+that no transaction exists.
+
+The app captures signed txid/wtxid before commit, retains the uncertain attempt
+when its view resets, and offers explicit read-only observation through the
+original public Wallet. It checks exact record/witness identity and reports
+observed wallet/mempool facts without signing, rebuilding or submitting. A
+record cannot manufacture the missing original persistence/replacement-metadata
+receipt. Unknown completion stays explicit, with a link to the observed
+transaction. GUI closure does not cancel an admitted observation or retarget it
+to a selected wallet. Conditional R09/R20 limits remain; the app does not claim
+atomic or durable outcomes beyond those APIs.
+
+A typed mutation receipt, operation identity and queryable effect result from
+Core would retire this adapter and permit definitive completion where today's
+API is uncertain. Upstream tests must cover false/exception after recording,
+replacement-marker failure, unavailable/foreign records, exact witness matching,
+independent RPC changes and persistence uncertainty. Six app controls in
+uncertainReplacementCanOnlyObserveItsExactCandidate retain exact no-replay
+counts; quiet-close and blocked real-worker/GUI-pulse tests cover lifetime and
+delivery. These are controlled app returns; real Core/RPC invalidation and
+successful replacement keep separate evidence. No Core edit or external issue
+submission is authorized.
