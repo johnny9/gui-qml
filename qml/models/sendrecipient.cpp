@@ -221,48 +221,48 @@ void SendRecipient::publishValidation()
     Q_EMIT draftChanged(); if (guard && !admissionClosed()) Q_EMIT isValidChanged();
 }
 BitcoinAddress* SendRecipient::address() const { return m_address; }
-void SendRecipient::setAddress(const QString& address) { if (!admissionClosed()) m_address->setAddress(address, 0); }
+void SendRecipient::setAddress(const QString& address) { if (!inputAdmissionClosed()) m_address->setAddress(address, 0); }
 QString SendRecipient::addressError() const { return m_address->normalizationError().isEmpty() ? m_addressError : m_address->normalizationError(); }
 void SendRecipient::setAddressError(const QString& error) { if (!admissionClosed() && m_addressError != error) { m_addressError = error; Q_EMIT addressErrorChanged(); } }
 QString SendRecipient::label() const { return m_label; }
 bool SendRecipient::editPrivateNote(const QString& value)
 {
-    if (admissionClosed()) return false;
+    if (inputAdmissionClosed()) return false;
     const bool accepted = value.size() <= senddraft::Limits::note;
     const QPointer<SendRecipient> guard{this}; setLabel(value);
-    return guard && !admissionClosed() && accepted;
+    return guard && !inputAdmissionClosed() && accepted;
 }
 void SendRecipient::setLabel(const QString& label)
 {
-    if (admissionClosed()) return;
-    if (label.size() > senddraft::Limits::note) { m_budget_error = tr("Private note exceeds the 256-character limit."); const QPointer<SendRecipient> guard{this}; Q_EMIT inputIntentSubmitted(); if (guard && !admissionClosed()) requestValidation(); return; }
+    if (inputAdmissionClosed()) return;
+    if (label.size() > senddraft::Limits::note) { m_budget_error = tr("Private note exceeds the 256-character limit."); const QPointer<SendRecipient> guard{this}; Q_EMIT inputIntentSubmitted(); if (guard && !inputAdmissionClosed()) requestValidation(); return; }
     const bool changed = !SameText(m_label, label), had_error = !m_budget_error.isEmpty();
     m_budget_error.clear(); if (!changed && !had_error) return;
     m_label = label; const QPointer<SendRecipient> guard{this};
     if (!m_batching) Q_EMIT inputIntentSubmitted();
-    if (!guard || admissionClosed()) return;
+    if (!guard || inputAdmissionClosed()) return;
     if (changed) Q_EMIT labelChanged();
-    if (guard && !admissionClosed()) requestValidation();
+    if (guard && !inputAdmissionClosed()) requestValidation();
 }
 BitcoinAmount* SendRecipient::amount() const { return m_amount; }
-void SendRecipient::setAmount(const QString& amount) { if (!admissionClosed()) m_amount->fromDisplay(amount); }
+void SendRecipient::setAmount(const QString& amount) { if (!inputAdmissionClosed()) m_amount->fromDisplay(amount); }
 QString SendRecipient::amountError() const { return m_amount->inputAcceptable() ? m_amountError : m_amount->inputError(); }
 void SendRecipient::setAmountError(const QString& error) { if (!admissionClosed() && m_amountError != error) { m_amountError = error; Q_EMIT amountErrorChanged(); } }
 QString SendRecipient::message() const { return m_message; }
 void SendRecipient::setMessage(const QString& message)
 {
-    if (admissionClosed()) return;
+    if (inputAdmissionClosed()) return;
     if (message.size() > senddraft::Limits::message) { m_budget_error = tr("Payment message exceeds the 2048-character limit."); requestValidation(); return; }
     m_budget_error.clear(); if (SameText(m_message, message)) { requestValidation(); return; }
     m_message = message; const QPointer<SendRecipient> guard{this};
     if (!m_batching) Q_EMIT inputIntentSubmitted();
-    if (!guard || admissionClosed()) return; Q_EMIT messageChanged();
-    if (guard && !admissionClosed()) requestValidation();
+    if (!guard || inputAdmissionClosed()) return; Q_EMIT messageChanged();
+    if (guard && !inputAdmissionClosed()) requestValidation();
 }
 CAmount SendRecipient::cAmount() const { return m_amount->satoshi(); }
 void SendRecipient::captureAmountIntent()
 {
-    if (admissionClosed()) return;
+    if (inputAdmissionClosed()) return;
     ++m_amount_intent_revision;
     if (!m_batching) Q_EMIT inputIntentSubmitted();
 }
@@ -273,7 +273,7 @@ void SendRecipient::chooseFixedAmount()
 }
 void SendRecipient::chooseMaximum()
 {
-    if (!admissionClosed()) Q_EMIT amountModeRequested(AmountMode::Maximum);
+    if (!inputAdmissionClosed()) Q_EMIT amountModeRequested(AmountMode::Maximum);
 }
 void SendRecipient::projectAmountMode(senddraft::AmountMode mode)
 {
@@ -283,20 +283,45 @@ void SendRecipient::projectAmountMode(senddraft::AmountMode mode)
 }
 void SendRecipient::clearImportedMetadata()
 {
-    if (admissionClosed()) return;
+    if (inputAdmissionClosed()) return;
     m_request_normalization = 0; m_request_address.clear(); m_request_label.clear(); m_message.clear();
     const QPointer<SendRecipient> guard{this}; Q_EMIT inputIntentSubmitted();
-    if (!guard || admissionClosed()) return; Q_EMIT paymentRequestChanged();
-    if (!guard || admissionClosed()) return;
-    Q_EMIT messageChanged(); if (guard && !admissionClosed()) requestValidation();
+    if (!guard || inputAdmissionClosed()) return; Q_EMIT paymentRequestChanged();
+    if (!guard || inputAdmissionClosed()) return;
+    Q_EMIT messageChanged(); if (guard && !inputAdmissionClosed()) requestValidation();
 }
 void SendRecipient::applyPaymentRequest(const QString& address, const QString& pay_to, const QString& message)
 {
     applyImportedPayment({address, pay_to, message, {}, {}, false});
 }
+void SendRecipient::projectImportedPayment(const Snapshot& value, const QString& formatted_address,
+                                          bool amount_changed, bool private_note_changed)
+{
+    if (admissionClosed() || value.token != m_identity) return;
+    const QPointer<SendRecipient> guard{this};
+    ++m_import_sequence;
+    m_batching = true;
+    if (private_note_changed) m_budget_error.clear();
+    m_request_normalization = 0;
+    m_request_address = value.request_address; m_request_label = value.request_label;
+    m_message = value.message; m_label = value.label;
+    m_amount_intent_revision = value.amount_intent_revision;
+    m_address->projectAddress(value.address, formatted_address);
+    if (!guard || admissionClosed()) return;
+    // An omitted URI amount preserves the raw editor, including incomplete
+    // text and Maximum intent. Only an explicit imported amount replaces it.
+    if (amount_changed) m_amount->setProjectedSatoshi(value.amount);
+    if (!guard || admissionClosed()) return;
+    projectAmountMode(value.mode);
+    if (!guard || admissionClosed()) return;
+    m_batching = false;
+    Q_EMIT paymentRequestChanged(); if (!guard || admissionClosed()) return;
+    Q_EMIT messageChanged(); if (!guard || admissionClosed()) return;
+    Q_EMIT labelChanged(); if (guard && !admissionClosed()) requestValidation();
+}
 void SendRecipient::applyImportedPayment(const senddraft::PaymentRequest& request)
 {
-    if (admissionClosed() || (m_opening && !m_opening->available())) return;
+    if (inputAdmissionClosed() || (m_opening && !m_opening->available())) return;
     if (request.label.size() > senddraft::Limits::note || request.message.size() > senddraft::Limits::message ||
         request.private_note.size() > senddraft::Limits::note || request.address.size() > 1024 ||
         (request.amount && !MoneyRange(*request.amount))) {
@@ -306,26 +331,26 @@ void SendRecipient::applyImportedPayment(const senddraft::PaymentRequest& reques
     const auto sequence = ++m_import_sequence;
     m_batching = true; m_budget_error.clear();
     if (request.amount) chooseFixedAmount();
-    if (!guard || admissionClosed() || m_import_sequence != sequence) return;
+    if (!guard || inputAdmissionClosed() || m_import_sequence != sequence) return;
     const auto amount_intent = m_amount_intent_revision;
     // The canonical address editor owns normalization. All imported public
     // fields belong to this one request; private text changes only with approval.
     m_request_normalization = 0; m_request_address = request.address; m_request_label = request.label; m_message = request.message;
     const bool note_changed = !request.private_note.isEmpty() && (m_label.isEmpty() || request.replace_private_note);
     if (note_changed) m_label = request.private_note;
-    setAddress(request.address); if (!guard || admissionClosed() || m_import_sequence != sequence) return;
+    setAddress(request.address); if (!guard || inputAdmissionClosed() || m_import_sequence != sequence) return;
     // Capture only the public editor's owned normalization result. A delayed
     // result may establish this baseline only for this exact request id.
     if (m_address->normalizationPending()) m_request_normalization = m_address->normalizationId();
     else m_request_address = m_address->address();
     if (request.amount && m_amount_intent_revision == amount_intent) m_amount->setProjectedSatoshi(*request.amount);
-    if (!guard || admissionClosed() || m_import_sequence != sequence) return;
+    if (!guard || inputAdmissionClosed() || m_import_sequence != sequence) return;
     m_batching = false;
-    Q_EMIT inputIntentSubmitted(); if (!guard || admissionClosed()) return;
-    Q_EMIT paymentRequestChanged(); if (!guard || admissionClosed()) return;
-    Q_EMIT messageChanged(); if (!guard || admissionClosed()) return;
+    Q_EMIT inputIntentSubmitted(); if (!guard || inputAdmissionClosed()) return;
+    Q_EMIT paymentRequestChanged(); if (!guard || inputAdmissionClosed()) return;
+    Q_EMIT messageChanged(); if (!guard || inputAdmissionClosed()) return;
     if (note_changed) Q_EMIT labelChanged();
-    if (guard && !admissionClosed()) requestValidation();
+    if (guard && !inputAdmissionClosed()) requestValidation();
 }
 void SendRecipient::applyParsedPaymentRequest(const QVariantMap& parsed, bool replace_private_note)
 {
@@ -340,15 +365,15 @@ void SendRecipient::applyParsedPaymentRequest(const QVariantMap& parsed, bool re
 }
 void SendRecipient::clear()
 {
-    if (admissionClosed()) return;
+    if (inputAdmissionClosed()) return;
     m_request_normalization = 0; m_request_address.clear(); m_request_label.clear(); m_label.clear(); m_message.clear(); m_budget_error.clear();
     ++m_import_sequence; m_batching = true; const QPointer<SendRecipient> guard{this};
-    m_address->setAddress("", 0); if (!guard || admissionClosed()) return;
-    m_amount->clear(); if (!guard || admissionClosed()) return;
-    m_batching = false; Q_EMIT inputIntentSubmitted(); if (!guard || admissionClosed()) return;
-    Q_EMIT paymentRequestChanged(); if (!guard || admissionClosed()) return;
-    Q_EMIT labelChanged(); if (!guard || admissionClosed()) return;
-    Q_EMIT messageChanged(); if (guard && !admissionClosed()) requestValidation();
+    m_address->setAddress("", 0); if (!guard || inputAdmissionClosed()) return;
+    m_amount->clear(); if (!guard || inputAdmissionClosed()) return;
+    m_batching = false; Q_EMIT inputIntentSubmitted(); if (!guard || inputAdmissionClosed()) return;
+    Q_EMIT paymentRequestChanged(); if (!guard || inputAdmissionClosed()) return;
+    Q_EMIT labelChanged(); if (!guard || inputAdmissionClosed()) return;
+    Q_EMIT messageChanged(); if (guard && !inputAdmissionClosed()) requestValidation();
 }
 void SendRecipient::validateAddress() { requestValidation(); }
 void SendRecipient::validateAmount() { requestValidation(); }

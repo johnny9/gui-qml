@@ -5,6 +5,8 @@
 #ifndef BITCOIN_CMAKE_QMLTYPES_H
 #define BITCOIN_CMAKE_QMLTYPES_H
 
+
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <qml/appmode.h>
 #include <qml/applicationmodels.h>
 #include <qml/bitcoinamount.h>
@@ -38,6 +40,9 @@
 #include <qml/models/networkstatusmodel.h>
 #include <qml/models/networktraffictower.h>
 #include <qml/models/nodemodel.h>
+#include <qml/models/networkmodel.h>
+#include <qml/models/runtimepromptmodel.h>
+#include <qml/nodelifecycle.h>
 #include <qml/models/monospaceoutputmodel.h>
 #include <qml/models/onboardingoptionsmodel.h>
 #include <qml/models/options_model.h>
@@ -454,6 +459,24 @@ struct PsbtQmlModelForeign {
     QML_ANONYMOUS
 };
 
+namespace NodeLifecycleForeign {
+    Q_NAMESPACE
+    QML_FOREIGN_NAMESPACE(nodelifecycle)
+    QML_NAMED_ELEMENT(NodeLifecycle)
+}
+struct NetworkModelForeign {
+    Q_GADGET
+    QML_FOREIGN(NetworkModel)
+    QML_NAMED_ELEMENT(NetworkModel)
+    QML_UNCREATABLE("Owned by node")
+};
+struct RuntimePromptModelForeign {
+    Q_GADGET
+    QML_FOREIGN(RuntimePromptModel)
+    QML_NAMED_ELEMENT(RuntimePromptModel)
+    QML_UNCREATABLE("Owned by original node prompt")
+};
+
 struct NodeModelForeign {
     Q_GADGET
     QML_FOREIGN(NodeModel)
@@ -578,4 +601,14 @@ struct OnboardingOptionsModelForeign {
     QML_ANONYMOUS
 };
 
+
+#ifdef ENABLE_WALLET
+struct PaymentImportOperationForeign {
+    Q_GADGET
+    QML_FOREIGN(PaymentImportOperation)
+    QML_NAMED_ELEMENT(PaymentImportOperation)
+    QML_UNCREATABLE("Owned by an import request")
+};
+
+#endif
 #endif // BITCOIN_CMAKE_QMLTYPES_H

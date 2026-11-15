@@ -1,0 +1,201 @@
+{
+  "status": "R26 focused component acceptance satisfied; R27 consumer migration and R42 exhaustive qualification remain separate",
+  "base_app": "1b17c0b434f00343c42e133f3fa65f843d0ca96a",
+  "tested_app": "e94e4397a209bfdabbdcb1db4bf8eb45da4fcbd7",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "source": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R26/continuation-source",
+  "runtime": [
+    {
+      "id": "r26-owner",
+      "suite": "unit",
+      "bodies": 37,
+      "passed": 37,
+      "skipped": 0,
+      "artifact": "owner-focused-15/actual/r26-owner"
+    },
+    {
+      "id": "uri-parser-carry",
+      "suite": "unit",
+      "bodies": 31,
+      "passed": 31,
+      "skipped": 0,
+      "artifact": "owner-focused-15/actual/uri-parser-carry"
+    },
+    {
+      "id": "recipient-target",
+      "suite": "unit",
+      "bodies": 60,
+      "passed": 60,
+      "skipped": 0,
+      "artifact": "owner-focused-15/actual/recipient-target"
+    },
+    {
+      "id": "recipient-list-target",
+      "suite": "unit",
+      "bodies": 28,
+      "passed": 28,
+      "skipped": 0,
+      "artifact": "owner-focused-15/actual/recipient-list-target"
+    },
+    {
+      "id": "original-review-import-gate",
+      "suite": "unit",
+      "bodies": 4,
+      "passed": 4,
+      "skipped": 0,
+      "artifact": "owner-focused-15/actual/original-review-import-gate"
+    },
+    {
+      "id": "qml-explicit-source",
+      "suite": "qml",
+      "bodies": 26,
+      "passed": 26,
+      "skipped": 0,
+      "artifact": "owner-focused-15/actual/qml-explicit-source"
+    },
+    {
+      "id": "core-explicit-uri",
+      "suite": "integration",
+      "bodies": 1,
+      "passed": 1,
+      "skipped": 0,
+      "artifact": "owner-focused-15/actual/core-explicit-uri"
+    },
+    {
+      "id": "core-file-source",
+      "suite": "integration",
+      "bodies": 2,
+      "passed": 2,
+      "skipped": 0,
+      "artifact": "owner-focused-15/actual/core-file-source"
+    },
+    {
+      "id": "core-private-note",
+      "suite": "integration",
+      "bodies": 1,
+      "passed": 1,
+      "skipped": 0,
+      "artifact": "owner-focused-15/actual/core-private-note"
+    },
+    {
+      "id": "core-maximum-consent",
+      "suite": "integration",
+      "bodies": 1,
+      "passed": 1,
+      "skipped": 0,
+      "artifact": "owner-focused-15/actual/core-maximum-consent"
+    },
+    {
+      "id": "core-typed-psbt",
+      "suite": "integration",
+      "bodies": 1,
+      "passed": 1,
+      "skipped": 0,
+      "artifact": "owner-focused-15/actual/core-typed-psbt"
+    }
+  ],
+  "runtime_total": 192,
+  "runtime_profile": "Pinned Clang23.1.6, Qt6.10.2, O0/g0, ENABLE_WALLET=ON, ENABLE_IPC=ON, no coverage/sanitizer instrumentation",
+  "unit_compilation_scope": {
+    "requested_classes": [
+      "BitcoinUriModelTests",
+      "PaymentImportTests",
+      "SendRecipientTests",
+      "SendRecipientsListModelTests",
+      "WalletQmlModelTests"
+    ],
+    "compiled_support": [
+      "StartupProfileTests"
+    ],
+    "complete_suite_claim": false
+  },
+  "qml_static": {
+    "files_per_variant": 259,
+    "variants": [
+      "qt65",
+      "qt62"
+    ],
+    "warnings": 0,
+    "compatibility_notes_per_variant": 1111,
+    "artifact": "owner-focused-15/qml-lint",
+    "actual_runtime_qt": "6.10.2; no native Qt6.2 runtime claim"
+  },
+  "tidy": {
+    "version": "23.1.6 plus unchanged pinned Core Bitcoin plugin/settings",
+    "distinct_changed_cpp": 15,
+    "fresh_moc": 7,
+    "final": "owner-static-03/tidy/results.json (new Wallet test CPP+7 fresh MOC)",
+    "carry": "owner-static-02/tidy/results.json (14 exact unchanged CPP;21/21 then including7MOC)",
+    "scope_union": 22
+  },
+  "lint": {
+    "exact_code": "owner-lint-05",
+    "exit": 0,
+    "post_HEAD": "e94e4397a209bfdabbdcb1db4bf8eb45da4fcbd7",
+    "post_Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+    "post_status": "clean"
+  },
+  "process": {
+    "cases": 2,
+    "artifact": "owner-static-02",
+    "normal_bridge_exit": 0,
+    "fatal_storage_injection_exit": 1,
+    "stderr": "Normal inspected; fatal case contains only exact expected fatal storage diagnostic and test bridge listener",
+    "production_carry": "e94 differs from full f91 static/process head only by test/test_walletqmlmodel.cpp; no application source change",
+    "wallet_runtime": "These two lifecycle cases use -disablewallet; real wallet import behavior is separately qualified by6 Core bodies"
+  },
+  "red_and_repairs": [
+    {
+      "artifact": "MAXIMUM_FOCUSED_RECEIPT.json",
+      "kind": "existing Maximum/Fixed counterexample",
+      "description": "Parent89425 and head351:3 intended failures+2controls at parent,5positive at head; corrected identical QML fixture"
+    },
+    {
+      "artifact": "owner-focused-05",
+      "kind": "new actor protocol counterexample and incomplete process",
+      "description": "Four manual actor failures exposed same Cleanup key reused for observation/dispatch/query; fixed unique reserved per-reply keys. Real-thread fixture used the compatibility executor incorrectly; actual-wallet fixture lacked ECC context and crashed, so no complete XML/body total is claimed."
+    },
+    {
+      "artifact": "owner-focused-06",
+      "kind": "fixture teardown failure",
+      "description": "Three real consumer rows reached correct behavior but physical drain failed because the intentionally queued GUI transport stopped pumping; fixed explicit shutdown/pump to quiescence."
+    },
+    {
+      "artifact": "owner-focused-08",
+      "kind": "QML visual schedule",
+      "description": "151unit+6Core positive;2of9QML rows failed old immediate visible=false assertion after required replacement prompt. Final controls assert immediate logical retirement and preserve original/successor assertions before awaiting visual closure."
+    },
+    {
+      "artifact": "owner-lint-01",
+      "kind": "introduced lint finding",
+      "description": "Missing exact build-config/IWYU includes in3guarded app files; fixed and exact final lint passed."
+    },
+    {
+      "artifact": "owner-static-01",
+      "kind": "introduced pinned tidy finding",
+      "description": "misc-no-recursion flagged bool-switched parse/analyze self call. Replaced with finite compile-time stages, no suppression; full final reader tidy passes."
+    },
+    {
+      "artifact": "owner-focused-01,02,03,04,09",
+      "kind": "nonpass attempts",
+      "description": "Docker sandbox refusal; initial typed-read void return mismatch; partial Context initializer warning; missing shared-runner selection id; old public PSBT signature-field spelling. No empty/infrastructure attempt is counted as passing."
+    }
+  ],
+  "architectural_guarantees": [
+    "Native source parsing/file IO and PSBT inspection; source independent of optional target",
+    "Pure Domain decisions, exact original target and per-child retained result ledgers",
+    "Cross-executor callbacks only fill pre-reserved Source Cleanup reply cells",
+    "Atomic whole URI batch with expected semantic revision and new consent on stale overwrite",
+    "No implicit signing/commit/broadcast; imported public fields never manufacture private notes",
+    "Known result retained through lost ACK/close; only original ledger queries, no replay",
+    "Original parsed PSBT value retained/exported through existing M24 policy; no substitution with latest signed review",
+    "Original view string token gates bounded GUI projection; exact post-close outcome stays typed"
+  ],
+  "upstream": "plan/R26_UPSTREAM_NOTES.md; optional typed immutable public read-only review result/snapshot boundary; no required Core change for M26",
+  "boundaries": [
+    "R27 clipboard/chooser/drop-specific adapters not migrated by R26; legacy consumers remain until that separate step",
+    "R40 native ingress/delivery receipt composition remains separate; Source creation is not keyed by external delivery Ticket",
+    "R42 exhaustive100% coverage, full config/platform/Qt runtime matrices and sanitizers/native Windows pending per user deferral",
+    "No physical HWI claim and no new Core/Qt/subtree edits; existing R09/R17/R20/R30 and Qt-only file-picker limitations unchanged"
+  ]
+}

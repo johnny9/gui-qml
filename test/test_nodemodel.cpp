@@ -27,6 +27,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
@@ -138,6 +139,123 @@ class NodeModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void manualStartupWarningAdmissionRejectionCanDeleteTheObserver()
+    {
+        MockNode node;
+        ConfigureNodeModelDefaults(node);
+        MempoolState mempool;
+        ConfigureMempoolGetters(node,mempool);
+        ManualExecutionEnvironment env;
+        NodeModel::Services services;
+        services.execution={env.scheduler,[&](auto turn){env.post(std::move(turn));}};
+        auto model=std::make_unique<NodeModel>(node,false,std::move(services));
+        bool rejection{false},armed{false};
+        int chain_ready{0};
+        const auto cleanup=qScopeGuard([&]{
+            if(model){QObject::disconnect(model.get(),nullptr,this,nullptr);model->beginShutdown();model.reset();}
+            for(int turn=0;turn<8;++turn){env.drain();env.publishAll();}
+        });
+        env.drain();env.publishAll();
+        QVERIFY(model->notificationsReady());
+        connect(model.get(),&NodeModel::chainStateReady,this,[&]{++chain_ready;});
+        // Availability ingress is already admitted by the earlier connection;
+        // reject the next fresh prompt intake, before any handoff is owned.
+        connect(model.get(),&NodeModel::networkBackendAvailabilityChanged,this,[&]{if(!armed){armed=true;env.rejectNext();}});
+        connect(model.get(),&NodeModel::observationErrorChanged,this,[&]{rejection=true;model.reset();});
+        model->addStartupWarnings({QStringLiteral("Original startup warning")});
+        model->initializeResult(true,{},false,false);
+        for(int turn=0;turn<8&&model;++turn){env.drain();env.publishAll();}
+        QVERIFY(armed);
+        QVERIFY(rejection);
+        QVERIFY(!model);
+        QCOMPARE(chain_ready,0);
+        for(int turn=0;turn<8;++turn){env.drain();env.publishAll();}
+        QVERIFY(env.quiescent());
+    }
+
+    void manualPauseObserverKeepsItsReentrantIntentPending()
+    {
+        struct NetworkNode final : MockNode {
+            std::function<void(bool)> set_active;
+            void setNetworkActive(bool value)override{set_active(value);}
+        } node;
+        ConfigureNodeModelDefaults(node);
+        MempoolState mempool;
+        ConfigureMempoolGetters(node,mempool);
+        bool active{false},reentered{false};
+        int writes{0};
+        interfaces::Node::NotifyNetworkActiveChangedFn notice;
+        node.handle_notify_network_active_changed_fn=[&](auto callback){notice=std::move(callback);return MakeNoopHandler();};
+        node.get_network_active_fn=[&]{return active;};
+        node.set_active=[&](bool value){++writes;if(active!=value){active=value;if(notice)notice(value);}};
+        ManualExecutionEnvironment env;
+        NodeModel::Services services;
+        services.execution={env.scheduler,[&](auto turn){env.post(std::move(turn));}};
+        auto model=std::make_unique<NodeModel>(node,true,std::move(services));
+        const auto cleanup=qScopeGuard([&]{
+            QObject::disconnect(model.get(),nullptr,this,nullptr);model->beginShutdown();model.reset();
+            for(int turn=0;turn<8;++turn){env.drain();env.publishAll();}
+        });
+        QSignalSpy pending{model.get(),&NodeModel::networkActionPendingChanged};
+        connect(model.get(),&NodeModel::pauseChanged,this,[&](bool paused){
+            if(paused&&!reentered){reentered=true;model->setPause(false);}
+        });
+        for(int turn=0;turn<8&&!reentered;++turn){env.drain();env.publishAll();}
+        QVERIFY(reentered);
+        QCOMPARE(writes,0);
+        QVERIFY(model->networkModel()->pending());
+        QVERIFY(model->networkActionPending());
+        QCOMPARE(pending.size(),1);
+        for(int turn=0;turn<8;++turn){env.drain();env.publishAll();}
+        QCOMPARE(writes,1);
+        QVERIFY(active);
+        QVERIFY(!model->pause());
+        QVERIFY(!model->networkModel()->pending());
+        QVERIFY(!model->networkActionPending());
+        QCOMPARE(pending.size(),2);
+    }
+
+    void manualQueuedNetworkIntentYieldsToLaterBackendObservation() {
+        struct NetworkNode final : MockNode {
+            std::function<void(bool)> set_active;
+            void setNetworkActive(bool value) override { set_active(value); }
+        } node;
+        MempoolState mempool;ConfigureNodeModelDefaults(node);ConfigureMempoolGetters(node,mempool);
+        ManualRoutedExecution transport;std::deque<std::function<void()>> gui;
+        std::map<NodeModel::Poll,std::function<void()>> deadlines;
+        NodeModel::Services services;services.execution={transport.scheduler,[&](auto turn){gui.push_back(std::move(turn));}};
+        services.schedule=[&](auto poll,auto,auto turn){deadlines[poll]=std::move(turn);};
+        services.cancel=[&](auto poll){deadlines.erase(poll);};
+        services.wall_seconds=[]{return int64_t{1700000000};};services.monotonic_milliseconds=[]{return int64_t{0};};
+        bool active=true;std::vector<bool> writes;
+        interfaces::Node::NotifyNetworkActiveChangedFn network_changed;
+        node.handle_notify_network_active_changed_fn=[&](auto callback){network_changed=std::move(callback);return MakeNoopHandler();};
+        node.get_network_active_fn=[&]{return active;};
+        node.set_active=[&](bool value){writes.push_back(value);if(active!=value){active=value;if(network_changed)network_changed(value);}};
+        auto model=std::make_unique<NodeModel>(node,true,std::move(services));
+        const auto settle=[&]{for(int turn=0;turn<1024;++turn){if(transport.stepNext())continue;if(!gui.empty()){auto next=std::move(gui.front());gui.pop_front();next();continue;}return true;}return false;};
+        const auto cleanup=qScopeGuard([&]{if(model)model->beginShutdown();model.reset();settle();});
+        QVERIFY(settle());QVERIFY(model->networkActionReady());QVERIFY(network_changed);QVERIFY(!model->pause());
+        model->setPause(true);
+        // Wait only for Native dispatch, accommodating the extracted Domain
+        // ingress without consuming its effect/outcome or any GUI completion.
+        for(int turn=0;turn<8&&transport.queuedCountIf([](const auto& queued){return queued.lane==execution::Lane::Core;})==0;++turn)
+            QVERIFY(transport.step(execution::Lane::Domain));
+        QVERIFY(transport.step(execution::Lane::Core));
+        QCOMPARE(writes,std::vector<bool>{false});QVERIFY(model->networkActionPending());
+        // Resume is a new GUI intent while the first Domain/GUI outcome is held.
+        model->setPause(false);
+        // Actual public backend transitions model RPC's later Resume, then Pause.
+        // Core emits no notification for an unchanged value, so both are needed.
+        node.setNetworkActive(true);node.setNetworkActive(false);
+        QVERIFY(settle());QCOMPARE(writes,std::vector<bool>({false,true,false}));
+        QVERIFY(!active);QVERIFY(model->pause());QVERIFY(!model->networkActionPending());
+        // Only a fresh explicit command may override the newer observation.
+        model->setPause(false);QVERIFY(settle());QVERIFY(active);QVERIFY(!model->pause());
+        QCOMPARE(writes,std::vector<bool>({false,true,false,true}));
+        model->beginShutdown();QVERIFY(settle());QVERIFY(model->isDrained());
+        model.reset();QVERIFY(settle());QVERIFY(transport.quiescent());
+    }
     void longNativeStartupWarningHasFullDetailsAndDoesNotHoldShutdown_data() {
         QTest::addColumn<bool>("close_first");
         QTest::newRow("publish-full-details") << false; QTest::newRow("close-before-publication") << true;
@@ -262,6 +380,8 @@ private Q_SLOTS:
     void banPeerDisconnectsAddressAfterSuccessfulBan();
     void networkActionReadyFollowsInitializationAndShutdown_data();
     void networkActionReadyFollowsInitializationAndShutdown();
+    void peerAdmissionDoesNotWaitForNetworkObservation_data();
+    void peerAdmissionDoesNotWaitForNetworkObservation();
     void requestShutdownEmitsOnlyOnce();
     void initializationFailureRequestsShutdownWhenCoreWasInterrupted();
     void initializationFailureWithoutCoreInterruptOnlySetsErrorState();
@@ -289,6 +409,7 @@ private Q_SLOTS:
     void manualInitializationStopsAfterPublicReentrancy();
     void runtimeMessageHandlerOpensAfterInitialization();
     void runtimeQuestionHandlerBlocksForAnswerAndReturnsResult();
+    void runtimeQuestionUnsupportedAnswerCannotConsumeThePendingQuestion();
     void runtimeStartupQuestionFailureLetsInitializeResultRequestShutdown();
     void runtimeStartupErrorDialogLetsInitializeResultRequestShutdown();
     void runtimeDialogDefaultsToOkWhenNoButtonsAreSpecified();
@@ -320,7 +441,9 @@ void NodeModelTests::acceptedNetworkActionOutlivesFacade()
     services.execution = {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }};
     auto model = std::make_unique<NodeModel>(node, false, std::move(services));
     env.drain(); env.publishAll(); QVERIFY(model->notificationsReady());
-    model->initializeResult(true, {}, false, false); env.drain(); env.publishAll();
+    model->initializeResult(true, {}, false, false);
+    for(int turn=0;turn<8&&!model->networkActionReady();++turn){env.drain();env.publishAll();}
+    QVERIFY(model->networkActionReady());
     model->setPause(true); QVERIFY(model->networkActionPending()); QCOMPARE(node.effects, 0);
     model.reset(); // Accepted effect and its outcome survive GUI observer loss.
     QCOMPARE(node.effects, 0);
@@ -846,13 +969,13 @@ void NodeModelTests::networkActionReadyFollowsInitializationAndShutdown()
 
     model.initializeResult(initialize_success, {}, false, false);
     QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
-    QCOMPARE(model.networkActionReady(), initialize_success);
+    QTRY_COMPARE_WITH_TIMEOUT(model.networkActionReady(), initialize_success, ASYNC_TIMEOUT_MS);
     QCOMPARE(ready.count(), initialize_success ? 1 : 0);
 
     if (direct_drain) model.beginShutdown();
     else model.requestShutdown();
     QVERIFY(!model.networkActionReady());
-    QCOMPARE(ready.count(), initialize_success ? 2 : 1);
+    QCOMPARE(ready.count(), initialize_success ? 2 : 0);
 
     // Repeated shutdown and a late successful initialization cannot enable
     // network controls after a shutdown request or worker retirement.
@@ -863,6 +986,87 @@ void NodeModelTests::networkActionReadyFollowsInitializationAndShutdown()
     QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
     QVERIFY(!model.networkActionReady());
     QCOMPARE(ready.count(), notifications);
+}
+
+void NodeModelTests::peerAdmissionDoesNotWaitForNetworkObservation_data()
+{
+    QTest::addColumn<bool>("shutdown");
+    QTest::newRow("ordinary-admission-closed") << false;
+    QTest::newRow("workers-retiring") << true;
+}
+
+void NodeModelTests::peerAdmissionDoesNotWaitForNetworkObservation()
+{
+    QFETCH(bool, shutdown);
+    MockNode node;
+    ConfigureNodeModelDefaults(node);
+    MempoolState mempool;
+    ConfigureMempoolGetters(node, mempool);
+    int effects{0};
+    node.disconnect_by_id_fn = [&](NodeId id) { ++effects; return id == 7; };
+    ManualExecutionEnvironment env;
+    NodeModel::Services services;
+    services.execution = {env.scheduler, [&](auto callback) { env.post(std::move(callback)); }};
+    services.schedule = [](auto, auto, auto) {};
+    services.cancel = [](auto) {};
+    NodeModel model{node, false, std::move(services)};
+    QObject receiver;
+    const auto cleanup = qScopeGuard([&] {
+        QObject::disconnect(&model, nullptr, &receiver, nullptr);
+        model.beginShutdown(); env.drain(); env.publishAll(); env.drain(); env.publishAll();
+    });
+    env.drain(); env.publishAll();
+    QVERIFY(model.notificationsReady());
+    QVERIFY(!model.networkBackendAvailable());
+    QVERIFY(!model.peerCommands()->canStart());
+    quint64 original{0};
+    bool captured{false};
+    QSignalSpy terminal{&model, &NodeModel::peerActionFinished};
+    connect(&model, &NodeModel::networkBackendAvailabilityChanged, &receiver, [&] {
+        if (captured || !model.networkBackendAvailable()) return;
+        captured = true;
+        // NetworkModel has only queued its initial observation. Peer commands
+        // require the live public backend, not Pause/Resume's known-state read.
+        QCOMPARE(node.calls.getNetworkActive.load(), 0);
+        QVERIFY(!model.networkModel()->known());
+        QVERIFY(!model.networkActionReady());
+        QVERIFY(model.peerCommands()->canStart());
+        original = model.requestDisconnectPeer(7);
+        QVERIFY(original);
+        QVERIFY(model.peerActionPending());
+        QCOMPARE(effects, 0);
+        if (shutdown) model.beginShutdown();
+        else model.closeAdmission();
+        QVERIFY(!model.networkBackendAvailable());
+        QVERIFY(!model.peerCommands()->canStart());
+        QCOMPARE(model.requestDisconnectPeer(8), quint64{0});
+        QCOMPARE(effects, 0);
+    });
+    model.initializeResult(true, {}, false, false);
+    env.drain(); env.publishAll();
+    QVERIFY(captured);
+    QVERIFY(original);
+    QCOMPARE(effects, 0);
+    QVERIFY(model.peerActionPending());
+    env.drain(); // The original action capability survives the parent fence.
+    QCOMPARE(effects, 1);
+    QCOMPARE(node.calls.disconnectById.load(), 1);
+    QVERIFY(model.peerActionPending()); // Its GUI receipt is still held.
+    QCOMPARE(terminal.count(), 0);
+    env.publishAll();
+    QVERIFY(!model.peerActionPending());
+    const auto result = model.peerCommands()->lastResult();
+    QVERIFY(result.present);
+    QVERIFY(result.outcomeKnown);
+    QVERIFY(result.mutationAttempted);
+    QVERIFY(result.disconnectConfirmed);
+    QCOMPARE(result.nodeIdText, QStringLiteral("7"));
+    QCOMPARE(result.outcome, PeerCommandOperation::Outcome::Succeeded);
+    QVERIFY(!model.peerCommands()->canStart());
+    QCOMPARE(model.requestDisconnectPeer(8), quint64{0});
+    env.drain(); env.publishAll();
+    QCOMPARE(effects, 1);
+    QCOMPARE(terminal.count(), 0); // Closed views stay quiet; actual result remains.
 }
 
 void NodeModelTests::requestShutdownEmitsOnlyOnce()
@@ -1605,7 +1809,7 @@ void NodeModelTests::startupWarningsAreShownOnceAndDoNotBecomeCurrentWarnings()
     QVERIFY(model.startupError().isEmpty());
 
     model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
-    QCOMPARE(runtime_dialog_spy.count(), 2);
+    QTRY_COMPARE_WITH_TIMEOUT(runtime_dialog_spy.count(), 2, ASYNC_TIMEOUT_MS);
     QVERIFY(!model.runtimeDialogVisible());
 
     QSignalSpy warnings_spy{&model, &NodeModel::warningsChanged};
@@ -1651,10 +1855,9 @@ void NodeModelTests::manualStartupCallbacksKeepTheirPresentationPhase()
     node.handle_message_box_fn = [&](auto callback) { message_box = std::move(callback); return MakeNoopHandler(); };
     node.handle_question_fn = [&](auto callback) { ask = std::move(callback); return MakeNoopHandler(); };
     ManualExecutionEnvironment env;
-    QSemaphore queued;
     auto loss = std::make_shared<std::atomic_bool>(false);
     NodeModel::Services services;
-    services.execution = {env.scheduler, [&](auto callback) { env.post(std::move(callback)); queued.release(); }};
+    services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }};
     services.diagnostic_loss = loss;
     NodeModel model{node, false, std::move(services)};
     std::thread native;
@@ -1670,7 +1873,6 @@ void NodeModelTests::manualStartupCallbacksKeepTheirPresentationPhase()
     QVERIFY(model.notificationsReady());
     QVERIFY(message_box);
     QVERIFY(ask);
-    while (queued.tryAcquire()) {}
     QSignalSpy initialized{&model, &NodeModel::nodeInitialized};
     QSignalSpy shutdown{&model, &NodeModel::requestedShutdown};
     native = std::thread([&] {
@@ -1679,17 +1881,20 @@ void NodeModelTests::manualStartupCallbacksKeepTheirPresentationPhase()
         else message_box(text, style);
         returned = true;
     });
-    QVERIFY(queued.tryAcquire(1, ASYNC_TIMEOUT_MS)); // The Native callback queued its owned request; GUI has not run it.
+    QTRY_VERIFY_WITH_TIMEOUT(!env.turnsIdle() || env.publicationCount() > 0 || returned.load(), ASYNC_TIMEOUT_MS);
+    // Native ingress is captured, but its Domain intake and GUI frame are held.
     QVERIFY(!model.runtimeDialogVisible());
-    if (question || (style & CClientUIInterface::MODAL)) QVERIFY(!returned.load());
-    env.publishAll();
+    if (dialog_expected) QVERIFY(!returned.load());
+    env.drain(); env.publishAll();
     QCOMPARE(model.runtimeDialogVisible(), dialog_expected);
     if (dialog_expected) {
         QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated startup message"));
         QCOMPARE(model.runtimeDialogQuestion(), question);
         model.answerRuntimeDialog(question ? CClientUIInterface::BTN_ABORT : CClientUIInterface::BTN_OK);
+        env.drain();
     }
     native.join();
+    env.drain(); env.publishAll();
     QVERIFY(returned.load());
     if (question) QVERIFY(!answer);
     QCOMPARE(initialized.size(), 0);
@@ -1742,18 +1947,29 @@ void NodeModelTests::manualStartupSummaryReportsAFullRuntimeQueue()
     QSignalSpy initialized{&model, &NodeModel::nodeInitialized};
     model.initializeResult(true, {}, false, false);
     QVERIFY(model.startupDiagnosticsPending());
-    // Initialization has changed the presentation phase, but its Native
-    // diagnostic projection is held while real callbacks fill the dialog queue.
+    env.drain();
+    // Physical diagnostic work settles, but its original GUI receipt stays
+    // held while Runtime ingress fills the owned prompt queue.
+    std::deque<std::function<void()>> held_projection;
+    while(auto turn=env.takePublicationBack())held_projection.push_front(std::move(turn));
+    const auto release_projection=[&]{
+        while(!held_projection.empty()){
+            auto turn=std::move(held_projection.front());held_projection.pop_front();turn();
+        }
+    };
+    const auto restore_projection=qScopeGuard([&]{release_projection();env.drain();env.publishAll();});
+    QVERIFY(!held_projection.empty());
     std::thread native([&] {
         for (int index = 0; index < 32; ++index) {
             message_box(Untranslated(QStringLiteral("Runtime message %1").arg(index).toStdString()), CClientUIInterface::ICON_INFORMATION);
         }
     });
     native.join();
-    env.publishAll();
+    env.drain();env.publishAll();
     QVERIFY(model.runtimeDialogVisible());
     QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Runtime message 0"));
     QCOMPARE(initialized.size(), 0);
+    release_projection();
     env.drain(); env.publishAll();
     QVERIFY(!model.startupDiagnosticsPending());
     QCOMPARE(initialized.size(), 1);
@@ -1764,6 +1980,7 @@ void NodeModelTests::manualStartupSummaryReportsAFullRuntimeQueue()
         QVERIFY(model.runtimeDialogVisible());
         QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Runtime message %1").arg(index));
         model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
+        env.drain();env.publishAll();
     }
     QVERIFY(!model.runtimeDialogVisible());
     QVERIFY(!loss->load());
@@ -1793,19 +2010,33 @@ void NodeModelTests::manualStartupSummaryPreservesDiagnosticsWhenDialogTextBudge
     model.addStartupWarnings({QStringLiteral("Original startup warning remains in its details")});
     model.initializeResult(true, {}, false, false);
     QVERIFY(model.startupDiagnosticsPending());
+    env.drain();
+    // Physical diagnostic work settles, but its original GUI receipt stays
+    // held while Runtime ingress fills the owned prompt queue.
+    std::deque<std::function<void()>> held_projection;
+    while(auto turn=env.takePublicationBack())held_projection.push_front(std::move(turn));
+    const auto release_projection=[&]{
+        while(!held_projection.empty()){
+            auto turn=std::move(held_projection.front());held_projection.pop_front();turn();
+        }
+    };
+    const auto restore_projection=qScopeGuard([&]{release_projection();env.drain();env.publishAll();});
+    QVERIFY(!held_projection.empty());
     std::thread native([&] {
         message_box(Untranslated(std::string(startupdiagnostics::TextBudget::MAX_CHARS, 'r')), CClientUIInterface::ICON_INFORMATION);
     });
     native.join();
-    env.publishAll();
+    env.drain();env.publishAll();
     QVERIFY(model.runtimeDialogVisible());
     QVERIFY(model.runtimeDialogMessage().startsWith(QString(16384, QLatin1Char('r'))));
     QVERIFY(model.runtimeDialogMessage().contains(QStringLiteral("additional message text omitted")));
     QVERIFY(!loss->load()); // The full text was accepted on Native and remains retained by this request.
+    release_projection();
     env.drain(); env.publishAll();
     QVERIFY(!model.startupDiagnosticsPending());
     QVERIFY(loss->load());
     model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
+    env.drain();env.publishAll();
     QVERIFY(model.runtimeDialogVisible());
     QCOMPARE(model.runtimeDialogTitle(), QStringLiteral("Warning"));
     QVERIFY(model.runtimeDialogMessage().contains(QStringLiteral("Original startup warning remains in its details")));
@@ -1815,6 +2046,7 @@ void NodeModelTests::manualStartupSummaryPreservesDiagnosticsWhenDialogTextBudge
     for (int row = 0; row < details->rowCount(); ++row) full += details->data(details->index(row, 0), Qt::UserRole + 1).toString();
     QVERIFY(full.contains(QStringLiteral("Original startup warning remains in its details")));
     model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
+    env.drain();env.publishAll();
     QVERIFY(!model.runtimeDialogVisible());
 }
 
@@ -1838,8 +2070,8 @@ void NodeModelTests::manualStartupSummaryRejectsReentrantShutdown()
     bool interrupted{false};
     QSignalSpy shutdown{&model, &NodeModel::requestedShutdown};
     QSignalSpy dialogs{&model, &NodeModel::runtimeDialogChanged};
-    connect(&model, &NodeModel::networkActionReadyChanged, this, [&] {
-        if (interrupted || !model.networkActionReady()) return;
+    connect(&model, &NodeModel::networkBackendAvailabilityChanged, this, [&] {
+        if (interrupted || !model.networkBackendAvailable()) return;
         interrupted = true;
         model.requestShutdown();
     });
@@ -1942,7 +2174,7 @@ void NodeModelTests::manualInitializationStopsAfterPublicReentrancy()
         else if (invalidation == 3) model.reset();
     };
     switch (boundary) {
-    case 0: case 20: connect(model.get(), &NodeModel::networkActionReadyChanged, this, invalidate); break;
+    case 0: case 20: connect(model.get(), &NodeModel::networkBackendAvailabilityChanged, this, invalidate); break;
     case 1: case 19: connect(model.get(), &NodeModel::runtimeDialogChanged, this, invalidate); break;
     case 2: case 24: connect(model.get(), &NodeModel::blockTipHeightChanged, this, invalidate); break;
     case 3: case 25: connect(model.get(), &NodeModel::remainingSyncTimeChanged, this, invalidate); break;
@@ -2000,6 +2232,15 @@ void NodeModelTests::manualInitializationStopsAfterPublicReentrancy()
     }
     env.drain(); env.publishAll();
     env.drain(); env.publishAll(); // Consume work admitted before the public invalidation.
+    if(boundary==19&&invalidation==4){
+        // This callback was captured after the initialization receipt. It is
+        // an original Runtime prompt ahead of the startup summary, so its
+        // continuation must be acknowledged before that summary can publish.
+        QVERIFY(model->runtimeDialogVisible());
+        QCOMPARE(model->runtimeDialogMessage(),QStringLiteral("Original runtime dialog"));
+        model->answerRuntimeDialog(CClientUIInterface::BTN_OK);
+        env.drain();env.publishAll();
+    }
     QVERIFY(reached);
     QCOMPARE(late_chain_ready, 0);
     if (invalidation == 4) {
@@ -2074,6 +2315,27 @@ void NodeModelTests::runtimeMessageHandlerOpensAfterInitialization()
 
     QCOMPARE(prompt_count, 1);
     QVERIFY(!model.runtimeDialogVisible());
+}
+
+void NodeModelTests::runtimeQuestionUnsupportedAnswerCannotConsumeThePendingQuestion()
+{
+    MockNode node;MempoolState mempool;ConfigureNodeModelDefaults(node);ConfigureMempoolGetters(node,mempool);
+    interfaces::Node::QuestionFn question;
+    node.handle_question_fn=[&](auto callback){question=std::move(callback);return MakeNoopHandler();};
+    ManualExecutionEnvironment env;NodeModel::Services services;services.execution={env.scheduler,[&](auto turn){env.post(std::move(turn));}};
+    NodeModel model{node,false,std::move(services)};
+    const auto pump=[&]{for(int turn=0;turn<8;++turn){env.drain();env.publishAll();}};
+    pump();QVERIFY(model.notificationsReady());model.initializeResult(true,{},false,false);pump();QVERIFY(question);
+    std::atomic_bool returned{false},answer{false};
+    std::thread native{[&]{answer=question(Untranslated("Original OK-only question"),"",CClientUIInterface::MSG_ERROR);returned=true;}};
+    const auto cleanup=qScopeGuard([&]{model.beginShutdown();pump();native.join();pump();});
+    QTRY_VERIFY_WITH_TIMEOUT(([&]{pump();return model.runtimeDialogVisible();})(),ASYNC_TIMEOUT_MS);
+    QCOMPARE(model.runtimeDialogButtons(),static_cast<unsigned int>(CClientUIInterface::BTN_OK));
+    model.answerRuntimeDialog(CClientUIInterface::BTN_YES);pump();
+    QVERIFY(model.runtimeDialogVisible());QVERIFY(!returned.load()); // Independent unchanged public-action oracle.
+    model.answerRuntimeDialog(CClientUIInterface::BTN_OK);pump();
+    QTRY_VERIFY_WITH_TIMEOUT(([&]{pump();return returned.load();})(),ASYNC_TIMEOUT_MS);QVERIFY(answer.load());
+    QTRY_VERIFY_WITH_TIMEOUT(([&]{pump();return !model.runtimeDialogVisible();})(),ASYNC_TIMEOUT_MS);
 }
 
 void NodeModelTests::runtimeQuestionHandlerBlocksForAnswerAndReturnsResult()
@@ -2411,6 +2673,11 @@ void NodeModelTests::runtimeNonBlockingDialogsAreQueued()
     QTRY_VERIFY_WITH_TIMEOUT(!model.startupDiagnosticsPending(), ASYNC_TIMEOUT_MS);
 
     QSignalSpy runtime_dialog_spy{&model, &NodeModel::runtimeDialogChanged};
+    QStringList presented;
+    connect(&model,&NodeModel::runtimeDialogChanged,this,[&]{
+        if(model.runtimeDialogVisible())presented.push_back(model.runtimeDialogMessage());
+    });
+    const auto disconnect=qScopeGuard([&]{QObject::disconnect(&model,nullptr,this,nullptr);});
     message_box_fn(
         bilingual_str{"First", "Translated first"},
         CClientUIInterface::ICON_INFORMATION);
@@ -2427,13 +2694,12 @@ void NodeModelTests::runtimeNonBlockingDialogsAreQueued()
     QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated first"));
 
     model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
-    QCOMPARE(runtime_dialog_spy.count(), 2);
+    QTRY_COMPARE_WITH_TIMEOUT(model.runtimeDialogMessage(), QStringLiteral("Translated second"), ASYNC_TIMEOUT_MS);
     QVERIFY(model.runtimeDialogVisible());
-    QCOMPARE(model.runtimeDialogMessage(), QStringLiteral("Translated second"));
 
     model.answerRuntimeDialog(CClientUIInterface::BTN_OK);
-    QCOMPARE(runtime_dialog_spy.count(), 3);
-    QVERIFY(!model.runtimeDialogVisible());
+    QTRY_VERIFY_WITH_TIMEOUT(!model.runtimeDialogVisible(), ASYNC_TIMEOUT_MS);
+    QCOMPARE(presented,QStringList({QStringLiteral("Translated first"),QStringLiteral("Translated second")}));
 }
 
 void NodeModelTests::initializeFailureShowsStartupWarningsWithoutMakingThemCurrentWarnings()

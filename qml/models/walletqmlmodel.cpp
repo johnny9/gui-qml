@@ -13,6 +13,7 @@
 #include <qml/retainedvalue.h>
 #include <qml/guipresentation.h>
 #include <qml/psbtwork.h>
+#include <qml/paymentimportreview.h>
 #include <qml/models/signertransaction.h>
 #include <qml/models/psbtfee.h>
 #include <qml/psbtpolicy.h>
@@ -2416,7 +2417,7 @@ WalletQmlModel::PreparationState WalletQmlModel::preparationState() const
 bool WalletQmlModel::currentTransactionNeedsRevalidation() const
 {
     return m_current_transaction && m_current_transaction_source == CurrentTransactionSource::SendDraft &&
-        !m_preparation_projection.candidate_current;
+        ((m_send_recipients && m_send_recipients->importPending()) || !m_preparation_projection.candidate_current);
 }
 
 quint64 WalletQmlModel::preparationId() const
@@ -2457,6 +2458,8 @@ transactionattempt::CurrentFacts WalletQmlModel::preparationFacts() const
 bool WalletQmlModel::setCurrentTransaction(WalletQmlModelTransaction* transaction, bool from_preparation)
 {
     if (m_current_transaction == transaction) return false;
+    m_imported_review_owner = 0; m_imported_review_child = 0;
+    invalidateImportReview();
     if (m_send_review && m_send_review != transaction && m_send_consent) m_send_consent->withdraw();
     if (m_send_review && m_send_review != transaction && m_send_operation &&
         (m_send_operation->stage() == walletsend::Stage::AwaitingSweepConsent ||
@@ -2852,7 +2855,7 @@ void WalletQmlModel::applyPreparationResolution(transactionattempt::Result resol
 
 quint64 WalletQmlModel::approveExternalSignerTransaction()
 {
-    if (!observationsAllowed() || signerApprovalState() == ApprovalState::ApprovalUncertain ||
+    if (!observationsAllowed() || currentTransactionNeedsRevalidation() || signerApprovalState() == ApprovalState::ApprovalUncertain ||
         signerApprovalState() == ApprovalState::ApprovalUnverified || psbtActionBusy() || signerApprovalBusy() ||
         preparationBusy() || sendBusy() || m_sending_commit->load() || !available() || !m_opening || !m_current_transaction ||
         !m_current_transaction->getWtx() || !m_signer_approval_operation || m_approval_id == std::numeric_limits<quint64>::max()) return 0;
@@ -2977,7 +2980,7 @@ void WalletQmlModel::publishApproval(walletsigning::ApprovalSnapshot snapshot)
     }
     // Unknown returned bytes remain owned by the approval result. They cannot
     // replace the authenticated review, even when a failed call yielded bytes.
-    if (value.document && !value.quarantined_document) { m_current_psbt = value.document; m_current_transaction->setAssessedPsbt(value.document); }
+    if (value.document && !value.quarantined_document) { invalidateImportReview(); m_current_psbt = value.document; m_current_transaction->setAssessedPsbt(value.document); }
     if (value.quarantined_document) {
         m_current_transaction_can_send = false;
         m_current_transaction_can_broadcast = false;
@@ -3270,6 +3273,7 @@ void WalletQmlModel::publishSendOperation()
         // when the wallet reported a terminal signing error. Preserve that
         // captured document, while allowing broadcast only after a clean,
         // verified complete result.
+        invalidateImportReview();
         m_current_psbt = result->document;
         m_current_transaction->setAssessedPsbt(result->document);
         if (result->error == walletsend::Error::None && !result->relock_failed) {
@@ -3382,6 +3386,83 @@ void WalletQmlModel::publishSendOperation()
         if (!self) return;
     }
     Q_EMIT sendOperationChanged();
+}
+
+void WalletQmlModel::invalidateImportReview()
+{
+    m_import_review_current->store(false);
+    m_import_review_current = std::make_shared<std::atomic_bool>(true);
+}
+
+std::shared_ptr<const paymentimport::TargetPort> WalletQmlModel::importTarget(SendRecipient* recipient)
+{
+    if (!observationsAllowed() || !m_opening || !m_send_recipients) return {};
+    const auto payment = m_send_recipients->importTarget(recipient);
+    if (!payment) return {};
+    const QPointer<WalletQmlModel> observer{this};
+    const QPointer<WalletQmlModelTransaction> original_review{m_current_transaction};
+    const auto opening = m_opening;
+    const auto current = m_import_review_current;
+    const auto view = m_psbt_view_epoch, review_identity = m_current_review_identity;
+    const auto post = presentation::ReliablePost(m_fee_read_services.post);
+    const int unit = m_display_unit;
+    psbtwork::Context context{m_psbt_fee_services.lookup, psbtwork::NodeBroadcast(m_node)};
+    context.policy = m_psbt_fee_services.policy;
+    paymentimport::ReviewServices services;
+    services.scheduler = opening->scheduler(); services.view = view;
+    services.current = [opening, current] { return current->load() && opening->available(); };
+    services.prepare = [opening, context, unit](auto source, auto done, auto failed) {
+        // Complete the retained result on Native before the Domain acknowledgment
+        // can be lost. Only the existing public Wallet review API is used.
+        return opening->read([source, context, unit, done](interfaces::Wallet& wallet) {
+            done(psbtwork::PrepareReview(wallet, source->psbt->document, context, unit));
+            return true;
+        }, [](bool) {}, std::move(failed), execution::WorkClass::Observation, 2048);
+    };
+    services.present = [post, observer, opening, current, view, review_identity, original_review](auto key, auto child, auto imported, auto presentation_allowed) {
+        post([observer, opening, current, view, review_identity, original_review, key, child, imported, presentation_allowed] {
+            if (!observer || !observer->observationsAllowed() || observer->m_opening != opening || !current->load() ||
+                observer->m_psbt_view_epoch != view || observer->m_current_review_identity != review_identity ||
+                observer->m_current_transaction != original_review || !presentation_allowed->load() || !imported->review) return;
+            // These aliases keep every Core value's final release on its Native
+            // lease, including after the original import owner acknowledges.
+            const auto review = std::shared_ptr<const walletreview::Snapshot>{imported, imported->review.get()};
+            WalletQmlModelTransaction* transaction{nullptr};
+            try { transaction = new WalletQmlModelTransaction(review, opening, observer->m_fee_read_services.post, observer); }
+            catch (const std::exception&) {
+                if (observer && current->load()) {
+                    observer->m_psbt_action_state = PsbtActionState::PsbtFailed;
+                    observer->m_psbt_action_error = tr("Transaction review capacity is unavailable.");
+                    Q_EMIT observer->psbtActionChanged();
+                }
+                return;
+            }
+            if (!observer || !current->load() || !presentation_allowed->load() || !observer->observationsAllowed()) { transaction->deleteLater(); return; }
+            auto* previous = observer->m_current_transaction;
+            observer->setCurrentTransaction(transaction);
+            if (!observer || observer->m_current_transaction != transaction) { if (observer) transaction->deleteLater(); return; }
+            if (previous) previous->deleteLater();
+            observer->m_current_psbt = std::shared_ptr<const PartiallySignedTransaction>{imported, imported->document.get()};
+            observer->m_psbt_document_lease.reset(); observer->m_psbt_requires_recheck = false;
+            observer->m_psbt_fee_proof = review->proof ? std::shared_ptr<const psbtfee::Analysis>{review, review->proof.get()} : nullptr;
+            observer->m_psbt_fee_request.reset(); observer->m_psbt_fee_pending = false;
+            observer->m_psbt_key_can_send = imported->key_can_send;
+            observer->m_psbt_can_commit_complete = imported->can_commit_complete;
+            observer->m_current_transaction_source = CurrentTransactionSource::ImportedPsbt;
+            observer->m_current_transaction_can_send = review->can_send;
+            observer->m_current_transaction_can_broadcast = imported->key_can_broadcast && review->proof && review->proof->amount.has_value();
+            observer->m_current_transaction_review_message = imported->message;
+            observer->m_psbt_import_result = review->node_policy_blocked ? PsbtImportResult::ReviewPending
+                : review->can_send ? PsbtImportResult::WalletCanSign : PsbtImportResult::WalletCannotSign;
+            observer->m_psbt_action_state = PsbtActionState::PsbtImported;
+            observer->m_imported_review_owner = key.owner; observer->m_imported_review_child = child.id;
+            observer->adoptCurrentFlow(review->flow);
+            if (!observer || observer->m_current_transaction != transaction) return;
+            Q_EMIT observer->currentTransactionChanged();
+            if (observer && observer->m_current_transaction == transaction) Q_EMIT observer->psbtActionChanged();
+        });
+    };
+    return paymentimport::WithReviewFactory(payment, std::move(services));
 }
 
 quint64 WalletQmlModel::requestImportPsbtFromFile(const QString& path) { return startPsbtAction(PsbtActionKind::Import, path); }
@@ -3633,7 +3714,7 @@ quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requ
     m_psbt_file_export_action_id = 0;
     m_psbt_action_error.clear(); m_psbt_import_result = PsbtImportResult::PsbtUnsupported;
     m_psbt_action_path = path;
-    if (kind == PsbtActionKind::Import || kind == PsbtActionKind::Recheck) ++m_psbt_view_epoch;
+    if (kind == PsbtActionKind::Import || kind == PsbtActionKind::Recheck) { invalidateImportReview(); ++m_psbt_view_epoch; }
     const auto view = m_psbt_view_epoch;
     m_psbt_action_view_epoch = view;
     m_psbt_action_review = review; m_psbt_action_had_review = had_review;
@@ -4094,6 +4175,7 @@ void WalletQmlModel::discardCurrentTransaction()
 {
     if (!observationsAllowed()) return;
     const QPointer<WalletQmlModel> observer{this};
+    invalidateImportReview();
     const auto view_epoch = ++m_psbt_view_epoch;
     if (m_current_transaction && m_send_review == m_current_transaction && m_send_consent) m_send_consent->withdraw();
     invalidatePreparation();

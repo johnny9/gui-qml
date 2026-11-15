@@ -28,6 +28,15 @@ TestCase {
         SendTransactionReview { wallet: testWalletModel }
     }
 
+    function confirmExplicitImport(form) {
+        const operation = form.m_importOperation
+        if (operation && operation.promptToken) {
+            compare(operation.state, PaymentImportOperation.AwaitingReplacement)
+            const popup = findChild(form, "sendPaymentUriOverwritePopup")
+            if (popup) popup.close()
+            operation.replace(operation.promptToken)
+        }
+    }
     function init() {
         testWalletTransaction.setNodePolicyStatusForTest("")
         testSetup.failOnWarnings()
@@ -985,6 +994,9 @@ TestCase {
             "clipboard"
         )
 
+        tryVerify(function() { return sendPage.m_importOperation && !sendPage.m_importOperation.pending })
+        confirmExplicitImport(sendPage)
+
         // The mocked amount input still emits one schedule request when the
         // imported amount updates the bound field. The explicit URI-import
         // Refreshing the send form should contribute one more call.
@@ -1196,6 +1208,8 @@ TestCase {
 
         // Importing another request without public details hides the section.
         sendPage.applyPaymentRequestFromText("bitcoin:bcrt1qreplacement?amount=0.01", "clipboard")
+        tryVerify(function() { return sendPage.m_importOperation && !sendPage.m_importOperation.pending })
+        confirmExplicitImport(sendPage)
         tryCompare(sendPage, "uriActionPending", false)
         compare(section.visible, false)
         compare(testSendRecipient.label, "My edited note")
@@ -1228,6 +1242,32 @@ TestCase {
         sendPage.handlePaymentUriPaste(uri, "address")
         tryCompare(sendPage, "uriActionPending", false)
         compare(popup.opened, false)
+    }
+
+    function test_uri_fixed_amount_replacing_equal_maximum_requires_consent_data() {
+        return [{tag: "keep-maximum", confirm: false}, {tag: "replace-with-fixed", confirm: true}]
+    }
+    function test_uri_fixed_amount_replacing_equal_maximum_requires_consent(data) {
+        const page = createTemporaryObject(sendComponent, testCase.Window.window.contentItem,
+            {width: testCase.width, height: testCase.height, visible: true})
+        const sendPage = findChild(page, "walletSendPage")
+        const address = "bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4"
+        testSendRecipient.address.setAddress(address)
+        testSendRecipient.amount.satoshi = 12345
+        testSendRecipient.label = ""
+        findChild(page, "sendUseMaximumButton").clicked()
+        compare(testSendRecipient.amountMode, SendRecipient.Maximum)
+        Clipboard.currentText = "bitcoin:" + address + "?amount=0.00012345"
+        sendPage.handleClipboardPaste("address")
+        const prompt = findChild(page, "sendPaymentUriOverwritePopup")
+        tryCompare(prompt, "opened", true)
+        compare(testSendRecipient.amount.satoshi, 12345)
+        compare(testSendRecipient.amountMode, SendRecipient.Maximum)
+        findChild(prompt.contentItem, data.confirm ? "sendPaymentUriOverwriteConfirmButton" : "sendPaymentUriOverwriteCancelButton").clicked()
+        tryCompare(prompt, "opened", false)
+        tryCompare(sendPage, "uriActionPending", false)
+        compare(testSendRecipient.amount.satoshi, 12345)
+        compare(testSendRecipient.amountMode, data.confirm ? SendRecipient.Fixed : SendRecipient.Maximum)
     }
 
     function test_send_payment_uri_paste_confirms_overwriting_other_fields() {
@@ -2213,6 +2253,7 @@ TestCase {
             compare(testSendRecipient.appliedPaymentRequestCalls, applications)
             compare(testSendRecipient.address.address, address)
             BitcoinUri.releasePublications()
+            confirmExplicitImport(form)
             compare(form.uriActionPending, false)
             compare(testSendRecipient.appliedPaymentRequestCalls, applications + (data.valid ? 1 : 0))
             if (data.valid) {
@@ -2255,6 +2296,7 @@ TestCase {
         try {
             form.applyPaymentRequestFromText("bitcoin:bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9?amount=0.09&message=original", "clipboard")
             BitcoinUri.releasePublications()
+            confirmExplicitImport(form)
             compare(changed, true)
             compare(testSendRecipient.appliedPaymentRequestCalls, originalApplications + 1)
             compare(testSendRecipient.address.address, "bcrt1qdavt4j2sd7dlhqsavtnfxvzppw6k7qy97tmnu9")
@@ -2263,7 +2305,11 @@ TestCase {
             compare(replacement.amount.satoshi, otherAmount)
             compare(replacement.label, otherNote)
             compare(form.paymentRequestStatus, "")
-            compare(findChild(page, "sendPaymentUriOverwritePopup").visible, false)
+            compare(form.m_importOperation, null)
+            compare(form.uriActionPending, false)
+            const popup = findChild(page, "sendPaymentUriOverwritePopup")
+            compare(popup.opened, false)
+            tryCompare(popup, "visible", false)
         } finally {
             testSendRecipient.address.addressChanged.disconnect(loseInterest)
             BitcoinUri.releasePublications()
@@ -2582,6 +2628,7 @@ TestCase {
             compare(editor.addressField.pastePending, false)
             compare(testSendRecipient.appliedPaymentRequestCalls, applications)
             BitcoinUri.releasePublications()
+            confirmExplicitImport(form)
             compare(form.uriActionPending, false)
             compare(testSendRecipient.appliedPaymentRequestCalls, applications + (data.literal ? 0 : 1))
             compare(testSendRecipient.address.address, data.literal ? originalAddress : "bcrt1q8rcpp66mqmtsw27mx7awa7yfdrpzytumsapkw4")

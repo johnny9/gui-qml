@@ -29,6 +29,10 @@ public:
     void setServices(execution::SnapshotServices services);
     void closeAdmission();
     void setOwnerAdmissionGate(std::shared_ptr<std::atomic_bool> gate) { m_owner_gate = std::move(gate); }
+    void setInputAdmissionGate(std::shared_ptr<std::atomic_bool> gate) { m_edit_gate = std::move(gate); }
+    // The canonical value and formatting were prepared off GUI. This only
+    // retires the previous editor request and publishes bounded presentation.
+    void projectAddress(QString address, QString formatted);
     void retryPublication();
     bool normalizationPending() const { return !admissionClosed() && m_pending; }
     QString normalizationError() const { return m_error; }
@@ -58,6 +62,8 @@ private:
     int apply(Normalized value, bool force);
     int enqueue(const QString& input, int cursor, const QString& prefix = {}, const QString& suffix = {});
     bool admissionClosed() const { return m_closed || (m_gate && m_gate->load()) || (m_owner_gate && m_owner_gate->load()); }
+    bool inputAdmissionClosed() const { return admissionClosed() || (m_edit_gate && m_edit_gate->load()); }
+    std::shared_ptr<std::atomic_bool> m_edit_gate;
     std::shared_ptr<std::atomic_bool> m_gate;
     std::shared_ptr<std::atomic_bool> m_owner_gate;
     execution::SnapshotServices m_services;
