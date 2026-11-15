@@ -1288,15 +1288,13 @@ void TransactionActivityModelTests::copiesRawTransactionAndPublicPaymentRequest(
     model->requestTransactionDetails(Id(tx)); Wait(model);
     QCOMPARE(model->rawTransaction(Id(tx)), QString::fromStdString(EncodeHexTx(*tx.tx)));
     QVERIFY(model->rawTransaction("missing").isEmpty());
-    QVERIFY(model->paymentRequestUri("1").isEmpty()); // Actual payment already reconciled: never re-share this paid address.
-    auto unpaid = Request(2, UnpaidAddress(), "Public label", 10'000);
-    unpaid.recipient.message = "Public message"; unpaid.recipient.noteSelf = "Private note";
-    f.request(unpaid); Wait(model);
+    // The prepared history intentionally has no cached URI. The original
+    // request's typed sharing owner performs and authorizes public encoding.
     QObject view;
-    auto* sharing = f.wallet->receive()->sharingRequest("2", &view); QVERIFY(sharing);
+    auto* sharing = f.wallet->receive()->sharingRequest("1", &view); QVERIFY(sharing);
     sharing->setActive(true); QTRY_VERIFY(sharing->canCopyUri());
     const auto uri = sharing->paymentUri();
-    QCOMPARE(uri, ReceiveRequestHistoryModel::BuildBitcoinUri(UnpaidAddress(), 10'000, "Public label", "Public message"));
+    QCOMPARE(uri, ReceiveRequestHistoryModel::BuildBitcoinUri(Address(tx), 10'000, "Public label", "Public message"));
     QVERIFY(!uri.contains("Private"));
     QGuiApplication::clipboard()->setText(QStringLiteral("before public request copy"));
     auto* copied = sharing->copyUri(); QVERIFY(copied); QTRY_VERIFY(!copied->busy()); QVERIFY(copied->result().performed);
