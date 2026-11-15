@@ -29,8 +29,10 @@ progress without changing shared finding or schedule registers.
 | R30 | Focused conditional checkpoint integrated at9c71709:317 current worker bodies plus explicit earlier-source carries, original025 parent failure and independent QR decoding; merged294-body/20-static/lint/QML and2actualIPC pass. Capability007 stays user-deferred upstream; R42 pending |
 | R34 | Focused checkpoint integrated at644abba:119worker Qt bodies plus3X11 geometry scenarios; merged387-body/31-static gate and2IPC scenarios pass. Five scopes reconciled, known Qt/upstream limits retained; R42 pending |
 | R35 | Focused behavior/static green at deliverye12365c8:149 distinct Linux bodies,8 Mac QML,additional Native variant and3 process scenarios. Root discovered unchanged private proposed-directory inspector; affected acceptance/integration held pending user decision |
+| R31 | Focused checkpoint integrated at6200e8c6:196 current Native/QML/Core bodies plus52 byte-verified earlier-source carries and the original two-process restart scenario pass. Pinned15-entry tidy, app/QML lint and original reorg parent failure recorded; R42 pending |
+| R36 | Independent original071 exit-status slice integrated at032f374f:37 Native bodies and2 actual process checks pass, including real Core failure returning exit1. Pinned static and app/QML lint pass. Whole M19/M20/M21 extraction and the R35 prerequisite remain open |
 | R23 | Public Node admission-read adapter integrated at51c40864:29 focused bodies and11 pinned static entries plus app lint pass. Combined626 distinct passing identities use explicit source carries; final R23 acceptance waits for the reopened R22 prerequisite. No required Core API gap |
-| R25–R27, R31–R32, R36–R40 | Authorized according to actual prerequisites; remaining implementation/gates pending; R26 initial Domain decisions unvalidated, R31 and R36 independent implementation active |
+| R25–R27, R32, R37–R40 | Authorized according to actual prerequisites; remaining implementation/gates pending; R26 initial Domain decisions unvalidated, R32 and broader R36 implementation active |
 | R41 | Cleanup pending |
 | R42 | Final coverage, full suites/matrices, native Windows and sanitizers pending |
 
