@@ -939,6 +939,50 @@ private Q_SLOTS:
         const std::array names{"success", "unknown", "throw", "rejected", "cleared", "replaced", "destroyed", "detached", "node-changed"};
         for (int i = 0; i < int(names.size()); ++i) QTest::newRow(names[i]) << i;
     }
+    void nodeObservationAndSubmissionHaveSeparateHeldOutcomes_data()
+    {
+        QTest::addColumn<bool>("spend_before_native");
+        QTest::newRow("spend-after-admission-before-native") << true;
+        QTest::newRow("later-spend-cannot-rewrite-accepted-receipt") << false;
+    }
+    void nodeObservationAndSubmissionHaveSeparateHeldOutcomes()
+    {
+        QFETCH(bool, spend_before_native);
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        bool spent{false}; int observations{0};
+        MockNode node;
+        node.broadcast_transaction_fn = [](CTransactionRef, CAmount, CFeeRate, std::string&) { return node::TransactionError::OK; };
+        auto model = std::make_unique<PsbtQmlModel>(nullptr, &node);
+        model->setFeeServices({transport.scheduler, {}, [&](auto turn) { publications.push_back(std::move(turn)); },
+            [&](CTransactionRef, CAmount) { ++observations; psbtpolicy::Facts facts; facts.observed = true; facts.missing_inputs = spent; return facts; }});
+        const auto publish = [&] { while (!publications.empty()) { auto turn = std::exchange(publications.front(), {}); publications.pop_front(); turn(); } };
+        const auto cleanup = qScopeGuard([&] { model.reset(); transport.drain(); publish(); transport.drain(); });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto path = directory.filePath("policy.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeCompletePsbt(), path), QString{});
+        QVERIFY(model->requestLoadFromFile(path)); QCOMPARE(observations, 0);
+        QVERIFY(transport.step(execution::Lane::Core)); QCOMPARE(observations, 1); QVERIFY(!model->loaded());
+        QVERIFY(transport.step(execution::Lane::Domain)); QVERIFY(!model->loaded());
+        publish(); transport.drain(); QVERIFY(model->canBroadcast());
+        QCOMPARE(model->nodeReadiness(), PsbtQmlModel::NodeReadiness::NoKnownObstacle);
+        const auto ticket = model->requestBroadcast(); QVERIFY(ticket); QCOMPARE(observations, 1);
+        spent = spend_before_native;
+        QVERIFY(transport.step(execution::Lane::Core)); QCOMPARE(observations, 2);
+        QCOMPARE(node.calls.broadcastTransaction.load(), spend_before_native ? 0 : 1);
+        QVERIFY(!model->submitted());
+        spent = true; // A later observation cannot rewrite the actual effect receipt.
+        QVERIFY(transport.step(execution::Lane::Domain));
+        QCOMPARE(model->submitted(), !spend_before_native);
+        QVERIFY(model->busy()); // GUI publication is still held.
+        publish(); transport.drain();
+        QVERIFY(!model->busy()); QVERIFY(!model->canBroadcast());
+        QCOMPARE(model->operationId(), ticket);
+        if (spend_before_native) QVERIFY(model->error().contains(QStringLiteral("spent")));
+        else QVERIFY(model->error().isEmpty());
+        QCOMPARE(observations, 2);
+        model.reset(); transport.drain(); publish(); transport.drain(); QVERIFY(transport.quiescent());
+    }
     void acceptedBroadcastAndDrainDoNotRequireGuiPublication()
     {
         ManualRoutedExecution transport;
