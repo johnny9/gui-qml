@@ -2996,17 +2996,18 @@ private Q_SLOTS:
 
     void signerApprovalAdmissionKeepsOriginalEffectAndPhase_data()
     {
-        QTest::addColumn<bool>("effect");
+        QTest::addColumn<int>("boundary");
         QTest::addColumn<int>("action");
         for (bool effect : {false, true}) for (int action : {0, 1, 2}) {
             const auto name = QStringLiteral("%1-%2").arg(effect ? "accepted-Core" : "cleanup-reservation")
                 .arg(action == 0 ? "quiet" : action == 1 ? "delete" : "withdraw-review").toUtf8();
-            QTest::newRow(name.constData()) << effect << action;
+            QTest::newRow(name.constData()) << int(effect) << action;
         }
+        QTest::newRow("accepted-Domain-delete") << 2 << 1;
     }
     void signerApprovalAdmissionKeepsOriginalEffectAndPhase()
     {
-        QFETCH(bool, effect);
+        QFETCH(int, boundary);
         QFETCH(int, action);
         ManualExecutionEnvironment environment;
         const auto gate = std::make_shared<AdmissionHookScheduler>(environment.scheduler);
@@ -3045,22 +3046,23 @@ private Q_SLOTS:
                 phase_at_withdrawal = phases.size();
             }
         };
-        const auto trigger = effect ? gate->armSubmit(execution::Lane::Core, 1, callback) : gate->armCleanup(1, callback);
+        const auto trigger = boundary ? gate->armSubmit(boundary == 2 ? execution::Lane::Domain : execution::Lane::Core, 1, callback)
+                                      : gate->armCleanup(1, callback);
         const auto disarm = qScopeGuard([gate] { gate->disarm(); });
         const auto ticket = original->approveExternalSignerTransaction();
         QVERIFY(ticket);
-        if (effect) {
+        if (boundary) {
             for (int turn = 0; trigger->calls.load() == 0 && turn < 16; ++turn) QVERIFY(environment.step());
         }
         QCOMPARE(trigger->calls.load(), size_t{1});
         QCOMPARE(device_calls->load(), 0);
         if (action == 1) QVERIFY(!original);
-        if (action == 2 && !effect) {
+        if (action == 2 && !boundary) {
             QCOMPARE(original->signerApprovalState(), WalletQmlModel::ApprovalState::ApprovalInitial);
             QCOMPARE(phases.size(), phase_at_withdrawal + 1); // Truthful original phase settlement reaches the new empty view.
         }
         environment.drain();
-        QCOMPARE(device_calls->load(), effect ? 1 : 0);
+        QCOMPARE(device_calls->load(), boundary == 1 ? 1 : 0);
         QCOMPARE(succeeded.size(), 0); QCOMPARE(failed.size(), 0);
         fixture.settle();
         QCOMPARE(succeeded.size(), 0); QCOMPARE(failed.size(), 0);

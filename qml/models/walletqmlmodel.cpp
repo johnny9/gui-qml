@@ -2890,10 +2890,10 @@ quint64 WalletQmlModel::approveExternalSignerTransaction()
 
     const auto admitted = owner->request(ticket, review_id, view, retained_request);
     if (admitted) {
-        observer->m_approval_command_admitted = true;
         release.dismiss();
     }
     if (!owns()) return ticket;
+    if (admitted) observer->m_approval_command_admitted = true;
     if (!admitted) {
         const bool same_view = owns_view();
         observer->m_approval_local_pending = false;
