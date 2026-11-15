@@ -13,6 +13,9 @@
 #include <atomic>
 
 namespace walletsend {
+// Native-only: authenticate prevouts through the original public wallet and
+// verify every finalized input before accepting an external signer's result.
+bool VerifyExternalTransaction(interfaces::Wallet& wallet, const CTransaction& transaction);
 enum class Submission { Unknown, Mempool, Confirmed, NotInMempool, Conflicted, Abandoned };
 enum class Intent { Submit, SignOnly };
 enum class Notice { SweepConsentRequired, CredentialsRequired, Finished, Notes };

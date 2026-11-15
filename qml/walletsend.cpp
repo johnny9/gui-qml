@@ -321,6 +321,11 @@ Result ExecuteSignOnly(interfaces::Wallet& wallet, Request request,
 }
 } // namespace
 
+bool VerifyExternalTransaction(interfaces::Wallet& wallet, const CTransaction& transaction)
+{
+    return VerifiedExternalTransaction(wallet, transaction);
+}
+
 execution::Admission Operation::start(Request request, std::shared_ptr<const walletopening::Session::Action> action)
 {
     {
