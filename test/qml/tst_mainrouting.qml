@@ -398,9 +398,13 @@ TestCase {
         if (data.wallet) compare(findChild(window, "blockClockTabButton").checked, true)
         else tryVerify(function() { return findChild(window, "nodeRunner").visible })
         actions.settings.trigger()
-        tryCompare(original, "visible", true)
-        compare(findChild(window, "settingsView"), original)
-        compare(original.settingsEditor, editor)
+        tryVerify(function() {
+            const page = findChild(window, "settingsView")
+            return page !== null && page.visible
+        })
+        const returned = findChild(window, "settingsView")
+        compare(returned, original)
+        compare(returned.settingsEditor, editor)
         compare(editor.entry("proxy").text, "127.0.0.1:9251")
         compare(editor.dirty, true)
         compare(optionsModel.settingsWritesForTest(), 0)

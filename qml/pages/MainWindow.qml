@@ -485,8 +485,10 @@ ApplicationWindow {
     component NodeShell: PageStack {
         id: nodeStack
         vertical: true
-        readonly property SettingsView settingsView: currentItem as SettingsView
+        property bool settingsInstantiated: false
+        readonly property SettingsView settingsView: nodeSettings.item as SettingsView
         readonly property bool modalNavigationBlocked: settingsView !== null
+            && settingsView.visible
             && (settingsView.settingsNavigationPending
                 || (settingsView.settingsEditor !== null && settingsView.settingsEditor.closeQuestion))
         initialItem: node
@@ -500,8 +502,11 @@ ApplicationWindow {
 
         function openSettings(section) {
             nodeStack.resetToRoot()
-            const page = nodeStack.push(settingsPage, {}, StackView.Immediate)
-            if (section && page) {
+            nodeStack.settingsInstantiated = true
+            const page = nodeStack.settingsView
+            if (page === null) return
+            nodeStack.push(page, {}, StackView.Immediate)
+            if (section) {
                 page.selectSection(section)
             }
         }
@@ -522,6 +527,16 @@ ApplicationWindow {
 
         function openNetworkTraffic() {
             nodeStack.openSettings("network-traffic")
+        }
+        // StackView only hides this externally owned page on pop. The shell
+        // retains its editor/draft, just as the desktop wallet shell does.
+        Loader {
+            id: nodeSettings
+            active: nodeStack.settingsInstantiated
+            visible: false
+            width: nodeStack.width
+            height: nodeStack.height
+            sourceComponent: settingsPage
         }
         Component {
             id: node
