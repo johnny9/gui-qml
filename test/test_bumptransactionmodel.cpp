@@ -8,6 +8,7 @@
 #include <test/mocks/manualexecutionenvironment.h>
 #include <test/mocks/signertransactions.h>
 #include <qml/models/bumptransactionmodel.h>
+#include <wallet/coincontrol.h>
 
 #include <QSignalSpy>
 
@@ -30,6 +31,9 @@ CMutableTransaction ApprovedReplacement()
 void ConfigureBumpableWallet(MockWallet& wallet)
 {
     wallet.transaction_can_be_bumped_fn = [](const Txid&) { return true; };
+    wallet.try_get_tx_status_fn = [](const Txid&, interfaces::WalletTxStatus& status, int&, int64_t&) {
+        status = {}; return true;
+    };
     wallet.get_tx_fn = [](const Txid& txid) { return txid == TEST_ORIGINAL->GetHash() ? TEST_ORIGINAL : CTransactionRef{}; };
     wallet.create_bump_transaction_fn = [](const Txid&, const wallet::CCoinControl&, std::vector<bilingual_str>&,
         CAmount& old_fee, CAmount& new_fee, CMutableTransaction& tx) {
@@ -92,6 +96,56 @@ class BumpTransactionModelTests : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void originalTimingIsPassedToThePublicBumpBuilder_data() {
+        QTest::addColumn<uint32_t>("sequence");
+        QTest::newRow("absolute-lock") << uint32_t{0xfffffffd};
+        QTest::newRow("relative-lock") << uint32_t{17};
+    }
+    void originalTimingIsPassedToThePublicBumpBuilder() {
+        QFETCH(uint32_t, sequence);
+        auto wallet = MakeBumpableWallet();
+        auto transaction = CMutableTransaction{*TEST_ORIGINAL};
+        transaction.version = 3; transaction.nLockTime = 900'000;
+        transaction.vin.front().nSequence = sequence;
+        const auto original = MakeTransactionRef(transaction);
+        wallet->get_tx_fn = [original](const Txid& id) { return id == original->GetHash() ? original : CTransactionRef{}; };
+        bool exact_timing{false};
+        wallet->create_bump_transaction_fn = [original, &exact_timing](const Txid&, const wallet::CCoinControl& control,
+            std::vector<bilingual_str>&, CAmount& old_fee, CAmount& new_fee, CMutableTransaction& candidate) {
+            exact_timing = control.m_version == original->version && control.m_locktime == original->nLockTime;
+            for (const auto& input : original->vin) exact_timing &= control.GetSequence(input.prevout) == input.nSequence;
+            candidate = CMutableTransaction{*original}; candidate.vout.front().nValue -= 100;
+            old_fee = 500; new_fee = 600; return true;
+        };
+        Fixture fixture{wallet};
+        QVERIFY(fixture.model->requestPrepareFeeBump(QString::fromStdString(original->GetHash().GetHex()), 1)); fixture.finish();
+        QCOMPARE(fixture.model->state(), BumpTransactionModel::NeedsConfirmation);
+        QVERIFY(exact_timing);
+    }
+    void abandonedOriginalCannotBeRevivedByTheOldApproval_data() {
+        QTest::addColumn<bool>("during_signing");
+        QTest::newRow("before-signing") << false;
+        QTest::newRow("during-signing") << true;
+    }
+    void abandonedOriginalCannotBeRevivedByTheOldApproval() {
+        QFETCH(bool, during_signing);
+        auto wallet = MakeBumpableWallet(); bool abandoned{false};
+        wallet->try_get_tx_status_fn = [&abandoned](const Txid&, interfaces::WalletTxStatus& status, int&, int64_t&) {
+            status = {}; status.is_abandoned = abandoned; return true;
+        };
+        wallet->sign_bump_transaction_fn = [&abandoned, during_signing](CMutableTransaction&) {
+            if (during_signing) abandoned = true;
+            return true;
+        };
+        wallet->commit_bump_transaction_fn = [](const Txid&, CMutableTransaction&& tx, std::vector<bilingual_str>&, Txid& id) { id = tx.GetHash(); return true; };
+        Fixture fixture{wallet};
+        QVERIFY(fixture.model->requestPrepareFeeBump(TEST_TXID, 1)); fixture.finish();
+        if (!during_signing) abandoned = true;
+        QVERIFY(fixture.model->requestConfirmFeeBump()); fixture.finish();
+        QCOMPARE(wallet->calls.commitBumpTransaction.load(), 0);
+        QCOMPARE(wallet->calls.signBumpTransaction.load(), during_signing ? 1 : 0);
+        QCOMPARE(fixture.model->state(), BumpTransactionModel::NeedsRevalidation);
+    }
     void externalReplacementRequiresVerifiedSignatures_data() {
         QTest::addColumn<bool>("valid");
         QTest::newRow("valid-original-input-signatures") << true;
