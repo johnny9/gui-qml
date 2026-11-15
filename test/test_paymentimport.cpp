@@ -2,6 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <qml/paymentimport.h>
+#include <qml/backendexecutor.h>
+#include <qml/guipresentation.h>
 #include <qml/paymentimportreview.h>
 #include <qml/models/bitcoinurimodel.h>
 #include <qml/psbtwork.h>
@@ -296,6 +298,26 @@ private Q_SLOTS:
         QFile saved{dir.filePath("original.psbt")}; QVERIFY(saved.open(QIODevice::ReadOnly)); QCOMPARE(saved.readAll(), bytes);
         operation->cancel(); QVERIFY(!operation->requestSaveOriginal(operation->exportToken(), dir.filePath("closed")));
         model.closeAdmission(); commands.drain();
+    }
+    void realThreadSourceReadAndDomainDecisionsStayOutsideGui() {
+        BackendExecutor executor;
+        std::atomic<QThread*> native{nullptr}, domain{nullptr};
+        {
+            paymentimport::Snapshot observed;
+            const auto gui = presentation::QueuedPost();
+            paymentimport::Services services; services.scheduler = executor.scheduler();
+            services.read = [&](const auto& input) { native.store(QThread::currentThread()); return paymentimport::ReadSource(input); };
+            auto owner = paymentimport::Owner::Create(73, services, [&](auto snapshot) {
+                domain.store(QThread::currentThread()); gui([&, snapshot = std::move(snapshot)] { observed = snapshot; });
+            });
+            QVERIFY(owner); QVERIFY(owner->inspect({paymentimport::Input::Kind::Text, Uri()}));
+            QTRY_COMPARE(observed.phase, paymentimport::Phase::Inspecting);
+            QVERIFY(native.load()); QVERIFY(domain.load());
+            QVERIFY(native.load() != QThread::currentThread()); QVERIFY(domain.load() != QThread::currentThread());
+            QVERIFY(native.load() != domain.load()); QCOMPARE(observed.inspection->payment.address, Address());
+            owner->close(); QTRY_COMPARE(observed.phase, paymentimport::Phase::Closed); owner.reset();
+        }
+        executor.shutdown(); QTRY_VERIFY(executor.isDrained());
     }
     void realTypedConsumerUsesPublicReviewFactoryAndOriginalView_data() {
         QTest::addColumn<int>("boundary");
