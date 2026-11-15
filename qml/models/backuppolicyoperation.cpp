@@ -18,6 +18,7 @@ struct OperationState {
     std::atomic<Admission> admission{Admission::Open};
     std::atomic_bool started{false};
     std::atomic_bool admitted{false};
+    std::atomic_bool retire_if_confirmation_requested{false};
     std::function<void(Snapshot)> publish;
 
     Decision advance(Event event, const Proposal& proposal = {}, WriteResult result = {})
@@ -51,6 +52,10 @@ struct OperationState {
                     return;
                 }
                 advance(Event::Inspected, proposal);
+                if (current.phase == Phase::AwaitingConfirmation && retire_if_confirmation_requested.load()) {
+                    advance(Event::Retire);
+                    return;
+                }
             }
             if (current.phase == Phase::Ready) {
                 if (services.available && !services.available()) {
@@ -137,6 +142,21 @@ void backup::Operation::retire()
     auto expected = OperationState::Admission::Open;
     if (!state->admission.compare_exchange_strong(expected, OperationState::Admission::Retired)) return;
     execution::Submit(*state->services.scheduler, [state] { state->consume(Event::Retire); }, [] {});
+}
+
+void backup::Operation::retireIfAwaitingConfirmation()
+{
+    const auto state = m_state;
+    if (!state || !state->admitted.load() || !state->services.scheduler) return;
+    state->retire_if_confirmation_requested.store(true);
+    const auto retire_prompt = [state] {
+        if (state->current.phase == Phase::AwaitingConfirmation) state->advance(Event::Retire);
+    };
+    if (state->services.submit) {
+        state->services.submit(retire_prompt);
+    } else {
+        execution::Submit(*state->services.scheduler, retire_prompt, [] {});
+    }
 }
 
 void backup::Operation::failBeforeStart(Error error)

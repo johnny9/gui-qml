@@ -341,6 +341,173 @@ private Q_SLOTS:
         QVERIFY(operation.errorText().contains(QStringLiteral("cancelled"), Qt::CaseInsensitive));
         QCOMPARE(ReadFile(path), original);
     }
+
+    void acceptedContinuationRetiresAtOverwritePrompt_data()
+    {
+        QTest::addColumn<bool>("delete_projection");
+        QTest::newRow("replace-export-projection") << false;
+        QTest::newRow("delete-export-projection") << true;
+    }
+
+    void acceptedContinuationRetiresAtOverwritePrompt()
+    {
+        QFETCH(bool, delete_projection);
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString path = directory.filePath(QStringLiteral("existing.psbt"));
+        const QByteArray original{"preserve the existing reviewed export"};
+        {
+            QFile file{path};
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QCOMPARE(file.write(original), qint64(original.size()));
+        }
+
+        auto deletion = std::make_shared<DeletionState>();
+        auto document = TrackedDocument(deletion);
+        Fixture fixture;
+        std::atomic_int outcomes{0};
+        std::atomic_int terminal_phase{-1};
+        auto services = fixture.services();
+        services.outcome = [&](backup::Snapshot snapshot) {
+            ++outcomes;
+            terminal_phase = static_cast<int>(snapshot.phase);
+        };
+        auto operation = std::make_unique<FileExportOperationModel>(path, document, std::move(services));
+        document.reset();
+        auto request = operation->requestForAcceptedContinuation();
+        QVERIFY(request);
+
+        QVERIFY(operation->start());
+        fixture.execution.drain();
+        fixture.deliverGui();
+        QVERIFY(operation->confirmationRequired());
+        QCOMPARE(ReadFile(path), original);
+        QVERIFY(!deletion->destroyed);
+
+        // Keep GUI delivery stopped while the old accepted export is replaced
+        // or its projection is destroyed. Its operation still owns the
+        // terminal outcome and must retire before any overwrite is admitted.
+        if (delete_projection) operation.reset();
+        else operation->retire();
+        QVERIFY(fixture.execution.step(execution::Lane::Core));
+
+        QCOMPARE(outcomes.load(), 1);
+        QCOMPARE(terminal_phase.load(), static_cast<int>(backup::Phase::Retired));
+        QCOMPARE(ReadFile(path), original);
+        QVERIFY(!deletion->destroyed);
+        QCOMPARE(fixture.execution.queuedCountIf([](const auto& turn) {
+            return turn.lane == execution::Lane::Cleanup && turn.phase == execution::Phase::Queued;
+        }), 1);
+        QVERIFY(fixture.execution.step(execution::Lane::Cleanup));
+        QVERIFY(deletion->destroyed);
+
+        fixture.deliverGui();
+        if (operation) {
+            QVERIFY(!operation->pending());
+            QVERIFY(operation->errorText().contains(QStringLiteral("ended before"), Qt::CaseInsensitive));
+        }
+        fixture.execution.drain();
+        request.reset();
+        QVERIFY(fixture.execution.quiescent());
+    }
+
+    void acceptedFreshContinuationSurvivesRetirementBeforeInspection_data()
+    {
+        QTest::addColumn<bool>("delete_projection");
+        QTest::newRow("replace-export-projection") << false;
+        QTest::newRow("delete-export-projection") << true;
+    }
+
+    void acceptedFreshContinuationSurvivesRetirementBeforeInspection()
+    {
+        QFETCH(bool, delete_projection);
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString path = directory.filePath(QStringLiteral("new.psbt"));
+        const auto document = std::make_shared<const PartiallySignedTransaction>(psbtfeefixture::Legacy(2, false));
+        const auto expected = psbtwork::SerializeRaw(*document);
+        QVERIFY(!expected.isEmpty());
+
+        Fixture fixture;
+        std::atomic_int outcomes{0};
+        std::atomic_int terminal_phase{-1};
+        auto services = fixture.services();
+        services.outcome = [&](backup::Snapshot snapshot) {
+            ++outcomes;
+            terminal_phase = static_cast<int>(snapshot.phase);
+        };
+        auto operation = std::make_unique<FileExportOperationModel>(path, document, std::move(services));
+        auto request = operation->requestForAcceptedContinuation();
+        QVERIFY(request);
+        QVERIFY(operation->start());
+
+        // Retire after start() returned, before the Native inspect turn. A
+        // fresh path is the accepted Save effect and must not be cancelled by
+        // loss of its presentation.
+        if (delete_projection) operation.reset();
+        else operation->retire();
+        fixture.execution.drain();
+
+        QCOMPARE(outcomes.load(), 1);
+        QCOMPARE(terminal_phase.load(), static_cast<int>(backup::Phase::Succeeded));
+        QCOMPARE(ReadFile(path), expected);
+        fixture.deliverGui();
+        if (operation) {
+            QVERIFY(!operation->pending());
+            QVERIFY(operation->saved());
+        }
+        request.reset();
+        QVERIFY(fixture.execution.quiescent());
+    }
+
+    void retirementDuringInspectionUsesTheInspectedDestinationPolicy_data()
+    {
+        QTest::addColumn<bool>("existing_destination");
+        QTest::newRow("fresh-destination-keeps-accepted-write") << false;
+        QTest::newRow("existing-destination-retires-without-write") << true;
+    }
+
+    void retirementDuringInspectionUsesTheInspectedDestinationPolicy()
+    {
+        QFETCH(bool, existing_destination);
+        Fixture fixture;
+        std::atomic_int writes{0};
+        std::atomic_int outcomes{0};
+        std::atomic_int terminal_phase{-1};
+        BackupFileOperation* projection{};
+        auto services = fixture.services();
+        services.wallet_name = [] { return std::string{"transaction"}; };
+        services.inspect = [&](const std::string& raw, const std::string&) {
+            backup::Proposal proposal;
+            proposal.path = raw;
+            proposal.exists = existing_destination;
+            // Models a projection close after inspection has established the
+            // proposal but before the state machine admits its next effect.
+            projection->backend()->retireIfAwaitingConfirmation();
+            return proposal;
+        };
+        services.write = [&](const backup::Proposal&, bool) {
+            ++writes;
+            return backup::WriteResult{};
+        };
+        services.outcome = [&](backup::Snapshot snapshot) {
+            ++outcomes;
+            terminal_phase = static_cast<int>(snapshot.phase);
+        };
+        BackupFileOperation operation{QStringLiteral("captured.psbt"), std::move(services)};
+        projection = &operation;
+        QVERIFY(operation.start());
+        fixture.execution.drain();
+
+        QCOMPARE(outcomes.load(), 1);
+        QCOMPARE(terminal_phase.load(), static_cast<int>(existing_destination
+            ? backup::Phase::Retired : backup::Phase::Succeeded));
+        QCOMPARE(writes.load(), existing_destination ? 0 : 1);
+        fixture.deliverGui();
+        QCOMPARE(operation.phase(), existing_destination
+            ? BackupFileOperation::Phase::Retired : BackupFileOperation::Phase::Succeeded);
+        QVERIFY(fixture.execution.quiescent());
+    }
 };
 
 BITCOINQML_REGISTER_QT_TEST(FileExportOperationTests)

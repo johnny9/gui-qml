@@ -48,6 +48,8 @@ public:
     bool approve();
     bool refuse();
     void retire();
+    /** Retire an accepted continuation only if destination inspection requires confirmation. */
+    void retireIfAwaitingConfirmation();
     void failBeforeStart(Error error);
     void abandonBeforeStart();
 
