@@ -338,9 +338,31 @@ private Q_SLOTS:
     void stopBeforeProbeNativeTurnRetiresWithoutLookupOrPrimary()
     {
         ManualRoutedExecution commands; auto owner = NewOwner(commands.scheduler); auto service = Service::Create(commands.scheduler, owner); QVERIFY(service);
-        auto probed = Probe(service, QStringLiteral("/unused-profile"), {Request(1)}); auto retired = Stop(service);
+        auto probed = Probe(service, QStringLiteral("/unused-profile"), {Request(1)});
+        QVERIFY(!service->start(QStringLiteral("/later-profile"), QStringLiteral("regtest"), {}, {}));
+        QVERIFY(!service->probeExisting(QStringLiteral("/unused-profile"), QStringLiteral("regtest"), {}, {}));
+        auto retired = Stop(service);
         commands.drain(); QVERIFY(Ready(probed)); QVERIFY(probed.get().status == ProbeStatus::Rejected); QVERIFY(Ready(retired)); QVERIFY(service->retired());
         owner.reset(); commands.drain(); QCOMPARE(commands.scheduler->pending(), size_t{0});
+    }
+    void expiredProbeClockCannotForwardOrGrantPrimary_data()
+    {
+        QTest::addColumn<bool>("rollback"); QTest::newRow("expired") << false; QTest::newRow("rollback") << true;
+    }
+    void expiredProbeClockCannotForwardOrGrantPrimary()
+    {
+        QFETCH(bool, rollback);
+        BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()};
+        auto primary_owner = NewOwner(primary_executor.scheduler()), secondary_owner = NewOwner(secondary_executor.scheduler());
+        Limits limits; auto calls = std::make_shared<std::atomic_size_t>(0);
+        limits.now = [calls, rollback] { return Limits::Time{((*calls)++ == 0 ? 100ms : (rollback ? 0ms : 6000ms))}; };
+        auto primary = Service::Create(primary_executor.scheduler(), primary_owner), secondary = Service::Create(secondary_executor.scheduler(), secondary_owner, limits);
+        const auto cleanup = qScopeGuard([&] { primary->stop(); secondary->stop(); primary_owner.reset(); secondary_owner.reset(); Shutdown(primary_executor); Shutdown(secondary_executor); });
+        QTemporaryDir directory; QVERIFY(directory.isValid()); auto listening = Start(primary, directory.path()); QVERIFY(Ready(listening)); QVERIFY(listening.get().status == StartStatus::Primary);
+        auto probed = Probe(secondary, directory.path(), {Request(1)}); QVERIFY(Ready(probed)); QVERIFY(probed.get().status == ProbeStatus::Rejected);
+        auto unadmitted = Lookup(primary_owner, QStringLiteral("1")); QVERIFY(Ready(unadmitted)); QVERIFY(!unadmitted.get());
+        auto unchanged = Lookup(secondary_owner, QStringLiteral("1")); QVERIFY(Ready(unchanged)); QVERIFY(!unchanged.get());
+        QVERIFY(!secondary->start(directory.filePath(QStringLiteral("successor")), QStringLiteral("regtest"), {Request(1)}, {}));
     }
 };
 BITCOINQML_REGISTER_QT_TEST(DesktopIntentTransportTests)

@@ -399,8 +399,10 @@ struct Service::State::Native final : QObject {
             if (state->flags->admission_closed) return Rejected(QStringLiteral("Payment delivery is closing."));
             if (NormalizeProfile(directory) != canonical) return Rejected(QStringLiteral("The payment-request data directory changed during lookup."));
             const auto began = state->limits.now();
+            const auto remaining = Remaining(state->limits, began, state->limits.startup, static_cast<int>(state->limits.connect.count()));
+            if (!remaining) return Rejected(QStringLiteral("The payment-delivery lookup expired."));
             QLocalSocket probe; probe.connectToServer(endpoint);
-            const bool connected = probe.waitForConnected(Remaining(state->limits, began, state->limits.startup, static_cast<int>(state->limits.connect.count())));
+            const bool connected = probe.waitForConnected(remaining);
             if (!connected) {
                 if (probe.error() == QLocalSocket::ServerNotFoundError || probe.error() == QLocalSocket::ConnectionRefusedError)
                     return {StartResult{}, {}, true};
