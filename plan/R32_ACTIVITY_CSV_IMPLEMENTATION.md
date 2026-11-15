@@ -1,6 +1,7 @@
 # R32 Activity filtering and CSV ownership
 
-Focused runtime is pending. Core remains pinned and unchanged. This slice builds
+Focused ordinary acceptance and shared-file-policy composition passed. Core remains
+pinned and unchanged. This slice builds
 on accepted main0224 (including R31 and R24's Activity-only delegate reuse
 workaround), and preserves its original opening, source and retirement fences.
 
@@ -35,3 +36,5 @@ sanitizers remain pending R42. Original source findings and all preflight failur
 are retained under `.validation/qt6-r11-r40-20261114/R32/`.
 
 The native chooser now starts from a model-owned capture token. It retains the original immutable source and unit before path selection, without reserving a mutation scope during the chooser wait. Source retirement cancels only its exact token; stale completions cannot consume a successor, and an existing root admission fence still refuses a new write. Four deterministic public-command schedules cover filter/unit changes, source replacement, root closure, and reentrant source cancellation.
+
+Rejected starts and proven pre-write retirement release the original reserved source alias independently of retained failure/confirmation views. Reserved Native Cleanup frees the original value; an admitted write retains its source through the actual Native outcome. Constructor reentry and ownership refusal have exact public-command controls. See [the focused checkpoint](R32_FOCUSED_CHECKPOINT.md) and [scope map](R32_SCOPE_MAP.json) for actual source/count/carry distinctions.
