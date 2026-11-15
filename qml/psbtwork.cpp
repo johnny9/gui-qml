@@ -3,6 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/psbtwork.h>
+#include <qml/psbtdocument.h>
+#include <qml/psbtsignatures.h>
 #include <qml/models/signertransaction.h>
 #include <qml/models/transactionflow.h>
 #include <qml/flowpresentation.h>
@@ -23,7 +25,9 @@
 #include <QSaveFile>
 #include <QUrl>
 #include <algorithm>
+#include <limits>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -211,25 +215,9 @@ std::optional<std::pair<int, int>> psbtwork::Multisig(const PartiallySignedTrans
 
 namespace psbtwork {
 namespace {
-QStringList Summary(const PartiallySignedTransaction& document, const psbtfee::Analysis& fee, interfaces::Wallet* wallet)
+int SummaryTailCount(const SummarySource& source)
 {
-    QStringList lines;
-    const auto tx = document.GetUnsignedTx();
-    if (!tx) return {Tr("PSBT does not contain an unsigned transaction.")};
-    if (fee.state == psbtfee::State::Invalid) return {Tr("The transaction fee is missing or invalid."), Tr("Transaction fee is not available.")};
-    for (const auto& output : tx->vout) {
-        CTxDestination destination;
-        const auto address = ExtractDestination(output.scriptPubKey, destination) ? QString::fromStdString(EncodeDestination(destination)) : Tr("unknown destination");
-        const bool owned = wallet && wallet->txoutIsMine(output);
-        lines << Tr("Sends %1 to %2%3").arg(FormatBtc(output.nValue), address, owned ? QStringLiteral(" ") + Tr("(own address)") : QString{});
-    }
-    const auto analysis = node::AnalyzePSBT(document);
-    if (!analysis.error.empty()) lines << Tr("Analysis: %1").arg(QString::fromStdString(analysis.error));
-    lines << (fee.amount ? Tr("Pays transaction fee: %1").arg(FormatBtc(*fee.amount)) : Tr("Transaction fee is not available."));
-    lines << Tr("Total output amount: %1").arg(FormatBtc(fee.output_total));
-    const auto unsigned_inputs = CountPSBTUnsignedInputs(document);
-    if (unsigned_inputs) lines << Tr("Unsigned inputs: %1").arg(unsigned_inputs);
-    return lines;
+    return 2 + (source.analysis_error.isEmpty() ? 0 : 1) + (source.unsigned_inputs ? 1 : 0);
 }
 std::shared_ptr<const Snapshot> Inspect(interfaces::Wallet* wallet, std::shared_ptr<const PartiallySignedTransaction> source,
                                       std::shared_ptr<const psbtfee::Analysis> seed, const Context& context, const QString& status = {},
@@ -282,23 +270,112 @@ std::shared_ptr<const Snapshot> Inspect(interfaces::Wallet* wallet, std::shared_
     snapshot->complete = complete;
     snapshot->could_sign = could_sign;
     snapshot->unsigned_inputs = CountPSBTUnsignedInputs(candidate);
-    const bool signer = wallet && (!wallet->privateKeysDisabled() || wallet->hasExternalSigner());
+    snapshot->facts = {wallet != nullptr, wallet && (!wallet->privateKeysDisabled() || wallet->hasExternalSigner()), status};
     if (snapshot->error.isEmpty()) snapshot->error = fill_error ? ErrorText(*fill_error)
         : !snapshot->proof->amount ? Tr("The transaction fee is missing or invalid.") : QString{};
-    const bool authorized = !snapshot->metadata_failed && snapshot->proof->amount.has_value();
-    snapshot->can_sign = authorized && !complete && signer && could_sign > 0;
-    snapshot->can_broadcast = authorized && complete;
-    snapshot->summary = Summary(candidate, *snapshot->proof, wallet);
-    if (!authorized) snapshot->status = snapshot->error;
-    else if (!status.isEmpty()) snapshot->status = status;
-    else if (complete) snapshot->status = Tr("Transaction is fully signed and ready for broadcast.");
-    else if (!wallet) snapshot->status = Tr("No wallet is loaded. You can inspect, copy, or save this PSBT.");
-    else if (!signer) snapshot->status = Tr("This wallet cannot sign transactions because private keys are disabled.");
-    else if (could_sign) snapshot->status = Tr("This wallet can sign %n input(s).", nullptr, could_sign);
-    else snapshot->status = Tr("This wallet does not have the right keys to sign this PSBT.");
-    if (assessment) *assessment = std::make_shared<const PartiallySignedTransaction>(std::move(candidate));
+    snapshot->assessment = std::make_shared<const PartiallySignedTransaction>(std::move(candidate));
+    snapshot->summary_source = CaptureSummarySource(snapshot->assessment, snapshot->proof, wallet);
+    snapshot->summary_count = snapshot->summary_source->row_count;
+    snapshot->initial_summary_page = ProjectSummaryPage(snapshot->summary_source, 0, 128);
+    psbtdocument::Qualify(*snapshot);
+    if (assessment) *assessment = snapshot->assessment;
     return snapshot;
 }
+}
+
+std::shared_ptr<const SummarySource> CaptureSummarySource(
+    std::shared_ptr<const PartiallySignedTransaction> assessment,
+    std::shared_ptr<const psbtfee::Analysis> proof,
+    interfaces::Wallet* wallet)
+{
+    auto source = std::make_shared<SummarySource>();
+    source->assessment = std::move(assessment);
+    source->proof = std::move(proof);
+    const auto transaction = source->assessment ? source->assessment->GetUnsignedTx() : std::nullopt;
+    if (!transaction) {
+        source->kind = SummarySource::Kind::MissingTransaction;
+        source->row_count = 1;
+        return source;
+    }
+    if (!source->proof || source->proof->state == psbtfee::State::Invalid) {
+        source->kind = SummarySource::Kind::InvalidFee;
+        source->row_count = 2;
+        return source;
+    }
+    if (transaction->vout.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        throw std::length_error{"PSBT output count exceeds summary indexing range"};
+    }
+    source->kind = SummarySource::Kind::Transaction;
+    source->owned_outputs.resize(static_cast<int>(transaction->vout.size()));
+    for (int index{0}; index < source->owned_outputs.size(); ++index) {
+        source->owned_outputs.setBit(index, wallet && wallet->txoutIsMine(transaction->vout[static_cast<size_t>(index)]));
+    }
+    const auto analysis = node::AnalyzePSBT(*source->assessment);
+    if (!analysis.error.empty()) source->analysis_error = QString::fromStdString(analysis.error);
+    source->unsigned_inputs = CountPSBTUnsignedInputs(*source->assessment);
+    source->row_count = source->owned_outputs.size() + SummaryTailCount(*source);
+    return source;
+}
+
+SummaryPage ProjectSummaryPage(std::shared_ptr<const SummarySource> source, int offset, int count,
+                               quint64 generation, quint64 request)
+{
+    SummaryPage page;
+    page.generation = generation;
+    page.request = request;
+    page.offset = offset;
+    if (!source || offset < 0 || count < 1) {
+        page.error = Tr("The PSBT summary page request is invalid.");
+        return page;
+    }
+    page.total = source->row_count;
+    const int bounded_count = std::min(count, 128);
+    const int end = static_cast<int>(std::min<int64_t>(source->row_count, int64_t{offset} + bounded_count));
+    page.rows.reserve(std::max(0, end - offset));
+    if (source->kind == SummarySource::Kind::MissingTransaction) {
+        for (int row{offset}; row < end; ++row) page.rows << Tr("PSBT does not contain an unsigned transaction.");
+        return page;
+    }
+    if (source->kind == SummarySource::Kind::InvalidFee) {
+        for (int row{offset}; row < end; ++row) {
+            if (row == 0) page.rows << Tr("The transaction fee is missing or invalid.");
+            else if (row == 1) page.rows << Tr("Transaction fee is not available.");
+        }
+        return page;
+    }
+
+    const auto transaction = source->assessment ? source->assessment->GetUnsignedTx() : std::nullopt;
+    if (!transaction || !source->proof) {
+        page.error = Tr("The PSBT summary source is incomplete.");
+        return page;
+    }
+    const auto output_count = static_cast<int>(transaction->vout.size());
+    for (int row{offset}; row < end; ++row) {
+        if (row < output_count) {
+            const auto& output = transaction->vout[static_cast<size_t>(row)];
+            CTxDestination destination;
+            const auto address = ExtractDestination(output.scriptPubKey, destination)
+                ? QString::fromStdString(EncodeDestination(destination)) : Tr("unknown destination");
+            const auto owned = source->owned_outputs.testBit(row)
+                ? QStringLiteral(" ") + Tr("(own address)") : QString{};
+            page.rows << Tr("Sends %1 to %2%3").arg(FormatBtc(output.nValue), address, owned);
+            continue;
+        }
+        int tail = row - output_count;
+        if (!source->analysis_error.isEmpty()) {
+            if (tail == 0) {
+                page.rows << Tr("Analysis: %1").arg(source->analysis_error);
+                continue;
+            }
+            --tail;
+        }
+        if (tail == 0) page.rows << (source->proof->amount
+            ? Tr("Pays transaction fee: %1").arg(FormatBtc(*source->proof->amount))
+            : Tr("Transaction fee is not available."));
+        else if (tail == 1) page.rows << Tr("Total output amount: %1").arg(FormatBtc(source->proof->output_total));
+        else if (tail == 2 && source->unsigned_inputs) page.rows << Tr("Unsigned inputs: %1").arg(source->unsigned_inputs);
+    }
+    return page;
 }
 
 Broadcast NodeBroadcast(interfaces::Node* node)
@@ -384,6 +461,11 @@ Result Execute(interfaces::Wallet* wallet, Request request, const Context& conte
                 result.code = Error::Fee; result.error = Tr("The transaction fee changed after review."); return finish();
             }
             complete = FinalizePSBT(candidate);
+            if (!psbtsignatures::VerifyFinalizedInputs(candidate, complete)) {
+                result.code = Error::Invalid;
+                result.error = Tr("The signer returned invalid signatures for the reviewed transaction.");
+                return finish();
+            }
             request.document = std::make_shared<const PartiallySignedTransaction>(std::move(candidate));
             // Retain legitimate partial signatures even when the signer reports
             // an error or a later presentation read fails. Never adopt changed
@@ -425,6 +507,9 @@ Result Execute(interfaces::Wallet* wallet, Request request, const Context& conte
                 result.code = Error::Changed; result.error = Tr("The transaction fee or reviewed transaction changed after review."); return finish();
             }
             const auto transaction = MakeTransactionRef(std::move(tx));
+            if (!psbtsignatures::VerifyFinalizedInputs(candidate, true)) {
+                result.code = Error::Invalid; result.error = Tr("The PSBT contains invalid signatures."); return finish();
+            }
             result.txid = QString::fromStdString(transaction->GetHash().ToString());
             const auto submitted = context.broadcast(transaction);
             result.submitted = submitted.accepted;
@@ -548,8 +633,14 @@ ImportResult PrepareReview(interfaces::Wallet& wallet, std::shared_ptr<const Par
         if (!original || original->vin.empty() || original->vout.empty() || document->inputs.size() != original->vin.size() || document->outputs.size() != original->vout.size()) {
             result.message = Tr("The PSBT is malformed."); return result;
         }
-        result.txid = QString::fromStdString(original->GetHash().ToString());
-        if (wallet.getTx(original->GetHash())) { result.disposition = ImportResult::Disposition::Known; return result; }
+        // Legacy scriptSig data changes the final transaction identity. Inspect
+        // a copy so the known-status query cannot finalize the imported value.
+        auto identity_document = *document;
+        CMutableTransaction finalized;
+        const auto identity = FinalizeAndExtractPSBT(identity_document, finalized)
+            ? finalized.GetHash() : original->GetHash();
+        result.txid = QString::fromStdString(identity.ToString());
+        if (wallet.getTx(identity)) { result.disposition = ImportResult::Disposition::Known; return result; }
         std::shared_ptr<const PartiallySignedTransaction> assessment;
         const auto snapshot = Inspect(&wallet, document, {}, context, {}, &assessment);
         if (!snapshot->document || !assessment || !snapshot->proof || !snapshot->proof->outputs_valid) {
@@ -560,13 +651,18 @@ ImportResult PrepareReview(interfaces::Wallet& wallet, std::shared_ptr<const Par
         if (snapshot->metadata_failed) { result.message = snapshot->error; return result; }
         const auto tx = assessment->GetUnsignedTx();
         if (!tx || !MatchesUnsignedTransaction(*original, *tx)) { result.message = Tr("The wallet changed the reviewed transaction."); return result; }
+        auto completed_assessment = *assessment;
+        if (FinalizeAndExtractPSBT(completed_assessment, finalized) && finalized.GetHash() != identity) {
+            result.txid = QString::fromStdString(finalized.GetHash().ToString());
+            if (wallet.getTx(finalized.GetHash())) { result.disposition = ImportResult::Disposition::Known; return result; }
+        }
         const bool owned_inputs = std::all_of(tx->vin.begin(), tx->vin.end(), [&](const CTxIn& input) { return wallet.txinIsMine(input); });
         std::optional<std::pair<int, int>> multisig;
         if (!snapshot->complete) for (size_t i = 0; i < assessment->inputs.size(); ++i) if ((multisig = Multisig(*assessment, i))) break;
         const bool signer = !wallet.privateKeysDisabled() || wallet.hasExternalSigner();
         result.key_can_send = !multisig && owned_inputs && signer && snapshot->unsigned_inputs > 0 && snapshot->could_sign >= snapshot->unsigned_inputs;
         result.can_commit_complete = !multisig && owned_inputs;
-        result.key_can_broadcast = snapshot->complete;
+        result.key_can_broadcast = snapshot->can_broadcast;
         const bool may_send = result.can_commit_complete && (snapshot->complete || result.key_can_send);
         auto review = std::make_shared<walletreview::Snapshot>();
         review->transaction = MakeTransactionRef(*tx);
@@ -580,11 +676,13 @@ ImportResult PrepareReview(interfaces::Wallet& wallet, std::shared_ptr<const Par
                 if (output.nValue == 0 && output.scriptPubKey.IsUnspendable()) continue;
                 result.message = Tr("Only PSBTs with standard address outputs are supported right now."); return result;
             }
-            if (may_send && wallet.txoutIsMine(output)) continue;
+            // Imported documents do not provide authoritative change intent.
+            // Ownership alone cannot distinguish a self-transfer recipient
+            // from change, and signing capability must not alter the review.
             const auto address = QString::fromStdString(EncodeDestination(destination));
             std::string label;
             wallet.getAddress(destination, &label, nullptr);
-            if (!MoneyRange(output.nValue) || !MoneyRange(review->amount + output.nValue)) { result.message = Tr("The PSBT contains invalid amounts."); return result; }
+            if (!MoneyRange(output.nValue) || output.nValue > MAX_MONEY - review->amount) { result.message = Tr("The PSBT contains invalid amounts."); return result; }
             review->amount += output.nValue;
             review->recipients.append({address, QString::fromStdString(label), output.nValue, false});
             review->destinations.insert(address);
@@ -595,6 +693,14 @@ ImportResult PrepareReview(interfaces::Wallet& wallet, std::shared_ptr<const Par
         if (review->amount <= 0) { result.message = Tr("The PSBT does not send a positive amount."); return result; }
         review->presentation = walletreview::FormatRecipients(review->recipients, display_unit);
         review->flow = CollectReviewFlow(wallet, review->transaction, assessment, snapshot->proof, review->destinations, display_unit, review->notes);
+        auto output_rows = review->flow.value(QStringLiteral("outputs")).toList();
+        for (auto& value : output_rows) {
+            auto row = value.toMap();
+            row.insert(QStringLiteral("changeKnown"), false);
+            value = row;
+        }
+        review->flow.insert(QStringLiteral("outputs"), output_rows);
+        review->flow.insert(QStringLiteral("presentation"), PrepareTransactionFlowPresentation(review->flow));
         if (!snapshot->proof->amount) result.message = Tr("The transaction fee is missing or invalid. Add valid input information before broadcasting.");
         else if (multisig) result.message = Tr("This transaction requires %1 of %2 signatures.").arg(multisig->first).arg(multisig->second);
         else if (!review->can_send && !snapshot->complete) result.message = Tr("This wallet does not have the keys to sign this transaction.");
