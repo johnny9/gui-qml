@@ -47,7 +47,7 @@ struct Node {
     SharedRow row;
     Tree left, right;
     int height{1}, size{1};
-    Measure own, total;
+    Measure own{}, total{};
 };
 inline int Size(const Tree& tree) { return tree ? tree->size : 0; }
 inline int Height(const Tree& tree) { return tree ? tree->height : 0; }
