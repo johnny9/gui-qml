@@ -22,10 +22,8 @@
 #include <univalue.h>
 #include <util/fs.h>
 #include <util/fs_helpers.h>
-#ifdef ENABLE_WALLET
-#include <wallet/db.h>
-#endif
 
+#include <QCoreApplication>
 #include <QFileInfo>
 #include <QScopeGuard>
 
@@ -34,6 +32,19 @@
 #include <string>
 #include <system_error>
 #include <utility>
+
+namespace QmlOnboardingSettings {
+struct ProfileRecovery {
+    fs::path target;
+    std::map<std::string, common::SettingsValue> expected;
+    DataDirSelection directory;
+    UiPreferencesNamespace settings_namespace;
+    QmlLegacySettings::MigrationResult migration;
+    std::shared_ptr<QmlLegacySettings::DirectoryCleanup> directory_cleanup;
+    bool persist_directory{false};
+    bool reset{false};
+};
+}
 
 namespace {
 constexpr const char* QML_ONBOARDED_KEY{"qml_onboarded"};
@@ -48,6 +59,7 @@ QmlOnboardingSettings::DataDirSource ToOnboardingDataDirSource(QmlDataDir::GuiDa
     switch (source) {
     case QmlDataDir::GuiDataDirSource::Settings:
         return QmlOnboardingSettings::DataDirSource::GuiSetting;
+    case QmlDataDir::GuiDataDirSource::Invalid: return QmlOnboardingSettings::DataDirSource::Default;
     case QmlDataDir::GuiDataDirSource::LegacySettings:
         return QmlOnboardingSettings::DataDirSource::LegacyGuiSetting;
     case QmlDataDir::GuiDataDirSource::Default:
@@ -118,15 +130,23 @@ bool ReadPreviewSettings(ArgsManager& args, std::vector<std::string>& errors)
 
 bool ReadConfigAndSelectNetwork(ArgsManager& args, QString* error)
 {
-    std::string config_error;
-    if (!args.ReadConfigFiles(config_error, true)) {
-        if (error) *error = QString::fromStdString(config_error);
-        return false;
-    }
     try {
+        if (!CheckDataDirOption(args)) {
+            if (error) *error=QCoreApplication::translate("Onboarding","Specified data directory \"%1\" does not exist.").arg(QString::fromStdString(args.GetArg("-datadir","")));
+            return false;
+        }
+        std::string config_error;
+        if (!args.ReadConfigFiles(config_error, true)) {
+            if (error) *error=QString::fromStdString(config_error);
+            return false;
+        }
+        if (!CheckDataDirOption(args)) {
+            if (error) *error=QCoreApplication::translate("Onboarding","Specified data directory \"%1\" does not exist.").arg(QString::fromStdString(args.GetArg("-datadir","")));
+            return false;
+        }
         args.SelectConfigNetwork(args.GetChainTypeString());
     } catch (const std::exception& e) {
-        if (error) *error = QString::fromStdString(e.what());
+        if (error) *error=QString::fromUtf8(e.what());
         return false;
     }
     if (error) error->clear();
@@ -226,15 +246,26 @@ std::optional<fs::path> EffectiveWalletDirNoCreate(const ArgsManager& args)
     return wallet_dir;
 }
 
-bool HasExistingWalletData(const ArgsManager& args)
+profileinspection::Result ExistingWalletData(const ArgsManager& args, const profileinspection::Port& inspect,
+                                            const profileinspection::Cancellation& cancelled)
 {
     const std::optional<fs::path> wallet_dir{EffectiveWalletDirNoCreate(args)};
-    return wallet_dir && !wallet::ListDatabases(*wallet_dir).empty();
+    if (!wallet_dir) {
+        profileinspection::Result result;
+        result.outcome = profileinspection::Outcome::Succeeded;
+        return result;
+    }
+    profileinspection::Request request{QString::fromStdString(fs::PathToString(*wallet_dir)), args.GetChainType(), {}};
+    if (request.network == ChainType::SIGNET) {
+        if (const auto challenge = args.GetArg("-signetchallenge")) request.signet_challenge = QString::fromStdString(*challenge);
+    }
+    return inspect ? inspect(request, cancelled) : profileinspection::Run(request, cancelled);
 }
 
 #endif // ENABLE_WALLET
 
-QmlOnboardingSettings::ProfileSummary BuildProfileSummary(const ArgsManager& args, bool config_file_path_available)
+std::optional<QmlOnboardingSettings::ProfileSummary> BuildProfileSummary(const ArgsManager& args, bool config_file_path_available,
+    const profileinspection::Port& inspect, const profileinspection::Cancellation& cancelled, QString& error)
 {
     QmlOnboardingSettings::ProfileSummary summary;
     const auto settings_path = PreviewSettingsPath(args);
@@ -242,7 +273,16 @@ QmlOnboardingSettings::ProfileSummary BuildProfileSummary(const ArgsManager& arg
     summary.has_config_file = config_file_path_available && PathExists(args.GetConfigFilePath());
     summary.has_chain_data = HasExistingChainData(args);
 #ifdef ENABLE_WALLET
-    summary.has_wallet_data = HasExistingWalletData(args);
+    const auto wallet = ExistingWalletData(args, inspect, cancelled);
+    if (wallet.outcome != profileinspection::Outcome::Succeeded) {
+        error = wallet.error.isEmpty() ? QStringLiteral("The wallet directory could not be checked. Retry the profile check.") : wallet.error;
+        return {};
+    }
+    summary.has_wallet_data = wallet.has_wallet_data;
+#else
+    Q_UNUSED(inspect);
+    Q_UNUSED(cancelled);
+    Q_UNUSED(error);
 #endif
     summary.existing_profile = summary.has_settings_file ||
                                summary.has_config_file ||
@@ -281,6 +321,24 @@ std::optional<bool> CommandLineBoolArg(ArgsManager& args, const std::string& nam
     return value;
 }
 
+QString CheckIntent(ArgsManager& args, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, bool accept_redownload)
+{
+    effectivesettings::Batch batch;batch.accept_redownload=accept_redownload;
+    for(const auto key:{effectivesettings::Key::Listen,effectivesettings::Key::Natpmp,effectivesettings::Key::Server,effectivesettings::Key::Prune,effectivesettings::Key::Proxy,effectivesettings::Key::Onion}){
+        const auto name=effectivesettings::Name(key);if(!touched_settings.contains(name))continue;
+        effectivesettings::Value value;
+        if(key==effectivesettings::Key::Listen)value=values.listen;
+        else if(key==effectivesettings::Key::Natpmp)value=values.natpmp;
+        else if(key==effectivesettings::Key::Server)value=values.server;
+        else if(key==effectivesettings::Key::Prune)value=SettingTo<int64_t>(QmlCoreSettings::PruneSetting(values)).value_or(0);
+        else if(key==effectivesettings::Key::Proxy)value=values.proxy_enabled?values.proxy_address:QStringLiteral("0");
+        else value=values.tor_enabled?values.tor_address:QStringLiteral("0");
+        batch.edits.push_back({key,std::move(value)});
+    }
+    const auto checked=effectivesettings::ReviewStaged(args,batch);
+    return checked.valid ? QString{} : checked.error;
+}
+
 } // namespace
 
 namespace QmlOnboardingSettings {
@@ -295,7 +353,7 @@ bool PrepareArgs(ArgsManager& args, const std::vector<std::string>& argv, bool c
     return args.ParseParameters(static_cast<int>(raw_argv.size()), raw_argv.data(), error);
 }
 
-OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::string>& argv, bool can_listen_ipc)
+OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::string>& argv, bool can_listen_ipc, const UiPreferencesNamespace* identity)
 {
     OnboardingStartupStatus status;
 
@@ -322,7 +380,8 @@ OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::st
         status.active_data_dir = QmlDataDir::DefaultDataDirString();
         status.data_dir_source = DataDirSource::Default;
     } else {
-        const QmlDataDir::GuiDataDir gui_data_dir = QmlDataDir::ReadGuiDataDirWithSource();
+        const QmlDataDir::GuiDataDir gui_data_dir = QmlDataDir::ReadGuiDataDirWithSource(identity);
+        if (!gui_data_dir.error.isEmpty()) { status.error = gui_data_dir.error; return status; }
         status.active_data_dir = gui_data_dir.path;
         status.data_dir_source = ToOnboardingDataDirSource(gui_data_dir.source);
     }
@@ -332,7 +391,7 @@ OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::st
 
     const bool apply_datadir_before_config = ShouldApplyDataDirBeforeConfig(status.data_dir_source, explicit_datadir, status.active_data_dir);
     const bool custom_datadir_exists = apply_datadir_before_config && QFileInfo::exists(status.active_data_dir);
-    const bool can_read_profile = !apply_datadir_before_config || custom_datadir_exists;
+    const bool can_read_profile = explicit_datadir || !apply_datadir_before_config || custom_datadir_exists;
     if (custom_datadir_exists) {
         QmlDataDir::ApplyDataDirArg(preview_args, status.active_data_dir);
     }
@@ -351,6 +410,10 @@ OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::st
             }
         }
     } else {
+        if (status.data_dir_source == DataDirSource::GuiSetting || status.data_dir_source == DataDirSource::LegacyGuiSetting) {
+            status.error = QCoreApplication::translate("Onboarding", "The saved data directory is unavailable: %1. Reconnect the drive or restore this directory, then retry startup. The saved selection has been retained.").arg(status.active_data_dir);
+            return status;
+        }
         try {
             CreateChainParams(preview_args, preview_args.GetChainType());
             preview_args.SelectConfigNetwork(preview_args.GetChainTypeString());
@@ -395,9 +458,14 @@ OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::st
     return status;
 }
 
-PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const DataDirSelection& data_dir_selection)
+PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const DataDirSelection& data_dir_selection, const ApplyRequest* intent,
+                      const profileinspection::Port& inspect, const profileinspection::Cancellation& cancelled)
 {
     PreviewResult result;
+    if (cancelled && cancelled->load()) {
+        result.error = QStringLiteral("The original profile check was cancelled.");
+        return result;
+    }
 
     const QString data_dir = NormalizedDataDirPath(data_dir_selection);
     const QString validation_error = QmlDataDir::ValidateCustomDataDir(data_dir);
@@ -428,12 +496,8 @@ PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc,
         QmlDataDir::ApplyDataDirArg(preview_args, data_dir);
     }
 
-    if (!apply_datadir_before_config || custom_datadir_exists) {
-        std::string config_error;
-        if (!preview_args.ReadConfigFiles(config_error, true)) {
-            result.error = QString::fromStdString(config_error);
-            return result;
-        }
+    if (explicit_datadir || !apply_datadir_before_config || custom_datadir_exists) {
+        if (!ReadConfigAndSelectNetwork(preview_args,&result.error)) return result;
         config_file_path_available = true;
         try {
             CreateChainParams(preview_args, preview_args.GetChainType());
@@ -470,6 +534,11 @@ PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc,
         }
     }
 
+    if (intent) {
+        result.error = CheckIntent(preview_args, intent->touched_settings, intent->values, intent->accept_redownload);
+        if (!result.error.isEmpty()) return result;
+    }
+
     // Preview should show the settings the node will run with. In reset mode,
     // old GUI-owned settings.json overrides are intentionally skipped first,
     // then core parameter interactions are applied on top of command-line and
@@ -479,7 +548,9 @@ PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc,
     const auto chain_params = CreateChainParams(preview_args, preview_args.GetChainType());
     result.assumed_blockchain_size = static_cast<int>(chain_params->AssumedBlockchainSize());
     result.assumed_chainstate_size = static_cast<int>(chain_params->AssumedChainStateSize());
-    result.profile = BuildProfileSummary(preview_args, config_file_path_available);
+    const auto profile = BuildProfileSummary(preview_args, config_file_path_available, inspect, cancelled, result.error);
+    if (!profile) return result;
+    result.profile = *profile;
     result.core_setting_statuses = QmlCoreSettings::BuildCoreSettingStatuses(preview_args, QmlCoreSettings::OnboardingCoreSettingNames());
     result.core_setting_statuses_bytes=QmlCoreSettings::CaptureStatuses(result.core_setting_statuses).payload_bytes;
     result.values = QmlCoreSettings::LoadEffectiveValues(preview_args);
@@ -487,9 +558,10 @@ PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc,
     return result;
 }
 
-PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const QString& data_dir)
+PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const QString& data_dir,
+                      const profileinspection::Port& inspect, const profileinspection::Cancellation& cancelled)
 {
-    return Preview(argv, can_listen_ipc, DataDirSelection{data_dir, DataDirSource::UserSelection});
+    return Preview(argv, can_listen_ipc, DataDirSelection{data_dir, DataDirSource::UserSelection}, nullptr, inspect, cancelled);
 }
 
 bool SetQmlOnboarded(ArgsManager& args,bool completed,QString* error)
@@ -500,9 +572,16 @@ bool SetQmlOnboarded(ArgsManager& args,bool completed,QString* error)
 
 bool MarkQmlOnboarded(ArgsManager& args,QString* error){return SetQmlOnboarded(args,true,error);}
 
-bool ApplyToArgs(ArgsManager& args, const DataDirSelection& data_dir_selection, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error, bool accept_redownload, bool mark_completed)
+bool ApplyToArgs(ArgsManager& args, const DataDirSelection& data_dir_selection, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error, bool accept_redownload, bool mark_completed, ProfileResult* receipt, const UiPreferencesNamespace* identity)
 {
     if (error) error->clear();
+    ProfileResult local_receipt;
+    if (!receipt) receipt = &local_receipt;
+    *receipt = {};
+    receipt->recovery = std::make_shared<ProfileRecovery>();
+    const auto recovery = receipt->recovery;
+    recovery->settings_namespace=identity?*identity:UiPreferencesNamespace::Capture();
+    const auto record_error = qScopeGuard([&] { if (error) receipt->error = *error; });
 
     const QString data_dir = NormalizedDataDirPath(data_dir_selection);
     const bool explicit_datadir = HasExplicitDataDirArg(args);
@@ -516,11 +595,7 @@ bool ApplyToArgs(ArgsManager& args, const DataDirSelection& data_dir_selection, 
         QmlDataDir::ApplyDataDirArg(args, data_dir);
     }
 
-    std::string config_error;
-    if (!args.ReadConfigFiles(config_error, true)) {
-        if (error) *error = QString::fromStdString(config_error);
-        return false;
-    }
+    if (!ReadConfigAndSelectNetwork(args,error)) return false;
     try {
         SelectParams(args.GetChainType());
         args.SelectConfigNetwork(args.GetChainTypeString());
@@ -531,6 +606,8 @@ bool ApplyToArgs(ArgsManager& args, const DataDirSelection& data_dir_selection, 
 
     std::vector<std::string> settings_errors;
     const bool reset_gui_settings = args.GetBoolArg("-resetguisettings", false);
+    recovery->reset = reset_gui_settings;
+    QmlLegacySettings::MigrationResult migration_result;
     if (reset_gui_settings) {
         fs::path settings_path;
         if (args.GetSettingsPath(&settings_path) && fs::exists(settings_path)) {
@@ -546,75 +623,124 @@ bool ApplyToArgs(ArgsManager& args, const DataDirSelection& data_dir_selection, 
         args.LockSettings([](common::Settings& settings) {
             settings.rw_settings.clear();
         });
-        QmlLegacySettings::ClearLegacyGuiSettings(QString::fromStdString(args.GetChainTypeString()));
+        migration_result=QmlLegacySettings::CaptureResetSettings(args);
+        if(!migration_result.error.isEmpty()){if(error)*error=migration_result.error;return false;}
     } else {
         if (!args.ReadSettingsFile(&settings_errors)) {
             if (error) *error = QString::fromStdString(settings_errors.empty() ? std::string{"Settings file could not be read."} : settings_errors.front());
             return false;
         }
-        const QmlLegacySettings::MigrationResult migration_result{
-            QmlLegacySettings::MigrateCoreSettings(args, QmlLegacySettings::MigrationMode::Persist)
-        };
+        migration_result = QmlLegacySettings::MigrateCoreSettings(args, QmlLegacySettings::MigrationMode::Persist);
         if (!migration_result.error.isEmpty()) {
             if (error) *error = migration_result.error;
             return false;
         }
     }
 
-    std::map<std::string, common::SettingsValue> original_forced_settings;
-    args.LockSettings([&](common::Settings& settings) {
-        original_forced_settings = settings.forced_settings;
-    });
-    auto restore_forced=qScopeGuard([&]{args.LockSettings([&](common::Settings& settings){settings.forced_settings=std::move(original_forced_settings);});});
-    InitParameterInteraction(args);
-
+    const QString intent_error = CheckIntent(args, touched_settings, values, accept_redownload);
+    if (!intent_error.isEmpty()) { if (error) *error = intent_error; return false; }
+    fs::path settings_path;
+    if (args.GetSettingsPath(&settings_path) && !EnsureSettingsDirectory(args, settings_path, error)) return false;
     QmlCoreSettings::Session core_settings{values, QmlCoreSettings::BuildCoreSettingStatuses(args, QmlCoreSettings::OnboardingCoreSettingNames())};
     core_settings.setTouchedSettings(touched_settings);
-    // Validate the whole next-start policy before either durable setup marker
-    // or a user-selected directory is reported as committed.
-    fs::path settings_path;if(args.GetSettingsPath(&settings_path)&&!EnsureSettingsDirectory(args,settings_path,error))return false;
-    const auto original=effectivesettings::Read(args);
-    effectivesettings::Batch batch;batch.base_revision=original.revision;batch.accept_redownload=accept_redownload;
-    for(const auto key:{effectivesettings::Key::Listen,effectivesettings::Key::Natpmp,effectivesettings::Key::Server,effectivesettings::Key::Prune,effectivesettings::Key::Proxy,effectivesettings::Key::Onion}){
-        const auto name=effectivesettings::Name(key);if(!touched_settings.contains(name))continue;
-        effectivesettings::Value value;
-        if(key==effectivesettings::Key::Listen)value=values.listen;
-        else if(key==effectivesettings::Key::Natpmp)value=values.natpmp;
-        else if(key==effectivesettings::Key::Server)value=values.server;
-        else if(key==effectivesettings::Key::Prune)value=SettingTo<int64_t>(QmlCoreSettings::PruneSetting(values)).value_or(0);
-        else if(key==effectivesettings::Key::Proxy)value=values.proxy_enabled?values.proxy_address:QStringLiteral("0");
-        else value=values.tor_enabled?values.tor_address:QStringLiteral("0");
-        batch.edits.push_back({key,std::move(value)});
-    }
-    const auto checked=batch.edits.empty()?effectivesettings::ReviewCurrent(args):effectivesettings::Review(args,original,batch);
-    args.LockSettings([&](common::Settings& settings) {settings.forced_settings=std::move(original_forced_settings);});
-    restore_forced.dismiss();
-    if(!checked.valid){if(error)*error=checked.error;return false;}
     QStringList keys{QString::fromLatin1(QML_ONBOARDED_KEY)};
     for(const auto& name:touched_settings){keys.push_back(name);keys.push_back(name+QStringLiteral("-prev"));}
-    bool directory_saved{false};
-    const auto persistence=QmlCoreSettings::PersistTransaction(args,keys,[&]{
-        if(ShouldPersistGuiDataDirSelection(data_dir_selection.source,explicit_datadir)){
-            const bool saved=QmlDataDir::IsDefaultDataDir(data_dir)?QmlDataDir::PersistDefaultDataDirSelection(&data_dir_error):QmlDataDir::PersistGuiDataDirSelection(data_dir,&data_dir_error);
-            if(!saved)return false;
-            directory_saved=true;
-        }
-        if(!core_settings.writeTouchedToArgs(args))return false;
-        QmlCoreSettings::SetRwSetting(args,QString::fromLatin1(QML_ONBOARDED_KEY),common::SettingsValue{mark_completed});
+    recovery->directory = {data_dir, data_dir_selection.source};
+    recovery->persist_directory = ShouldPersistGuiDataDirSelection(data_dir_selection.source, explicit_datadir);
+    recovery->migration = migration_result;
+    recovery->directory_cleanup=QmlLegacySettings::CaptureLegacyGuiDataDir();
+    const auto persistence = QmlCoreSettings::PersistTransaction(args, keys, [&] {
+        if (!core_settings.writeTouchedToArgs(args)) return false;
+        QmlCoreSettings::SetRwSetting(args, QString::fromLatin1(QML_ONBOARDED_KEY), common::SettingsValue{mark_completed});
+        QmlLegacySettings::CaptureMigrationTarget(args, migration_result);
+        args.GetSettingsPath(&recovery->target);
+        args.LockSettings([&](const common::Settings& settings) { recovery->expected = settings.rw_settings; });
         return true;
     });
-    if(!persistence.completed){
-        if(error)*error=!data_dir_error.isEmpty()?data_dir_error:persistence.error;
-        if(error&&error->isEmpty())*error=QStringLiteral("The setup settings could not be saved.");
-        if(error&&directory_saved)*error=QStringLiteral("The selected directory was saved, but setup is incomplete. Review the retained answers and retry. ")+*error;
+    receipt->replacement_written = persistence.persisted;
+    if (!persistence.completed) {
+        if (error) *error = persistence.error.isEmpty() ? QStringLiteral("The setup settings could not be saved.") : persistence.error;
         return false;
     }
-    return true;
+    // This is an ordered handoff, not a cross-file transaction. Once the Core
+    // replacement is known, retries may finish only this captured handoff.
+    auto finished = CompleteProfile(args, *receipt);
+    *receipt = std::move(finished);
+    if (error) *error = receipt->error;
+    return receipt->completed;
 }
 
-bool ApplyToArgs(ArgsManager& args, const QString& data_dir, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error, bool accept_redownload, bool mark_completed)
+ProfileResult QueryProfile(ArgsManager& args, const ProfileResult& original)
 {
-    return ApplyToArgs(args, DataDirSelection{data_dir, DataDirSource::UserSelection}, touched_settings, values, error, accept_redownload, mark_completed);
+    auto result = original;
+    const auto fail = [&](const QString& message) { result.completed = false; result.error = message; return result; };
+    if (!result.recovery || !result.replacement_written) return result;
+    fs::path target;
+    const auto& recovery = *result.recovery;
+    if (!args.GetSettingsPath(&target) || target != recovery.target)
+        return fail(QCoreApplication::translate("Onboarding", "The saved setup target changed. The original handoff has been retained."));
+    std::map<std::string, common::SettingsValue> observed;
+    std::vector<std::string> errors;
+    if (!common::ReadSettings(target, observed, errors) || observed.size() != recovery.expected.size())
+        return fail(QCoreApplication::translate("Onboarding", "The saved setup could not be confirmed. Restore the original profile before retrying."));
+    for (const auto& [key, value] : recovery.expected) {
+        const auto found = observed.find(key);
+        if (found == observed.end() || found->second.write() != value.write())
+            return fail(QCoreApplication::translate("Onboarding", "The saved setup was changed by another writer. Review the original profile before continuing."));
+    }
+    result.error.clear();
+    if (recovery.persist_directory) {
+        const auto saved = QmlDataDir::ReadGuiDataDirWithSource(&recovery.settings_namespace);
+        const bool matches=saved.stored&&saved.error.isEmpty()&&QmlDataDir::NormalizeLocalPath(saved.path)==recovery.directory.path;
+        result.directory_saved = matches && (original.directory_saved || original.uncertain);
+    } else result.directory_saved = true;
+    result.completed = result.directory_saved && result.cleanup_completed;
+    result.uncertain = false;
+    if (result.completed) result.error.clear();
+    return result;
+}
+
+ProfileResult CompleteProfile(ArgsManager& args, const ProfileResult& original)
+{
+    auto result = QueryProfile(args, original);
+    if (!result.replacement_written || !result.recovery || result.uncertain || !result.error.isEmpty()) return result;
+    const auto& recovery = *result.recovery;
+    if (!QmlLegacySettings::CommitTargetFile(recovery.target, &result.error)) return result;
+    if (!result.directory_saved) {
+        const bool saved = QmlDataDir::IsDefaultDataDir(recovery.directory.path)
+            ? QmlDataDir::PersistDefaultDataDirSelection(&result.error,false,&recovery.settings_namespace)
+            : QmlDataDir::PersistGuiDataDirSelection(recovery.directory.path, &result.error,false,&recovery.settings_namespace);
+        result.directory_saved = saved;
+        if (!saved) return result;
+    }
+    if (!result.cleanup_completed) {
+        const bool cleaned=QmlLegacySettings::CompleteCoreSettingsMigration(args,recovery.migration,&result.error);
+        if (!cleaned || (!recovery.reset && recovery.persist_directory && !QmlLegacySettings::CompleteLegacyGuiDataDir(recovery.directory_cleanup,&result.error))) return result;
+        result.cleanup_completed = true;
+    }
+    result.completed = true;
+    result.error.clear();
+    return result;
+}
+
+ProfileResult PersistProfile(ArgsManager& args, const ApplyRequest& request)
+{
+    ProfileResult result;
+    try {
+        ApplyToArgs(args, request.data_dir, request.touched_settings, request.values, &result.error, request.accept_redownload, false, &result,request.settings_namespace?&*request.settings_namespace:nullptr);
+    } catch (const std::exception& e) {
+        result.uncertain = true;
+        result.error = QString::fromUtf8(e.what());
+    } catch (...) {
+        result.uncertain = true;
+        result.error = QCoreApplication::translate("Onboarding", "The original setup outcome could not be confirmed. Query it before taking another action.");
+    }
+    return result;
+}
+
+bool ApplyToArgs(ArgsManager& args, const QString& data_dir, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error, bool accept_redownload, bool mark_completed, ProfileResult* receipt, const UiPreferencesNamespace* identity)
+{
+    return ApplyToArgs(args, DataDirSelection{data_dir, DataDirSource::UserSelection}, touched_settings, values, error, accept_redownload, mark_completed, receipt,identity);
 }
 
 } // namespace QmlOnboardingSettings

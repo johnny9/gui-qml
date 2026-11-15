@@ -124,6 +124,13 @@ PreparationOutcome PrepareNode(const PreparationPorts& ports)
             return PreparationOutcome::SettingsWriteFailed;
         }
     }
+    if (migration.complete) {
+        const auto completed = migration.complete();
+        if (!completed.success) {
+            ports.error(_("Legacy settings migration could not be completed"), completed.errors);
+            return PreparationOutcome::MigrationFailed;
+        }
+    }
     ports.initialize_logging();
     ports.make_node();
     ports.make_chain();
