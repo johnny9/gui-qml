@@ -460,6 +460,8 @@ void ActivityFilterProxyModelTests::chooserCaptureKeepsTheOriginalSnapshotAndUni
     ActivityFilterProxyModel::Services services; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
     services.write = [&](const auto& request) { ++effects; unit = request.unit; label = request.snapshot->snapshot->rows.begin()->second->value(TransactionActivityModel::LabelRole).toString(); return ActivityFilterProxyModel::CsvResult{true, request.path, {}}; };
     ActivityFilterProxyModel proxy{services}; proxy.setSourceModel(&source); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents(); QVERIFY(!proxy.busy());
+    // Retire the previous filter turn before observing the chooser itself.
+    env.drain(); env.publishAll();
     const auto intent = proxy.captureExport(); QVERIFY(!intent.isEmpty()); QVERIFY(proxy.exportChoosing()); QCOMPARE(effects, 0); QVERIFY(env.turnsIdle());
     source.setRows({MakeRow("Successor", Transaction::RecvWithAddress, 2, "new")}); proxy.setDisplayUnit(3); proxy.setSearchText("Successor"); QCoreApplication::processEvents(); QVERIFY(proxy.busy());
     const auto ticket = proxy.requestCapturedExportCsv(intent, QStringLiteral("original.csv")); QVERIFY(ticket); QVERIFY(!proxy.exportChoosing());
