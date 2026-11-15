@@ -88,7 +88,8 @@ Inspection AnalyzeSource(const Inspection& source, const psbtfee::Lookup& lookup
     psbtwork::Request request;
     request.kind = psbtwork::Kind::Inspect;
     request.document = source.psbt->document;
-    const auto analyzed = psbtwork::Execute(nullptr, std::move(request), psbtwork::Context{.lookup = lookup});
+    psbtwork::Context context; context.lookup = lookup;
+    const auto analyzed = psbtwork::Execute(nullptr, std::move(request), context);
     if (!analyzed.snapshot) return Invalid(analyzed.error.isEmpty() ? QStringLiteral("The PSBT could not be inspected.") : analyzed.error);
     auto result = source;
     result.psbt = analyzed.snapshot;
