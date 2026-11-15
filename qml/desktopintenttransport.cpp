@@ -52,7 +52,7 @@ QString NormalizeProfile(const QString& directory)
     std::error_code error;
     const fs::path normalized = fs::weakly_canonical(input, error);
     if (error) return {};
-    const bool exists = fs::exists(normalized, error);
+    const bool exists = std::filesystem::exists(normalized, error);
     if (error) return {};
     if (exists) { const bool is_directory = fs::is_directory(normalized, error); if (error || !is_directory) return {}; }
     return QString::fromStdString(fs::PathToString(normalized));
@@ -292,7 +292,7 @@ struct Service::State::Native final : QObject {
         if (command == "admit") {
             const auto items = object.value("items").toArray(); std::vector<Input> inputs;
             if (items.empty() || items.size() > static_cast<qsizetype>(Queue::MAX_PENDING)) { socket->abort(); return; }
-            for (const auto& item : items) {
+            for (const auto item : items) {
                 const auto entry = item.toObject(); const auto kind = entry.value("kind").toString();
                 if (!entry.value("key").isString() || !entry.value("value").isString() || (kind != "text" && kind != "file")) { socket->abort(); return; }
                 inputs.push_back({entry.value("key").toString(), kind == "file" ? Kind::File : Kind::Text, entry.value("value").toString(), Origin::Forwarded});
@@ -304,7 +304,7 @@ struct Service::State::Native final : QObject {
         } else if (command == "query") {
             const auto keys = object.value("keys").toArray();
             if (keys.empty() || keys.size() > static_cast<qsizetype>(Queue::MAX_PENDING) || replies.size() + static_cast<size_t>(keys.size()) > MAX_REPLIES) { socket->abort(); return; }
-            for (const auto& key : keys) if (!key.isString() || key.toString().isEmpty() || key.toString().size() > Queue::MAX_KEY_CHARS) { socket->abort(); return; }
+            for (const auto key : keys) if (!key.isString() || key.toString().isEmpty() || key.toString().size() > Queue::MAX_KEY_CHARS) { socket->abort(); return; }
             auto query = std::make_shared<Query>(); query->remaining = static_cast<size_t>(keys.size());
             for (qsizetype index{0}; index < keys.size(); ++index) { query->results.append(QJsonValue{QJsonValue::Null}); query->keys.push_back(keys[index].toString()); }
             for (qsizetype index{0}; index < keys.size(); ++index) {
