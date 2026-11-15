@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "tested_app": "f58c1edd6772ee9a61cfbc0f4af7573b0710b470",
+  "core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "component_status": "focused accepted; composed startup caller and two-process regression remain pending",
+  "unit": {
+    "report": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/probe-focused-02/actual/report.json",
+    "actual_bodies": 19,
+    "passed": 19,
+    "failed": 0,
+    "skipped": 0,
+    "scope": "all old10 transport and new9 probe rows"
+  },
+  "static": {
+    "results": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/probe-static-03/tidy/results.json",
+    "translation_units": 9,
+    "passed": true,
+    "toolchain": "pinned Clang23.1.6, Bitcoin tidy plugin/Core449 check definitions"
+  },
+  "lint": {
+    "result": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/probe-lint-02/RESULT.json",
+    "scope": "app",
+    "passed": true
+  },
+  "gui_process": {
+    "cases": [
+      "bridge-protocol",
+      "runtime-block-write-failure-exit-status"
+    ],
+    "passed": 2,
+    "normal_exit": 0,
+    "injected_fatal_exit": 1,
+    "stderr_inspected": true,
+    "evidence": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/probe-static-03/lifecycle.stdout"
+  },
+  "limitations": [
+    "No final startup caller changes tested here; Root owns composition and actual secondary process cases",
+    "No installed OS association/packaging claim",
+    "Final sanitizer/coverage/platform/configuration qualification deferred to R42 per user decision",
+    "No Core or Qt source changes; no missing Wallet capability adapter introduced"
+  ],
+  "lease": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/PROBE_LEASE_RELEASE.json"
+}
