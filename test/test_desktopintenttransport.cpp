@@ -20,6 +20,11 @@ namespace {
 using namespace desktopintent;
 using namespace desktopintent::transport;
 using namespace std::chrono_literals;
+std::shared_ptr<Owner> NewOwner(std::shared_ptr<execution::Scheduler> scheduler)
+{
+    Services services; services.scheduler = std::move(scheduler);
+    return Owner::Create(std::move(services), {});
+}
 Input Request(int id, Origin origin = Origin::Arguments)
 {
     return {QString::number(id), Kind::Text, QStringLiteral("bitcoin:request-%1").arg(id), origin};
@@ -56,7 +61,7 @@ private Q_SLOTS:
     void admissionFenceDoesNotDrainAndRetainedFacadeReleasesScope()
     {
         ManualRoutedExecution commands;
-        auto owner = Owner::Create({commands.scheduler}, {});
+        auto owner = NewOwner(commands.scheduler);
         auto service = Service::Create(commands.scheduler, owner); QVERIFY(service);
         const auto pending = commands.scheduler->pending();
         service->closeAdmission();
@@ -74,7 +79,7 @@ private Q_SLOTS:
     void missingProfileIsNotCreatedAndPhysicalStopUsesBackgroundDomain()
     {
         BackendExecutor executor{execution::Limits::Bounded()};
-        auto owner = Owner::Create({executor.scheduler()}, {});
+        auto owner = NewOwner(executor.scheduler());
         auto service = Service::Create(executor.scheduler(), owner); QVERIFY(service);
         const auto cleanup = qScopeGuard([&] { service->stop(); owner.reset(); Shutdown(executor); });
         QTemporaryDir directory; QVERIFY(directory.isValid());
@@ -90,9 +95,9 @@ private Q_SLOTS:
     void secondaryForwardsEarlyFileOpenAndArgumentsAndDoesNotStealEmptyEndpoint()
     {
         BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()}, empty_executor{execution::Limits::Bounded()};
-        auto primary_owner = Owner::Create({primary_executor.scheduler()}, {});
-        auto secondary_owner = Owner::Create({secondary_executor.scheduler()}, {});
-        auto empty_owner = Owner::Create({empty_executor.scheduler()}, {});
+        auto primary_owner = NewOwner(primary_executor.scheduler());
+        auto secondary_owner = NewOwner(secondary_executor.scheduler());
+        auto empty_owner = NewOwner(empty_executor.scheduler());
         auto primary = Service::Create(primary_executor.scheduler(), primary_owner);
         auto secondary = Service::Create(secondary_executor.scheduler(), secondary_owner);
         auto empty = Service::Create(empty_executor.scheduler(), empty_owner);
@@ -114,8 +119,8 @@ private Q_SLOTS:
     void capacityRejectsWholeRemoteBatchWithoutConsumingIdentity()
     {
         BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()};
-        auto primary_owner = Owner::Create({primary_executor.scheduler()}, {});
-        auto secondary_owner = Owner::Create({secondary_executor.scheduler()}, {});
+        auto primary_owner = NewOwner(primary_executor.scheduler());
+        auto secondary_owner = NewOwner(secondary_executor.scheduler());
         auto primary = Service::Create(primary_executor.scheduler(), primary_owner);
         auto secondary = Service::Create(secondary_executor.scheduler(), secondary_owner);
         const auto cleanup = qScopeGuard([&] { primary->stop(); secondary->stop(); primary_owner.reset(); secondary_owner.reset(); Shutdown(primary_executor); Shutdown(secondary_executor); });
@@ -131,8 +136,8 @@ private Q_SLOTS:
     {
         ManualRoutedExecution original;
         BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()};
-        auto primary_owner = Owner::Create({original.scheduler}, {});
-        auto secondary_owner = Owner::Create({secondary_executor.scheduler()}, {});
+        auto primary_owner = NewOwner(original.scheduler);
+        auto secondary_owner = NewOwner(secondary_executor.scheduler());
         auto clock = std::make_shared<std::atomic<int64_t>>(0);
         auto clock_calls = std::make_shared<std::atomic<size_t>>(0);
         Limits limits; limits.now = [clock, clock_calls] { ++*clock_calls; return Limits::Time{} + std::chrono::milliseconds{clock->load()}; };
@@ -164,8 +169,8 @@ private Q_SLOTS:
     {
         ManualRoutedExecution original;
         BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()};
-        auto primary_owner = Owner::Create({original.scheduler}, {});
-        auto secondary_owner = Owner::Create({secondary_executor.scheduler()}, {});
+        auto primary_owner = NewOwner(original.scheduler);
+        auto secondary_owner = NewOwner(secondary_executor.scheduler());
         auto primary = Service::Create(primary_executor.scheduler(), primary_owner);
         auto secondary = Service::Create(secondary_executor.scheduler(), secondary_owner);
         const auto cleanup = qScopeGuard([&] { primary->stop(); secondary->stop(); original.drain(); primary_owner.reset(); secondary_owner.reset(); original.drain(); Shutdown(primary_executor); Shutdown(secondary_executor); original.drain(); });
@@ -184,8 +189,8 @@ private Q_SLOTS:
     {
         ManualRoutedExecution original;
         BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()};
-        auto primary_owner = Owner::Create({original.scheduler}, {});
-        auto secondary_owner = Owner::Create({secondary_executor.scheduler()}, {});
+        auto primary_owner = NewOwner(original.scheduler);
+        auto secondary_owner = NewOwner(secondary_executor.scheduler());
         auto clock = std::make_shared<std::atomic<int64_t>>(1000);
         Limits limits; limits.now = [clock] { return Limits::Time{} + std::chrono::milliseconds{clock->load()}; };
         auto primary = Service::Create(primary_executor.scheduler(), primary_owner);
@@ -203,7 +208,7 @@ private Q_SLOTS:
     void invalidDeadlineConfigurationDoesNotReserveResources()
     {
         ManualRoutedExecution commands;
-        auto owner = Owner::Create({commands.scheduler}, {});
+        auto owner = NewOwner(commands.scheduler);
         Limits limits; limits.acknowledge = 31s;
         QVERIFY(!Service::Create(commands.scheduler, owner, limits));
         limits = {}; limits.now = {};
@@ -212,4 +217,4 @@ private Q_SLOTS:
     }
 };
 BITCOINQML_REGISTER_QT_TEST(DesktopIntentTransportTests)
-#include "test_desktopintenttransport.moc"
+#include <test_desktopintenttransport.moc>

@@ -52,9 +52,7 @@ QString NormalizeProfile(const QString& directory)
     std::error_code error;
     const fs::path normalized = fs::weakly_canonical(input, error);
     if (error) return {};
-    const bool exists = std::filesystem::exists(normalized, error);
-    if (error) return {};
-    if (exists) { const bool is_directory = fs::is_directory(normalized, error); if (error || !is_directory) return {}; }
+    if (fs::exists(normalized) && !fs::is_directory(normalized)) return {};
     return QString::fromStdString(fs::PathToString(normalized));
 }
 QJsonObject ReceiptJson(const Receipt& receipt, const QString& key)
