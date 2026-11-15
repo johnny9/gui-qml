@@ -77,6 +77,9 @@ Validation Validate(const Snapshot& candidate, const Batch& batch, const Constra
 struct Check { bool valid{false}; Snapshot snapshot; Validation validation; QString error; };
 Snapshot Read(ArgsManager& args);
 Check ReviewCurrent(ArgsManager& args);
+// Onboarding validates its private staged settings before the replacement
+// exists. No disk-currency claim and no process-wide network selection.
+Check ReviewStaged(ArgsManager& args, const Batch& batch);
 Check Review(ArgsManager& args, const Snapshot& original, const Batch& batch);
 Result Commit(interfaces::Node& node, ArgsManager& args, const Snapshot& original, const Batch& batch);
 } // namespace effectivesettings

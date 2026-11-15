@@ -54,8 +54,13 @@ UiPreferencesStore* InstallPreferences(QQmlApplicationEngine& engine,
     const execution::SnapshotServices& services, UiPreferencesNamespace identity, PreferencesPhase phase);
 void FinishPreferences(UiPreferencesStore* store, QQuickWindow* window);
 
-struct Migration { bool settings_changed{false}; QString error; };
 struct SettingsWrite { bool success{false}; std::vector<std::string> errors; };
+struct Migration {
+    bool settings_changed{false};
+    QString error;
+    // Captured Native cleanup is admitted only after a successful target write.
+    std::function<SettingsWrite()> complete{};
+};
 enum class PreparationOutcome { Ready, ConfigurationFailed, MigrationFailed, SettingsWriteFailed, BaseInitializationFailed };
 // Every port is required. The whole operation runs on the original Native
 // startup action; errors stop its effects in order and exceptions propagate to

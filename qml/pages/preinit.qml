@@ -17,8 +17,8 @@ ApplicationWindow {
     color: Theme.color.background
     visible: true
 
-    property bool completed: false
-    property bool starting: false
+    readonly property bool completed: ApplicationModels.onboardingOptionsModel.setupCommitted
+    readonly property bool starting: ApplicationModels.onboardingOptionsModel.setupCommitPending || completed
     signal finished()
 
     AppPreferences { id: preferences }
@@ -42,21 +42,47 @@ ApplicationWindow {
     }
 
     OnboardingWizard {
+        objectName: "preInitSetupWizard"
         anchors.fill: parent
         preInit: true
         settingsModel: ApplicationModels.onboardingOptionsModel
         assumedBlockchainSize: ApplicationModels.onboardingOptionsModel.assumedBlockchainSize
         assumedChainstateSize: ApplicationModels.onboardingOptionsModel.assumedChainstateSize
-        enabled: !ApplicationModels.onboardingOptionsModel.setupCommitPending && !ApplicationModels.onboardingOptionsModel.setupCommitted
+        enabled: !ApplicationModels.onboardingOptionsModel.setupCommitPending && !ApplicationModels.onboardingOptionsModel.setupCommitted && !ApplicationModels.onboardingOptionsModel.setupPartial && !ApplicationModels.onboardingOptionsModel.setupUncertain
         onFinished: ApplicationModels.onboardingOptionsModel.commitSettings()
     }
 
     Connections {
         target: ApplicationModels.onboardingOptionsModel
         function onSettingsCommitted() {
-            appWindow.completed = true
-            appWindow.starting = true
             appWindow.finished()
+        }
+    }
+    Row {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 65
+        spacing: 12
+        Button {
+            objectName: "preInitRetrySetupChecks"
+            text: qsTr("Retry checks")
+            visible: ApplicationModels.onboardingOptionsModel.setupCommitError.length > 0 && !ApplicationModels.onboardingOptionsModel.setupPartial && !ApplicationModels.onboardingOptionsModel.setupUncertain
+            enabled: !ApplicationModels.onboardingOptionsModel.setupCommitPending
+            onClicked: ApplicationModels.onboardingOptionsModel.retrySetupChecks()
+        }
+        Button {
+            objectName: "preInitQuerySetupOutcome"
+            text: qsTr("Check original setup")
+            visible: ApplicationModels.onboardingOptionsModel.setupUncertain
+            enabled: !ApplicationModels.onboardingOptionsModel.setupCommitPending
+            onClicked: ApplicationModels.onboardingOptionsModel.querySetupOutcome()
+        }
+        Button {
+            objectName: "preInitCompleteSavedSetup"
+            text: qsTr("Complete saved setup")
+            visible: ApplicationModels.onboardingOptionsModel.setupPartial && !ApplicationModels.onboardingOptionsModel.setupUncertain
+            enabled: !ApplicationModels.onboardingOptionsModel.setupCommitPending
+            onClicked: ApplicationModels.onboardingOptionsModel.completeSavedSetup()
         }
     }
     CoreText {
