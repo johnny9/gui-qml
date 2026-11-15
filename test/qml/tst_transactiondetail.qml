@@ -79,6 +79,29 @@ TestCase {
         tryCompare(overlay, "visible", false)
     }
 
+    function test_password_context_closes_after_review_invalidation_data() {
+        return [{tag: "ineligible", phase: BumpTransactionModel.NeedsRevalidation},
+                {tag: "failed", phase: BumpTransactionModel.Failed}]
+    }
+    function test_password_context_closes_after_review_invalidation(data) {
+        testBumpModel.requireUnlock = true
+        const page = createDetail()
+        findChild(page, "speedUpBanner").primaryClicked()
+        const overlay = findChild(page, "speedUpOverlay")
+        tryCompare(overlay, "readyToConfirm", true)
+        findChild(overlay, "updateTransactionButton").clicked()
+        const popup = findChild(overlay, "speedUpPassphrasePopup")
+        tryCompare(popup, "opened", true)
+        const prepared = testBumpModel.preparationCount
+        testBumpModel.state = data.phase
+        tryCompare(popup, "opened", false)
+        verify(overlay.opened)
+        verify(!overlay.readyToConfirm)
+        compare(testBumpModel.preparationCount, prepared)
+        overlay.close()
+        tryCompare(overlay, "visible", false)
+    }
+
     function createDetail(data, properties) {
         const value = data || transaction()
         if (value.flow) value.flow = testSetup.prepareTransactionFlow(value.flow)
