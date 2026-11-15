@@ -71,7 +71,8 @@ quint64 PeerCommandModel::legacy(peercommands::Request original)
     auto operation = std::make_shared<peercommands::Operation>(original);
     const auto admission = store->submit(operation);
     if (!admission) return 0;
-    if (guard) guard->admitted(); return original.ticket;
+    if (guard) guard->admitted();
+    return original.ticket;
 }
 quint64 PeerCommandModel::requestDisconnectPeer(qint64 id)
 {
