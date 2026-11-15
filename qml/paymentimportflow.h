@@ -197,7 +197,9 @@ public:
     }
     bool acknowledged(const Child& child) {
         if (!m_child || *m_child != child || !m_result || m_result->outcome == Outcome::Unknown) return false;
-        m_child.reset(); m_error = Error::None;
+        m_child.reset();
+        if (m_error == Error::Query) m_error = m_result->outcome == Outcome::Rejected ? Error::Rejected
+            : m_result->outcome == Outcome::Stale ? Error::Stale : Error::None;
         settleClose();
         return true;
     }

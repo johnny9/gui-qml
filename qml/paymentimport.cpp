@@ -286,7 +286,8 @@ void Owner::dispatch(Child child)
 void Owner::finish(Reply reply, ReplyKind kind, uint64_t source, uint64_t target, std::optional<Child> child, uint64_t delivery)
 {
     auto& state = *m_state;
-    if (kind == ReplyKind::Query && delivery != state.query_delivery) { cancelObsolete(); publish(); return; }
+    const bool established = reply.child && reply.child->receipt.outcome != Outcome::Unknown;
+    if (kind == ReplyKind::Query && delivery != state.query_delivery && !established) { cancelObsolete(); publish(); return; }
     if (kind == ReplyKind::Observe) {
         if (!state.closing && source == state.flow.source() && target == state.target_sequence) {
             if (reply.target) state.flow.chooseTarget(reply.target);
@@ -296,6 +297,12 @@ void Owner::finish(Reply reply, ReplyKind kind, uint64_t source, uint64_t target
                (!state.flow.result() || state.flow.result()->outcome == Outcome::Unknown)) {
         if (reply.child && reply.child->receipt.child == *child) {
             state.flow.finished(reply.child->receipt, reply.child->current_target);
+            if (reply.child->receipt.outcome == Outcome::Rejected)
+                state.error = reply.child->review && !reply.child->review->message.isEmpty()
+                    ? reply.child->review->message.left(4096) : QStringLiteral("The original target rejected this import.");
+            else if (reply.child->receipt.outcome == Outcome::Stale)
+                state.error = QStringLiteral("The original target changed. Review the new replacement decision.");
+            else if (reply.child->receipt.outcome != Outcome::Unknown) state.error.clear();
             state.result = std::make_shared<const ChildReply>(std::move(*reply.child));
         } else {
             bool not_started{false};
@@ -320,7 +327,7 @@ void Owner::account()
     const auto child = *state.flow.child();
     try {
         if (state.target && state.target->acknowledge && state.target->acknowledge({m_identity, child.id}, child)) {
-            state.flow.acknowledged(child); state.error.clear();
+            state.flow.acknowledged(child);
         } else state.flow.acknowledgmentLost(child);
     } catch (...) { state.flow.acknowledgmentLost(child); }
     if (state.flow.child()) { state.retry_at = m_services.now() + RETRY; wake(); }
