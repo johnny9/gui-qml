@@ -309,7 +309,9 @@ TestCase {
         finishSignerDiscovery()
         verify(page.signerConnected)
         const initialScans = walletController.signerEnumerationCalls
-        input.text = executable + " --new-configuration"
+        const successor = walletController.alternateSignerExecutableForTest()
+        verify(successor !== executable)
+        input.text = successor
         input.textEdited()
         // Uncommitted text does not replace the effective configuration/device.
         compare(walletController.signers.effectivePath, executable)
@@ -324,7 +326,7 @@ TestCase {
         finishSignerDiscovery()
         compare(walletController.signerConfigurationWrites, 1)
         compare(walletController.signerEnumerationCalls, initialScans + 1)
-        compare(walletController.signers.effectivePath, executable + " --new-configuration")
+        compare(walletController.signers.effectivePath, successor)
         verify(page.signerConnected)
         compare(check.text, "Check device")
     }

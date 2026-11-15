@@ -2808,8 +2808,8 @@ void NodeModelTests::manualRewindUsesCurrentHeaderReadback()
     const auto observed_time = header_available ? tips.header_time : tips.now;
     QCOMPARE(InformationValue(model, "Header height"), QString::number(observed_header));
     QCOMPARE(InformationValue(model, "Block height"), QString::number(tips.block));
-    QCOMPARE(InformationValue(model, "Header time"), QDateTime::fromSecsSinceEpoch(observed_time).toString());
-    QCOMPARE(InformationValue(model, "Last block time"), QDateTime::fromSecsSinceEpoch(tips.block_time).toString());
+    QCOMPARE(InformationValue(model, "Header time"), QLocale{}.toString(QDateTime::fromSecsSinceEpoch(observed_time), QLocale::ShortFormat));
+    QCOMPARE(InformationValue(model, "Last block time"), QLocale{}.toString(QDateTime::fromSecsSinceEpoch(tips.block_time), QLocale::ShortFormat));
     QCOMPARE(model.initialSyncComplete(), observed_header == tips.block);
 }
 
@@ -2846,7 +2846,7 @@ void NodeModelTests::manualBlockRowsRejectOlderStatusRead()
     QVERIFY(!env.turnsIdle());
     const auto getter_calls = node.calls.getNumBlocks.load();
     QCOMPARE(InformationValue(model, "Block height"), QStringLiteral("170"));
-    QCOMPARE(InformationValue(model, "Last block time"), QDateTime::fromSecsSinceEpoch(tips.block_time).toString());
+    QCOMPARE(InformationValue(model, "Last block time"), QLocale{}.toString(QDateTime::fromSecsSinceEpoch(tips.block_time), QLocale::ShortFormat));
     QCOMPARE(node.calls.getNumBlocks.load(), getter_calls);
     QVERIFY(DrainManualTipTurns(env));
     QCOMPARE(InformationValue(model, "Block height"), QStringLiteral("170"));

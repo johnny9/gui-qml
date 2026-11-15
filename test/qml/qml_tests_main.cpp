@@ -3367,6 +3367,10 @@ public:
     signerdiscovery::Configuration signerConfigurationForTest()const{return m_signer_facts->configuration;}
     void settingsSignerSavedForTest(const QString& command){++m_signer_facts->writes;const auto old=m_signer_facts->configuration;m_signer_facts->configuration={command,QString::fromLatin1(QCryptographicHash::hash(command.toUtf8(),QCryptographicHash::Sha256).toHex()),old.editable,old.source};m_signers->refresh();}
     Q_INVOKABLE QString signerExecutableForTest() const { return QCoreApplication::applicationFilePath(); }
+    Q_INVOKABLE QString alternateSignerExecutableForTest() const {
+        const QFileInfo executable{QCoreApplication::applicationFilePath()};
+        return executable.path() + QStringLiteral("/./") + executable.fileName();
+    }
     Q_INVOKABLE void setSignerFixtureForTest(const QString& command, const QString& fingerprint, const QString& name, const QString& error, bool read_only = false, bool refresh = true) {
         m_signer_facts->configuration = {command, QString::fromLatin1(QCryptographicHash::hash(command.toUtf8(), QCryptographicHash::Sha256).toHex()), !read_only, read_only ? QStringLiteral("CommandLine") : QStringLiteral("Persistent")};
         m_signer_facts->fingerprint = fingerprint; m_signer_facts->name = name; m_signer_facts->error = error;

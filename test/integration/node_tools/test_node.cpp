@@ -10,6 +10,9 @@
 #include <util/translation.h>
 
 #include <QScopeGuard>
+#include <QLocale>
+
+#include <stdexcept>
 #include <QDateTime>
 #include <QVariantMap>
 #include <QSignalSpy>
@@ -71,10 +74,11 @@ private Q_SLOTS:
         QFETCH(int, depth);
         auto* model = &m_app.nodeModel();
         const auto rpc = [&](const char* method, const UniValue& params = UniValue{UniValue::VARR}) {
-            return qmltest::Call(m_app, &interfaces::Node::executeRpc, method, params, "");
+            try { return qmltest::Call(m_app, &interfaces::Node::executeRpc, method, params, ""); }
+            catch (const UniValue& error) { throw std::runtime_error{std::string{"R38 public RPC "} + method + ": " + error.write()}; }
         };
-        const auto generate = [&](int count) {
-            UniValue params{UniValue::VARR}; params.push_back(count); params.push_back("raw(51)");
+        const auto generate = [&](int count, const char* descriptor = "raw(51)") {
+            UniValue params{UniValue::VARR}; params.push_back(count); params.push_back(descriptor);
             return rpc("generatetodescriptor", params);
         };
         const auto information = [&](const QString& label) {
@@ -109,7 +113,7 @@ private Q_SLOTS:
             return model->blockTipHeight() == expected_height && model->initialSyncComplete() &&
                 information("Block height") == QString::number(expected_height) &&
                 information("Header height") == QString::number(expected_height) &&
-                information("Header time") == QDateTime::fromSecsSinceEpoch(expected_time).toString() &&
+                information("Header time") == QLocale{}.toString(QDateTime::fromSecsSinceEpoch(expected_time), QLocale::ShortFormat) &&
                 displayed("Block height") == QString::number(expected_height) &&
                 displayed("Header height") == QString::number(expected_height) &&
                 displayed("Header time") == information("Header time") && clock->property("synced").toBool();
@@ -147,7 +151,9 @@ private Q_SLOTS:
         const auto restored_time = current_header_time();
         const bool reconsidered = QTest::qWaitFor([&] { return observed(height, restored_time); });
         invalidate(); QVERIFY(core_matches(height - depth));
-        QCOMPARE(generate(1).size(), 1U);
+        // A different coinbase script guarantees a new block instead of
+        // recreating the same now-invalid hash within the same clock second.
+        QCOMPARE(generate(1, "raw(52)").size(), 1U);
         QVERIFY(core_matches(height - depth + 1));
         const auto replacement_time = current_header_time();
         const bool new_block = QTest::qWaitFor([&] { return observed(height - depth + 1, replacement_time); });
