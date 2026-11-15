@@ -709,6 +709,8 @@ void WalletQmlModel::initializeBackend()
     });
     connect(this, &WalletQmlModel::currentTransactionChanged, this, &WalletQmlModel::requestCurrentFlow);
     connect(this, &WalletQmlModel::displayUnitChanged, this, &WalletQmlModel::requestCurrentFlow);
+    connect(this, &WalletQmlModel::displayUnitChanged, m_bump_transaction_model, &BumpTransactionModel::setDisplayUnit);
+    m_bump_transaction_model->setDisplayUnit(m_display_unit);
     connect(m_send_recipients, &QAbstractItemModel::dataChanged, this, [this] { invalidatePreparation(); });
     connect(m_send_recipients, &SendRecipientsListModel::recipientDraftChanged, this, &WalletQmlModel::invalidatePreparation);
     connect(m_send_recipients, &QAbstractItemModel::rowsInserted, this, [this] { invalidatePreparation(); });

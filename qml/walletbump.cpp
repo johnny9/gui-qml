@@ -6,7 +6,6 @@
 #include <qml/walletopening.h>
 #include <qml/walletsend.h>
 #include <qml/models/signertransaction.h>
-#include <qml/bitcoinunits.h>
 #include <wallet/coincontrol.h>
 #include <util/translation.h>
 #include <QObject>
@@ -21,7 +20,6 @@ QString Message(const std::vector<bilingual_str>& errors)
     if (errors.empty()) return {};
     return QString::fromStdString(errors.front().translated.empty() ? errors.front().original : errors.front().translated).left(4096);
 }
-QString Fee(CAmount amount) { return QmlBitcoinUnits::format(QmlBitcoinUnits::Unit::BTC, amount, false, QmlBitcoinUnits::SeparatorStyle::NEVER) + QStringLiteral(" BTC"); }
 std::vector<COutPoint> Inputs(const CMutableTransaction& transaction)
 {
     std::vector<COutPoint> inputs;
@@ -137,9 +135,6 @@ Preparation Prepare(interfaces::Wallet& wallet, const QString& txid, unsigned in
         if (const auto scope_error = CheckApprovedScope(wallet, *review); scope_error != Error::None) {
             result.error = scope_error; return result;
         }
-        review->old_fee_text = Fee(review->old_fee);
-        review->new_fee_text = Fee(review->new_fee);
-        review->increase_text = Fee(review->new_fee - review->old_fee);
         review->old_txid = QString::fromStdString(original.GetHex());
         result.review = std::move(review);
     } catch (...) { result.error = Error::Uncertain; }

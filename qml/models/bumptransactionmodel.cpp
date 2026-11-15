@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qml/models/bumptransactionmodel.h>
+#include <qml/bitcoinunits.h>
 #include <qml/guipresentation.h>
 #include <qml/secretinput.h>
 #include <QPointer>
@@ -92,6 +93,25 @@ bool BumpTransactionModel::publish()
 void BumpTransactionModel::clearPresentation()
 {
     m_old_fee.clear(); m_new_fee.clear(); m_increase.clear(); m_old_txid.clear(); m_new_txid.clear(); m_error.clear(); m_unlock_error.clear(); m_needs_unlock = false;
+}
+void BumpTransactionModel::setDisplayUnit(int unit)
+{
+    if (m_closed || unit < 0 || unit > 3 || m_display_unit == unit) return;
+    m_display_unit = unit;
+    refreshFeePresentation();
+    Q_EMIT resultChanged();
+}
+void BumpTransactionModel::refreshFeePresentation()
+{
+    if (!m_review) return;
+    const auto unit = QmlBitcoinUnits::fromDisplayUnit(m_display_unit);
+    const auto format = [unit](CAmount amount) {
+        return QmlBitcoinUnits::formatForDisplay(unit, amount) + QStringLiteral(" ") + QmlBitcoinUnits::label(unit, amount);
+    };
+    // Three bounded scalar presentations. No wallet, Core, disk or draft work.
+    m_old_fee = format(m_review->old_fee);
+    m_new_fee = format(m_review->new_fee);
+    m_increase = format(m_review->new_fee - m_review->old_fee);
 }
 quint64 BumpTransactionModel::requestPrepareFeeBump(const QString& txid, unsigned int target_blocks)
 {
@@ -218,9 +238,7 @@ void BumpTransactionModel::applyAttempt(transactionattempt::Snapshot snapshot, q
         m_preparing = false;
         m_review = m_attempt_snapshot.candidate ? m_attempt_snapshot.candidate->replacement : nullptr;
         if (m_review) {
-            m_old_fee = m_review->old_fee_text;
-            m_new_fee = m_review->new_fee_text;
-            m_increase = m_review->increase_text;
+            refreshFeePresentation();
             m_old_txid = m_review->old_txid;
         } else if (m_state == Failed && m_error.isEmpty()) {
             m_error = tr("The replacement transaction could not be prepared.");

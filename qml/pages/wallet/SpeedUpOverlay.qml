@@ -15,7 +15,7 @@ Popup {
     objectName: "speedUpOverlay"
 
     property string txid: ""
-    property var bumpModel: null
+    property BumpTransactionModel bumpModel: null
     property double ownedAttemptId: 0
     readonly property bool ownsAttempt: ownedAttemptId !== 0 && bumpModel && bumpModel.attemptId === ownedAttemptId
     property int bumpState: root.bumpModel ? root.bumpModel.state : BumpTransactionModel.Idle
@@ -214,16 +214,23 @@ Popup {
         descriptionText: qsTr("Enter your wallet password to update this transaction.")
         confirmText: qsTr("Unlock and update")
         busyConfirmText: qsTr("Unlocking...")
-        property var context: null
-        readonly property bool contextValid: context !== null && root.opened && root.ownsAttempt
-            && root.bumpModel === context.model && root.ownedAttemptId === context.attempt
-        onAboutToShow: context = { model: root.bumpModel, attempt: root.ownedAttemptId }
-        onClosed: context = null
+        property BumpTransactionModel contextModel: null
+        property double contextAttempt: 0
+        readonly property bool contextValid: contextModel !== null && root.opened && root.ownsAttempt
+            && root.bumpModel === contextModel && root.ownedAttemptId === contextAttempt
+        onAboutToShow: {
+            contextModel = root.bumpModel
+            contextAttempt = root.ownedAttemptId
+        }
+        onClosed: {
+            contextModel = null
+            contextAttempt = 0
+        }
         onContextValidChanged: if (!contextValid) close()
         busy: contextValid && root.bumpModel.busy
         errorText: contextValid ? root.bumpModel.unlockErrorText : ""
         onSubmitted: (passphrase) => {
-            if (contextValid && !root.bumpModel.busy) root.bumpModel.requestConfirmFeeBumpWithPassphrase(passphrase)
+            if (contextValid && !contextModel.busy) contextModel.requestConfirmFeeBumpWithPassphrase(passphrase)
         }
     }
 

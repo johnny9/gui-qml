@@ -27,7 +27,7 @@ struct Prepared {
     std::vector<COutPoint> added_inputs;
     CAmount old_fee{0}, new_fee{0};
     unsigned int target_blocks{0};
-    QString old_fee_text, new_fee_text, increase_text, old_txid;
+    QString old_txid;
 };
 enum class Error { None, Invalid, InvalidId, Ineligible, Unavailable, Create, NeedsUnlock, IncorrectPassphrase, Sign, Changed, InvalidSignature, Policy, RelockFailed, Commit, Uncertain };
 enum class Record { Unknown, AbsentAtObservation, Recorded };

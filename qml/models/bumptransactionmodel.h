@@ -48,6 +48,7 @@ public:
     void setOpening(std::shared_ptr<walletopening::Session> opening, execution::SnapshotServices services,
                     walletbump::Services bump_services = {});
     void closeAdmission();
+    void setDisplayUnit(int unit);
     void retryPublications();
     void detachWallet() { closeAdmission(); m_wallet = nullptr; }
     State state() const { return m_state; }
@@ -94,6 +95,7 @@ private:
     static State ProjectState(transactionattempt::Phase phase);
     bool publish();
     void clearPresentation();
+    void refreshFeePresentation();
     interfaces::Wallet* m_wallet{nullptr}; // GUI association only, never transported.
     std::shared_ptr<walletopening::Session> m_opening;
     execution::SnapshotServices m_services;
@@ -106,6 +108,7 @@ private:
     std::shared_ptr<execution::OwnedCommand<walletbump::Commit>> m_commit_operation;
     std::function<void()> m_security_state_changed;
     State m_state{Idle};
+    int m_display_unit{0};
     QString m_old_fee, m_new_fee, m_increase, m_old_txid, m_new_txid, m_error, m_unlock_error;
     bool m_needs_unlock{false}, m_closed{false}, m_preparing{false}, m_committing{false};
     quint64 m_attempt_id{0}, m_commit_id{0}, m_view_revision{0}, m_preparation_revision{0};
