@@ -407,6 +407,7 @@ execution::Admission Owner::close()
     return submit([self = shared_from_this()] {
         auto& state = *self->m_state;
         state.closing = true;
+        if (state.result && state.result->presentation_allowed) state.result->presentation_allowed->store(false);
         if (state.flow.child() && state.target && state.target->retire)
             state.target->retire({self->m_identity, state.flow.child()->id}, *state.flow.child());
         state.flow.close();

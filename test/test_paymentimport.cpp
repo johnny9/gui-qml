@@ -7,6 +7,9 @@
 #include <qml/psbtwork.h>
 #include <test/mocks/manualexecutionenvironment.h>
 #include <test/qt_test_registry.h>
+#include <test/mocks/mockwallet.h>
+#include <test/mocks/manualwalletdrain.h>
+#include <test/mocks/psbtfeefixture.h>
 #include <key_io.h>
 #include <QFile>
 #include <QTemporaryDir>
@@ -248,6 +251,46 @@ private Q_SLOTS:
         QFile saved{dir.filePath("original.psbt")}; QVERIFY(saved.open(QIODevice::ReadOnly)); QCOMPARE(saved.readAll(), bytes);
         operation->cancel(); QVERIFY(!operation->requestSaveOriginal(operation->exportToken(), dir.filePath("closed")));
         model.closeAdmission(); commands.drain();
+    }
+    void realTypedConsumerUsesPublicReviewFactoryAndOriginalView_data() {
+        QTest::addColumn<int>("boundary");
+        QTest::newRow("original") << 0;
+        QTest::newRow("discard-before-gui-adoption") << 1;
+        QTest::newRow("source-close-after-receipt-before-adoption") << 2;
+    }
+    void realTypedConsumerUsesPublicReviewFactoryAndOriginalView() {
+        QFETCH(int, boundary);
+        ManualRoutedExecution commands, sources;
+        std::deque<std::function<void()>> target_gui, source_gui;
+        FeeReadServices fees; fees.post = [&](auto post) { target_gui.push_back(std::move(post)); };
+        auto wallet = std::make_shared<MockWallet>();
+        WalletQmlModel model{WalletQmlModel::SharedWallet{wallet, commands.scheduler}, nullptr, fees, {}, {}};
+        ManualWalletDrain drain{commands, &model};
+        BitcoinUriModel importer; QObject view;
+        importer.setServices({sources.scheduler, [&](auto post) { source_gui.push_back(std::move(post)); }});
+        const auto publish = [](auto& queue) { while (!queue.empty()) { auto turn = std::move(queue.front()); queue.pop_front(); turn(); } };
+        const auto pump = [&] { sources.drain(); commands.drain(); publish(target_gui); publish(source_gui); QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall); };
+        const auto cleanup = qScopeGuard([&] { importer.closeAdmission(); for (int turn{0}; turn < 10; ++turn) pump(); });
+        QVERIFY(QTest::qWaitFor([&] { pump(); return model.capabilitiesKnown() && !model.sendRecipientList()->validationPending(); }, 5000));
+        const auto document = psbtfeefixture::Legacy(2, false);
+        const auto bytes = psbtwork::SerializeRaw(document);
+        auto* operation = importer.requestImportText(QString::fromLatin1(bytes.toBase64()), &model, model.sendRecipientList()->currentRecipient(), &view);
+        QVERIFY(operation);
+        QVERIFY(QTest::qWaitFor([&] { pump(); return operation->canReview() || operation->state() == PaymentImportOperation::State::Failed; }, 5000));
+        QCOMPARE(operation->state(), PaymentImportOperation::State::Inspecting); QVERIFY(operation->canReview());
+        operation->openReview(); sources.drain(); commands.drain();
+        QVERIFY(!model.currentTransaction()); // The Native factory is separate from GUI adoption.
+        sources.drain(); publish(source_gui); QCOMPARE(operation->state(), PaymentImportOperation::State::ReviewOpened);
+        if (boundary == 1) model.discardCurrentTransaction();
+        if (boundary == 2) { operation->cancel(); sources.drain(); }
+        publish(target_gui);
+        if (boundary == 0) {
+            QVERIFY(model.currentTransaction()); QVERIFY(model.currentTransactionIsImportedPsbt());
+            QCOMPARE(psbtwork::SerializeRaw(*model.currentTransaction()->assessedPsbt()), bytes);
+            QVERIFY(!model.currentTransactionCanSend()); // Mock owns no inputs; import carries no send intent.
+        } else QVERIFY(!model.currentTransaction());
+        QVERIFY(operation->canExport() || boundary == 2);
+        operation->cancel(); for (int turn{0}; turn < 10; ++turn) pump();
     }
     void typedFacadePublishesBoundedSourceWithoutTargetOrGuiParsing() {
         ManualRoutedExecution commands; std::deque<std::function<void()>> gui;

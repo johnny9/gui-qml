@@ -91,7 +91,7 @@ std::shared_ptr<const TargetPort> WithReviewFactory(std::shared_ptr<const Target
                 // Every admitted attempt records its exact outcome before a
                 // callback can be lost; queries never prepare a second review.
                 reply = ChildReply{Receipt{child, current ? (output->review ? Outcome::ReviewOpened : Outcome::Rejected) : Outcome::Stale,
-                    current && output->review ? child.id : 0, services.view}, {}, {}, output};
+                    current && output->review ? child.id : 0, services.view}, {}, {}, output, call->presentation_allowed};
                 call->result = reply;
             }
             if (current && services.present) { try { services.present(output, call->presentation_allowed); } catch (...) {} }

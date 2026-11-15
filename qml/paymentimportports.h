@@ -10,6 +10,7 @@
 #include <qml/psbtworktypes.h>
 
 #include <exception>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -28,6 +29,7 @@ struct ChildReply {
     std::optional<Target> current_target;
     std::shared_ptr<const ApplyReceipt> applied;
     std::shared_ptr<const psbtwork::ImportResult> review;
+    std::shared_ptr<std::atomic_bool> presentation_allowed{};
 };
 
 /** An immutable route to one original opening/draft/recipient. Implementations
