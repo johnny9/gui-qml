@@ -223,7 +223,6 @@ void SendRecipient::publishValidation()
 BitcoinAddress* SendRecipient::address() const { return m_address; }
 void SendRecipient::setAddress(const QString& address) { if (!inputAdmissionClosed()) m_address->setAddress(address, 0); }
 QString SendRecipient::addressError() const { return m_address->normalizationError().isEmpty() ? m_addressError : m_address->normalizationError(); }
-void SendRecipient::setAddressError(const QString& error) { if (!admissionClosed() && m_addressError != error) { m_addressError = error; Q_EMIT addressErrorChanged(); } }
 QString SendRecipient::label() const { return m_label; }
 bool SendRecipient::editPrivateNote(const QString& value)
 {
@@ -376,5 +375,4 @@ void SendRecipient::clear()
     Q_EMIT messageChanged(); if (guard && !inputAdmissionClosed()) requestValidation();
 }
 void SendRecipient::validateAddress() { requestValidation(); }
-void SendRecipient::validateAmount() { requestValidation(); }
 bool SendRecipient::isValid() const { return !admissionClosed() && (!m_wallet || m_wallet->available()) && !validationPending() && m_validated && m_validated->revision == m_revision && m_validated->valid; }

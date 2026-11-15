@@ -255,31 +255,6 @@ QVariantList ReceiveRequestHistoryModel::matchingEntriesForAddress(const QString
     return matches;
 }
 
-std::vector<QmlRecentRequestEntry> ReceiveRequestHistoryModel::entriesForAddress(const QString& address) const
-{
-    std::vector<QmlRecentRequestEntry> matches;
-    if (address.isEmpty()) return matches;
-    if (m_snapshot) {
-        const auto found = m_snapshot->by_address.find(address);
-        if (found != m_snapshot->by_address.end()) {
-            for (const auto id : found->second) matches.push_back(m_snapshot->find(id)->entry);
-        }
-        return matches;
-    }
-    for (const int64_t id : m_ids_by_address.value(address)) {
-        matches.push_back(m_entries[indexOfId(id)]);
-    }
-    return matches;
-}
-
-QSet<QString> ReceiveRequestHistoryModel::requestAddresses() const
-{
-    if (m_snapshot) return m_snapshot->addresses;
-    QSet<QString> addresses;
-    for (auto it = m_ids_by_address.cbegin(); it != m_ids_by_address.cend(); ++it) addresses.insert(it.key());
-    return addresses;
-}
-
 std::optional<QmlRecentRequestEntry> ReceiveRequestHistoryModel::entryById(const QString& request_id) const
 {
     if (m_snapshot) {

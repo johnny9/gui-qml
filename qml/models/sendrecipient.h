@@ -71,7 +71,6 @@ public:
     BitcoinAddress* address() const;
     void setAddress(const QString& address);
     QString addressError() const;
-    void setAddressError(const QString& error);
 
     QString label() const;
     void setLabel(const QString& label);
@@ -119,7 +118,6 @@ private:
     void captureAmountIntent();
     void publishValidation();
     void validateAddress();
-    void validateAmount();
 
     const WalletQmlModel* m_wallet;
     const quint64 m_identity;

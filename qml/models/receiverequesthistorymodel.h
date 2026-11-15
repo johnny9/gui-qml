@@ -16,7 +16,6 @@
 
 #include <QAbstractListModel>
 #include <QHash>
-#include <QSet>
 #include <QString>
 #include <QVariantList>
 #include <QVariantMap>
@@ -63,11 +62,6 @@ public:
     void prependOrReplace(const QmlRecentRequestEntry& entry);
     bool removeByRequestId(const QString& request_id);
     Q_INVOKABLE QVariantList matchingEntriesForAddress(const QString& address) const;
-    // Same match as matchingEntriesForAddress, but returns the entries so a
-    // caller can update and re-store them (used to sync a request label with an
-    // edited address book label).
-    std::vector<QmlRecentRequestEntry> entriesForAddress(const QString& address) const;
-    QSet<QString> requestAddresses() const;
 
     std::optional<QmlRecentRequestEntry> entryById(const QString& request_id) const;
     int64_t maxId() const;
