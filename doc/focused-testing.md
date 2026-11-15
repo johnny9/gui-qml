@@ -63,6 +63,36 @@ under the refactoring cadence.
 
 ## Direct discovery and selection
 
+For a header-heavy unit change, configure the same executable to compile only
+the requested registered classes:
+
+```sh
+cmake -S . -B build -DAPP_UNIT_TEST_CLASSES='AmountParseTests;GuiArgsTests'
+cmake --build build --target bitcoinqml_unit_tests --parallel 4
+python3 test/run_focused.py --build-dir build --manifest selection.json --output-dir .validation/focused-result
+```
+
+The normal default compiles the complete executable. Emptying the cache option
+with `-DAPP_UNIT_TEST_CLASSES=` restores that default for final suites. Typos,
+unsupported classes, duplicate names and empty list entries fail configuration.
+All classes requested by unit entries in a selection manifest must be included.
+The existing registry, common probe providers, app libraries, test functions,
+fixtures, compiler flags and assertions remain the same. Shared providers or
+multiple registrations in one source can add compiled companion classes; the
+manifest still controls which bodies execute. QML/Core integration targets are
+independent of this unit-source filter.
+
+`test/unit-build-selection.json` records the configured scope. The runner copies
+its values and hash into `report.json` and checks focused class discovery against
+the actual binary, so a stale/full executable cannot masquerade as a focused
+build. CTest labels this unit target `focused-build`; passing it is not a complete
+unit-suite result. Old builds without metadata remain explicitly unrecorded.
+
+This reduces unrelated test compilation. It does not remove required changed-
+scope static checks or avoid rebuilding application units that use a changed
+production header. Class source declarations follow the existing one registry
+macro per line convention and trigger CMake reconfiguration when they change.
+
 ```sh
 build/bin/bitcoinqml_unit_tests --list-test-classes
 build/bin/bitcoinqml_unit_tests --test-class=AmountParseTests -platform minimal -functions

@@ -19,6 +19,9 @@ add_test(NAME bitcoinqml_dev_resources
 add_test(NAME bitcoinqml_focused_runner
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_run_focused.py
 )
+add_test(NAME bitcoinqml_focused_unit_build
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_focused_unit_build.py
+)
 add_test(NAME bitcoinqml_tidy_selection
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_clang_tidy_selection.py
 )
@@ -163,6 +166,12 @@ if(ENABLE_WALLET)
   )
 endif()
 
+include(${PROJECT_SOURCE_DIR}/cmake/FocusedUnitTests.cmake)
+# The executable's early child-process entry point uses this existing provider.
+configure_focused_unit_build(bitcoinqml_unit_tests
+  ${CMAKE_CURRENT_BINARY_DIR}/unit-build-selection.json
+  SUPPORT_SOURCES test_startupprofile.cpp)
+
 target_compile_definitions(bitcoinqml_unit_tests
   PRIVATE
     BITCOINQML_NO_TEST_MAIN
@@ -195,6 +204,9 @@ target_link_libraries(bitcoinqml_unit_tests
 )
 
 add_test(NAME bitcoinqml_unit_tests COMMAND bitcoinqml_unit_tests -platform minimal)
+if(APP_UNIT_TEST_CLASSES)
+  set_tests_properties(bitcoinqml_unit_tests PROPERTIES LABELS "unit;focused-build")
+endif()
 add_test(NAME bitcoinqml_unit_targeting
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/functional/test_qml_unit_targeting.py
     $<TARGET_FILE:bitcoinqml_unit_tests>
