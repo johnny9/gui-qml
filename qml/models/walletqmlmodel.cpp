@@ -3394,12 +3394,57 @@ void WalletQmlModel::startPsbtFileExport(quint64 action_id, const QString& path,
 {
     if (!observationsAllowed() || action_id != m_psbt_action_id || m_psbt_action_kind != PsbtActionKind::Save || !document) return;
     const QPointer<WalletQmlModel> observer{this};
+    const auto opening = m_opening;
+    const auto review = m_psbt_action_review;
+    const auto view = m_psbt_action_view_epoch;
+    const bool had_review = m_psbt_action_had_review;
+    const bool had_document = m_psbt_action_had_document;
     const auto request = preparePsbtFileExport(action_id, path, receipt);
-    if (!request || !request->start(std::move(document))) {
+    if (!request) {
         if (observationsAllowed() && action_id == m_psbt_action_id && m_psbt_action_state == PsbtActionState::PsbtPending) {
             m_psbt_action_state = PsbtActionState::PsbtFailed;
             m_psbt_action_error = tr("The PSBT export could not be queued.");
-            if (request) request->abandon();
+        }
+        if (!observer) return;
+        Q_EMIT fileExportOperationChanged();
+        if (observer && action_id == m_psbt_action_id) Q_EMIT psbtActionChanged();
+        return;
+    }
+    const bool same_document = had_document && m_current_psbt &&
+        !document.owner_before(m_current_psbt) && !m_current_psbt.owner_before(document);
+    const bool same_review = had_review ? review && m_current_transaction == review : !m_current_transaction;
+    const bool still_pending = observer && observationsAllowed() && !m_admission_closed &&
+        m_opening == opening && action_id == m_psbt_action_id &&
+        m_psbt_action_kind == PsbtActionKind::Save && m_psbt_action_state == PsbtActionState::PsbtPending &&
+        m_psbt_view_epoch == view && m_psbt_action_view_epoch == view && same_review &&
+        (had_document ? same_document : !m_current_psbt);
+    if (!still_pending) {
+        const bool same_action = observer && action_id == m_psbt_action_id &&
+            m_psbt_action_kind == PsbtActionKind::Save && m_psbt_action_state == PsbtActionState::PsbtPending;
+        QPointer<FileExportOperationModel> stale_export;
+        if (same_action) {
+            m_psbt_action_state = PsbtActionState::PsbtStale;
+            m_psbt_action_error.clear();
+            if (m_psbt_file_export_action_id == action_id) {
+                stale_export = m_file_export_operation;
+                m_file_export_operation = nullptr;
+                m_psbt_file_export_action_id = 0;
+            }
+        }
+        request->abandon();
+        if (!observer) return;
+        if (stale_export) stale_export->deleteLater();
+        if (same_action) {
+            Q_EMIT fileExportOperationChanged();
+            if (observer && action_id == m_psbt_action_id) Q_EMIT psbtActionChanged();
+        }
+        return;
+    }
+    if (!request->start(std::move(document))) {
+        if (observer && action_id == m_psbt_action_id && m_psbt_action_state == PsbtActionState::PsbtPending) {
+            m_psbt_action_state = PsbtActionState::PsbtFailed;
+            m_psbt_action_error = tr("The PSBT export could not be queued.");
+            request->abandon();
         }
     }
     if (!observer) return;
