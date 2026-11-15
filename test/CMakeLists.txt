@@ -68,6 +68,7 @@ add_executable(bitcoinqml_unit_tests
   test_startupeffects.cpp
   test_startuppolicy.cpp
   test_startuppreparation.cpp
+  test_startuproleprofile.cpp
   test_startupprofile.cpp
   test_qtlogsink.cpp
   test_bitcoinaddress.cpp

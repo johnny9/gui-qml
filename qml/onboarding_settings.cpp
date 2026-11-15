@@ -353,7 +353,7 @@ bool PrepareArgs(ArgsManager& args, const std::vector<std::string>& argv, bool c
     return args.ParseParameters(static_cast<int>(raw_argv.size()), raw_argv.data(), error);
 }
 
-OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::string>& argv, bool can_listen_ipc, const UiPreferencesNamespace* identity)
+OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::string>& argv, bool can_listen_ipc, const UiPreferencesNamespace* identity, StartupReadMode mode)
 {
     OnboardingStartupStatus status;
 
@@ -423,6 +423,29 @@ OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::st
         }
         status.ok = true;
         status.should_show_onboarding = true;
+        return status;
+    }
+
+    try {
+        const QString network = QString::fromStdString(preview_args.GetChainTypeString());
+        std::error_code path_error;
+        const fs::path canonical = fs::weakly_canonical(PreviewNetworkDataDir(preview_args), path_error);
+        const QString network_data_dir = QString::fromStdString(fs::PathToString(canonical));
+        if (path_error || canonical.empty() || network.isEmpty() || network.size() > 64 || network_data_dir.size() > 32768) {
+            status.error = QCoreApplication::translate("Onboarding", "The startup profile identity could not be resolved within its supported bounds.");
+            return status;
+        }
+        status.network = network;
+        status.network_data_dir = network_data_dir;
+        // A fixed CLI profile wins over the chooser, including during reset.
+        // A chooser without that fixed profile must run before any forwarding.
+        status.probe_eligible = explicit_datadir || !preview_args.GetBoolArg("-choosedatadir", false);
+    } catch (const std::exception& e) {
+        status.error = QString::fromUtf8(e.what()).left(16384);
+        return status;
+    }
+    if (mode == StartupReadMode::ProfileOnly) {
+        status.ok = true;
         return status;
     }
 
