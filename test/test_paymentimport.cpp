@@ -515,6 +515,16 @@ private Q_SLOTS:
         commands.drain(); QCOMPARE(observed.phase, paymentimport::Phase::Closed); QCOMPARE(retired, 1); QVERIFY(original.expired());
         observed = {}; commands.drain(); QCOMPARE(commands.scheduler->pending(), size_t{0});
     }
+    void closeReservationFailureAndUnusedActorCannotRetainScope() {
+        auto limits = execution::Limits::Bounded(); limits.cleanup_reservations.tasks = 1;
+        ManualRoutedExecution refused{limits}; paymentimport::Services services; services.scheduler = refused.scheduler;
+        QVERIFY(!paymentimport::Owner::Create(89, std::move(services), {}));
+        refused.drain(); QCOMPARE(refused.scheduler->pending(), size_t{0});
+        ManualRoutedExecution unused; services = {}; services.scheduler = unused.scheduler;
+        auto owner = paymentimport::Owner::Create(90, std::move(services), {}); QVERIFY(owner);
+        const std::weak_ptr<paymentimport::Owner> original{owner}; owner.reset();
+        unused.drain(); QVERIFY(original.expired()); QCOMPARE(unused.scheduler->pending(), size_t{0});
+    }
     void realThreadSourceReadAndDomainDecisionsStayOutsideGui() {
         BackendExecutor executor{execution::Limits::Bounded()};
         std::atomic<QThread*> native{nullptr}, domain{nullptr};

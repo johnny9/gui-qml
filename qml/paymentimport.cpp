@@ -176,11 +176,16 @@ struct Owner::State {
     bool closing{false}, retired{false}, wake_pending{false}, use_requested{false}, native_handoff_completed{false};
     std::chrono::steady_clock::time_point retry_at{};
 };
+struct Owner::Close {
+    std::mutex mutex;
+    std::shared_ptr<Owner> owner;
+};
 
 Owner::Owner(uint64_t identity, Services services, std::shared_ptr<execution::Scheduler> scope,
              Notify notify, Retired retired, std::shared_ptr<State> state)
     : m_identity(identity), m_services(std::move(services)), m_scope(std::move(scope)),
-      m_key(m_scope->allocateKey()), m_notify(std::move(notify)), m_retired(std::move(retired)), m_state(std::move(state)) {}
+      m_key(m_scope->allocateKey()), m_notify(std::move(notify)), m_retired(std::move(retired)), m_state(std::move(state)),
+      m_close(std::make_shared<Close>()) {}
 
 std::shared_ptr<Owner> Owner::Create(uint64_t identity, Services services, Notify notify, Retired retired)
 {
@@ -192,7 +197,18 @@ std::shared_ptr<Owner> Owner::Create(uint64_t identity, Services services, Notif
     if (!services.read) services.read = ReadSource;
     if (!services.analyze) services.analyze = [](const Inspection& source) { return AnalyzeSource(source); };
     if (!services.now) services.now = std::chrono::steady_clock::now;
-    return std::shared_ptr<Owner>{new Owner(identity, std::move(services), std::move(scope), std::move(notify), std::move(retired), std::move(state))};
+    auto owner = std::shared_ptr<Owner>{new Owner(identity, std::move(services), scope, std::move(notify), std::move(retired), std::move(state))};
+    const auto cell = owner->m_close;
+    // Retire on Domain through an already reserved Cleanup relay. The slot
+    // holds no Owner until close(), so dropping an unused actor cannot cycle.
+    const auto close = execution::Submit(*scope, [] {}, [cell] {
+        std::shared_ptr<Owner> original;
+        { std::lock_guard lock{cell->mutex}; original = std::move(cell->owner); }
+        if (original) original->closeOnDomain();
+    }, {}, {execution::Lane::Cleanup, 1024, scope->allocateKey()}, true);
+    if (!close) return {};
+    owner->m_close_task = close.id;
+    return owner;
 }
 
 execution::Admission Owner::submit(std::function<void()> decision)
@@ -499,15 +515,21 @@ execution::Admission Owner::reconcile() { return submit([self = shared_from_this
 execution::Admission Owner::close()
 {
     m_presentation_allowed->store(false);
-    return submit([self = shared_from_this()] {
-        auto& state = *self->m_state;
-        state.closing = true;
-        if (state.result && state.result->presentation_allowed) state.result->presentation_allowed->store(false);
-        if (state.flow.child() && state.target && state.target->retire)
-            state.target->retire({self->m_identity, state.flow.child()->id}, *state.flow.child());
-        state.flow.close();
-        if (state.flow.child()) { state.flow.acknowledgmentLost(*state.flow.child()); self->query(); }
-        self->cancelObsolete();
-    });
+    if (!m_close_requested.exchange(true)) {
+        { std::lock_guard lock{m_close->mutex}; m_close->owner = shared_from_this(); }
+        if (!m_scope->activateCleanup(m_close_task)) std::terminate();
+    }
+    return {m_close_task, execution::Rejection::None};
+}
+void Owner::closeOnDomain()
+{
+    auto& state = *m_state;
+    state.closing = true;
+    if (state.result && state.result->presentation_allowed) state.result->presentation_allowed->store(false);
+    if (state.flow.child() && state.target && state.target->retire)
+        state.target->retire({m_identity, state.flow.child()->id}, *state.flow.child());
+    state.flow.close();
+    if (state.flow.child()) { state.flow.acknowledgmentLost(*state.flow.child()); query(); }
+    cancelObsolete(); publish();
 }
 } // namespace paymentimport
