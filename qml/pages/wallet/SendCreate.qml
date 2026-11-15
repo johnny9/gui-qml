@@ -18,12 +18,13 @@ PageStack {
     property WalletQmlModel wallet: null
     property SendRecipient recipient: wallet ? wallet.recipients.current : null
     property string prepareTransactionErrorText: ""
-    property bool manualCoinSelection: false
+    readonly property bool manualCoinSelection: root.wallet !== null
+        && root.wallet.coinsListModel !== null && root.wallet.coinsListModel.manualInputSelection
     readonly property bool externalSignerWallet: wallet !== null && wallet.hasExternalSigner
     readonly property string recipientValidationError: wallet ? wallet.recipients.budgetError || wallet.recipients.validationError : ""
     readonly property bool selectedInputsActive: wallet !== null
         && wallet.coinsListModel !== null
-        && wallet.coinsListModel.selectedCoinsCount > 0
+        && (wallet.coinsListModel.manualInputSelection || wallet.coinsListModel.selectedCoinsCount > 0)
     readonly property bool hasLockedCoins: wallet !== null
         && wallet.coinsListModel !== null
         && wallet.coinsListModel.lockedSatoshi > 0
@@ -39,7 +40,9 @@ PageStack {
     readonly property string formErrorText: wallet && wallet.fees && !wallet.fees.estimatePending && wallet.fees.errorText.length > 0
         ? wallet.fees.errorText : recipientValidationError.length > 0
         ? recipientValidationError
-        : (feeBalanceErrorText.length > 0 ? feeBalanceErrorText : prepareTransactionErrorText)
+        : (wallet && wallet.coinsListModel && wallet.coinsListModel.selectionReconciliationRequired
+           ? qsTr("Some selected coins are no longer available. Choose Automatic inputs or update the selection.")
+           : (feeBalanceErrorText.length > 0 ? feeBalanceErrorText : prepareTransactionErrorText))
 
     signal viewTransactionInActivity(string txid)
 
@@ -169,9 +172,8 @@ PageStack {
     function resetSendForm() {
         if (!root.wallet) return
         root.wallet.recipients.clear()
-        root.wallet.clearSelectedCoins()
+        root.wallet.coinsListModel.setManualInputSelection(false)
         root.wallet.coinsListModel.update()
-        root.manualCoinSelection = false
         root.clearPrepareTransactionError()
         sendPage.expandedRecipient = 0
         sendPage.paymentRequestStatus = ""
@@ -281,7 +283,6 @@ PageStack {
         function onSelectionSnapshotChanged() {
             root.draftChanged()
             root.clearPrepareTransactionError()
-            root.scheduleFeeEstimates()
         }
     }
 
@@ -1151,14 +1152,8 @@ PageStack {
                                         model: [qsTr("Automatic"), qsTr("Manual")]
                                         currentIndex: root.manualCoinSelection || root.selectedInputsActive ? 1 : 0
                                         onSelected: function(index, option) {
-                                            root.manualCoinSelection = index === 1
-                                            if (index === 0) {
-                                                if (root.selectedInputsActive) {
-                                                    root.wallet.clearSelectedCoins()
-                                                    root.wallet.coinsListModel.update()
-                                                    root.scheduleFeeEstimates()
-                                                }
-                                            }
+                                            if (root.wallet && root.wallet.coinsListModel)
+                                                root.wallet.coinsListModel.setManualInputSelection(index === 1)
                                         }
                                     }
                                 }
@@ -1182,14 +1177,15 @@ PageStack {
                                     objectName: "sendInputsSelectedText"
                                     visible: false
                                     //: Status in the Send form showing how many transaction inputs are selected.
-                                    text: root.selectedInputsActive ? (root.wallet.coinsListModel.selectedCoinsCount === 1 ? qsTr("1 input selected") : qsTr("%1 inputs selected").arg(root.wallet.coinsListModel.selectedCoinsCount))
+                                    text: root.manualCoinSelection && root.wallet.coinsListModel.selectedCoinsCount === 0 ? qsTr("No inputs selected")
+                                        : root.selectedInputsActive ? (root.wallet.coinsListModel.selectedCoinsCount === 1 ? qsTr("1 input selected") : qsTr("%1 inputs selected").arg(root.wallet.coinsListModel.selectedCoinsCount))
                                         : qsTr("%1 inputs selected automatically").arg(root.wallet.estimatedInputCount)
                                 }
                                 OutlineButton {
                                     objectName: "sendUseAutomaticInputsButton"
                                     visible: false
                                     text: qsTr("Use automatic selection")
-                                    onClicked: { root.wallet.clearSelectedCoins(); root.wallet.coinsListModel.update(); root.scheduleFeeEstimates() }
+                                    onClicked: { root.wallet.coinsListModel.setManualInputSelection(false); root.wallet.coinsListModel.update(); root.scheduleFeeEstimates() }
                                 }
                             }
 
@@ -1207,7 +1203,7 @@ PageStack {
                                 objectName: "sendReviewButton"
                                 Layout.fillWidth: true
                                 text: qsTr("Review Transaction")
-                                enabled: !sendPage.uriActionPending && root.wallet && root.wallet.available && root.wallet.recipients.allValid && !root.wallet.feeEstimatePending && !root.wallet.preparationBusy && !root.wallet.fees.policyPending && !root.wallet.customFeeTargetPending && !root.wallet.coinSelectionPending
+                                enabled: !sendPage.uriActionPending && root.wallet && root.wallet.available && root.wallet.recipients.allValid && !root.wallet.feeEstimatePending && !root.wallet.preparationBusy && !root.wallet.fees.policyPending && !root.wallet.customFeeTargetPending && !root.wallet.coinSelectionPending && !root.wallet.coinSelectionBlocked
                                     && !root.wallet.sendAmountExhaustsBalance && (!root.wallet.maximumRecipient || root.wallet.fees.errorText.length === 0) && (!root.wallet.customFeeEnabled || root.wallet.customFeeRateValid)
                                 onClicked: root.confirmTransactionReview()
                             }

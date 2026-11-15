@@ -165,6 +165,8 @@ private:
     Q_PROPERTY(QString estimatedFee READ estimatedFee NOTIFY estimatedFeeChanged)
     Q_PROPERTY(bool sendAmountExhaustsBalance READ sendAmountExhaustsBalance NOTIFY sendAmountExhaustsBalanceChanged)
     Q_PROPERTY(FeeSelectionModel* fees READ fees CONSTANT)
+    Q_PROPERTY(bool coinSelectionPending READ coinSelectionPending NOTIFY coinSelectionChanged)
+    Q_PROPERTY(bool coinSelectionBlocked READ coinSelectionBlocked NOTIFY coinSelectionChanged)
     Q_PROPERTY(bool customFeeEnabled READ customFeeEnabled WRITE setCustomFeeEnabled NOTIFY customFeeEnabledChanged)
     Q_PROPERTY(QString customFeeRate READ customFeeRate WRITE setCustomFeeRate NOTIFY customFeeRateChanged)
     Q_PROPERTY(bool customFeeRateValid READ customFeeRateValid NOTIFY customFeeRateValidChanged)
@@ -386,7 +388,7 @@ public:
     bool isSelectedCoin(const COutPoint& output);
     std::shared_ptr<const CoinsListModel::Selection> selectedCoins() const;
     bool coinSelectionPending() const;
-    Q_PROPERTY(bool coinSelectionPending READ coinSelectionPending NOTIFY coinSelectionChanged)
+    bool coinSelectionBlocked() const;
     Q_INVOKABLE void clearSelectedCoins();
     unsigned int feeTargetBlocks() const;
     void setFeeTargetBlocks(unsigned int target_blocks);
@@ -667,6 +669,7 @@ private:
         std::mutex mutex;
         wallet::CCoinControl control;
         std::shared_ptr<const CoinsListModel::Selection> selected;
+        coinselection::InputMode input_mode{coinselection::InputMode::Automatic};
         std::shared_ptr<const senddraft::Snapshot> draft;
         quint64 maximum_token{0};
         quint64 revision{0};

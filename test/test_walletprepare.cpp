@@ -129,7 +129,10 @@ private Q_SLOTS:
         auto request = Request();
         request.passphrase = SecureString{"secret"};
         if (scenario < 2) request.available_balance = 999;
-        if (scenario == 1) request.selected = std::make_shared<const std::set<COutPoint>>(std::set<COutPoint>{wallet.input});
+        if (scenario == 1) {
+            request.input_mode = coinselection::InputMode::Manual;
+            request.selected = std::make_shared<const std::set<COutPoint>>(std::set<COutPoint>{wallet.input});
+        }
         if (scenario == 2) request.available_balance = 1000;
         if (scenario == 3) { request.available_balance = 100'000; request.recipients.front().amount = 51'000; }
         if (scenario == 5) { request.available_balance = 0; request.remainder = 0; }
@@ -162,6 +165,23 @@ private Q_SLOTS:
         request.recipients.append(extra);
         const auto result = walletprepare::Execute(wallet, std::move(request));
         QCOMPARE(result.error, walletprepare::Error::Invalid);
+        QVERIFY(!result.review);
+        QCOMPARE(wallet.unlocks, 0);
+        QCOMPARE(wallet.creates, 0);
+        QCOMPARE(wallet.locks, 0);
+    }
+
+    void emptyManualSelectionCannotBroadenToWalletInputs()
+    {
+        PrepareWallet wallet;
+        wallet.encrypted = true;
+        auto request = Request();
+        request.input_mode = coinselection::InputMode::Manual;
+        request.available_balance = 50'000;
+        request.passphrase = SecureString{"secret"};
+
+        const auto result = walletprepare::Execute(wallet, std::move(request));
+        QCOMPARE(result.error, walletprepare::Error::InsufficientSelectedBalance);
         QVERIFY(!result.review);
         QCOMPARE(wallet.unlocks, 0);
         QCOMPARE(wallet.creates, 0);

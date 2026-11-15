@@ -48,7 +48,7 @@ Result Execute(interfaces::Wallet& wallet, Request request)
             }
         }
         if (request.selected) for (const auto& outpoint : *request.selected) request.control.Select(outpoint);
-        request.control.m_allow_other_inputs = !request.control.HasSelected();
+        coinselection::ApplyInputPolicy(request.control, request.input_mode);
         if (request.recipients.empty()) { result.error = Error::Invalid; return finish(); }
         std::vector<wallet::CRecipient> recipients;
         recipients.reserve(request.recipients.size());
@@ -62,10 +62,15 @@ Result Execute(interfaces::Wallet& wallet, Request request)
             total += recipient.amount;
             recipients.push_back({destination, recipient.amount, false});
         }
+        if (request.input_mode == coinselection::InputMode::Manual &&
+            (!request.selected || request.selected->empty())) {
+            result.error = Error::InsufficientSelectedBalance;
+            return finish();
+        }
         // A captured acknowledged balance is an early refusal, not authority
         // to spend. Core still validates the original inputs at construction.
         if (request.remainder < 0 && request.available_balance && total > *request.available_balance) {
-            result.error = request.control.HasSelected() ? Error::InsufficientSelectedBalance : Error::InsufficientBalance;
+            result.error = request.input_mode == coinselection::InputMode::Manual ? Error::InsufficientSelectedBalance : Error::InsufficientBalance;
             return finish();
         }
         const bool sign = !wallet.privateKeysDisabled();

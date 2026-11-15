@@ -5,6 +5,7 @@
 #define BITCOIN_QML_MODELS_COINSLISTMODEL_H
 
 #include <interfaces/wallet.h>
+#include <qml/models/coinselection.h>
 #include <qml/snapshotquery.h>
 #include <qml/walletopening.h>
 #include <QAbstractListModel>
@@ -12,6 +13,7 @@
 #include <QStringList>
 #include <deque>
 #include <set>
+#include <vector>
 
 class WalletQmlModel;
 
@@ -44,13 +46,22 @@ class CoinsListModel : public QAbstractListModel
     Q_PROPERTY(bool selectionPending READ selectionPending NOTIFY selectionSnapshotChanged)
     Q_PROPERTY(quint64 selectionRevision READ selectionRevision NOTIFY selectionSnapshotChanged)
     Q_PROPERTY(QString selectionToken READ selectionToken NOTIFY selectionSnapshotChanged)
+    Q_PROPERTY(bool manualInputSelection READ manualInputSelection NOTIFY selectionSnapshotChanged)
+    Q_PROPERTY(bool selectionReconciliationRequired READ selectionReconciliationRequired NOTIFY selectionSnapshotChanged)
+    Q_PROPERTY(int missingSelectedCoins READ missingSelectedCoins NOTIFY selectionSnapshotChanged)
     Q_PROPERTY(int markedCount READ markedCount NOTIFY marksChanged)
     Q_PROPERTY(bool marksPending READ marksPending NOTIFY marksChanged)
 public:
     using Selection = std::set<COutPoint>;
-    struct LockOutcome { bool failed{false}, uncertain{false}; size_t requested{0}, changed{0}; std::shared_ptr<const Selection> selection; quint64 selection_revision{0}; std::shared_ptr<const Selection> marks; quint64 marks_revision{0}; };
+    struct LockItemOutcome {
+        enum class State { Changed, Failed, Unknown, NotAttempted };
+        QString coin_id;
+        COutPoint outpoint;
+        State state{State::NotAttempted};
+    };
+    struct LockOutcome { bool failed{false}, uncertain{false}; size_t requested{0}, changed{0}; std::shared_ptr<const Selection> selection; quint64 selection_revision{0}; std::shared_ptr<const Selection> marks; quint64 marks_revision{0}; std::vector<LockItemOutcome> items; };
     struct MarkOutcome { std::shared_ptr<const Selection> marks; quint64 revision{0}; bool failed{false}; };
-    struct SelectionOutcome { std::shared_ptr<const Selection> selection; quint64 revision{0}; bool failed{false}; };
+    struct SelectionOutcome { std::shared_ptr<const Selection> selection; quint64 revision{0}; bool failed{false}; coinselection::InputMode input_mode{coinselection::InputMode::Automatic}; bool editing{false}; };
     std::shared_ptr<const execution::OwnedCommand<LockOutcome>> lockOperation() const { return m_last_lock; }
     std::shared_ptr<const execution::OwnedCommand<SelectionOutcome>> selectionOperation() const { return m_last_selection; }
     explicit CoinsListModel(WalletQmlModel* parent = nullptr);
@@ -65,6 +76,9 @@ public:
     bool selectionPending() const { return m_selection_commands != 0 || lockPending(); }
     quint64 selectionRevision() const { return m_selection_revision; }
     QString selectionToken() const { return QString::number(m_selection_revision); }
+    bool manualInputSelection() const { return m_input_mode == coinselection::InputMode::Manual; }
+    bool selectionReconciliationRequired() const { return m_missing_selected_coins != 0; }
+    int missingSelectedCoins() const { return m_missing_selected_coins; }
     int markedCount() const { return m_marked_count; }
     bool marksPending() const { return !m_mark_operations.empty(); }
     std::shared_ptr<const Selection> selectionSnapshot() const { return m_selection; }
@@ -110,6 +124,7 @@ public:
     Q_INVOKABLE void beginSelection();
     Q_INVOKABLE void applySelection();
     Q_INVOKABLE void cancelSelection();
+    Q_INVOKABLE bool setManualInputSelection(bool manual);
     // Admission receipt only; lockPending/lockError and lockOperation own the outcome.
     Q_INVOKABLE bool setCoinsLocked(const QStringList& coin_ids, bool locked);
 Q_SIGNALS:
@@ -122,7 +137,7 @@ Q_SIGNALS:
     void selectionSnapshotChanged();
     void marksChanged();
 private:
-    enum class SelectionMode { Unselect, Select, Toggle, Replace, Begin, Cancel, Apply };
+    enum class SelectionMode { Unselect, Select, Toggle, Replace, Begin, Cancel, Apply, AutomaticInputs, ManualInputs };
     struct Coin;
     struct Controls;
     struct View;
@@ -143,14 +158,17 @@ private:
     std::shared_ptr<Retired> m_retired;
     std::shared_ptr<Rows> m_rows;
     std::shared_ptr<const View> m_target, m_published_view;
-    std::shared_ptr<const Selection> m_selection{std::make_shared<const Selection>()}, m_previous_selection;
+    std::shared_ptr<const Selection> m_selection{std::make_shared<const Selection>()};
     std::shared_ptr<walletopening::Session> m_opening;
     execution::SnapshotServices m_services;
     WalletQmlModel* m_wallet_model;
     bool m_stopping{false}, m_loading{false}, m_incomplete{false}, m_descending{true};
+    bool m_selection_editing{false};
     int m_coin_count{0}, m_locked_count{0}, m_selected_count{0}, m_selection_commands{0}, m_marked_count{0};
+    int m_missing_selected_coins{0};
     qint64 m_total{0}, m_locked_total{0}, m_selected_total{0}, m_available_min{0}, m_available_max{0};
     quint64 m_mark_revision{0}, m_view_revision{0}, m_selection_revision{0}, m_selection_ticket{0}, m_reconcile_turn{0}, m_setup_revision{0};
+    coinselection::InputMode m_input_mode{coinselection::InputMode::Automatic};
     int m_remove_cursor{-1}, m_insert_cursor{0};
     QString m_read_error, m_lock_error, m_selected_text;
     QString m_search, m_sort{"date"}, m_filter{"all"}, m_group{"date"};

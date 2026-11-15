@@ -4,6 +4,7 @@
 #ifndef BITCOIN_QML_MODELS_FEEESTIMATEVALUES_H
 #define BITCOIN_QML_MODELS_FEEESTIMATEVALUES_H
 #include <qml/senddraft.h>
+#include <qml/models/coinselection.h>
 #include <wallet/coincontrol.h>
 #include <util/fees.h>
 #include <QHash>
@@ -39,6 +40,7 @@ struct FeeReadInput {
     struct Recipient { std::string address; CAmount amount; };
     std::vector<Recipient> recipients;
     wallet::CCoinControl coin_control;
+    coinselection::InputMode input_mode{coinselection::InputMode::Automatic};
     std::shared_ptr<const std::set<COutPoint>> selected;
     int remainder_index{-1};
     bool custom_fee_enabled{false};

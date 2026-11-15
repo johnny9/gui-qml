@@ -864,6 +864,79 @@ private Q_SLOTS:
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 1U);
         QVERIFY(wallet->isLocked());
     }
+
+    void avoidReusePolicyFiltersDirtyOnlyBalance_data()
+    {
+        QTest::addColumn<bool>("avoid_reuse");
+        QTest::newRow("wallet-policy-enabled") << true;
+        QTest::newRow("wallet-policy-disabled-control") << false;
+    }
+
+    void avoidReusePolicyFiltersDirtyOnlyBalance()
+    {
+        QFETCH(bool, avoid_reuse);
+        auto* destination = qmltest::CreateWallet(m_app, avoid_reuse ? "avoid_destination" : "control_destination");
+        QVERIFY(destination);
+        const auto destination_address = qmltest::NewAddress(m_app, destination->name());
+
+        const QString wallet_name = avoid_reuse ? "avoid_sender" : "control_sender";
+        UniValue create_params{UniValue::VOBJ};
+        create_params.pushKV("wallet_name", wallet_name.toStdString());
+        create_params.pushKV("avoid_reuse", avoid_reuse);
+        qmltest::Rpc(m_app, "createwallet", create_params);
+        auto* wallet = qmltest::SelectOpenWalletForSetup(m_app, wallet_name);
+        QVERIFY(wallet);
+
+        const auto reused_address = qmltest::NewAddress(m_app, wallet_name);
+        // Coinbase outputs need 100 confirmations before listunspent returns
+        // them. Mine 201 blocks to keep the intended 101 spendable outputs.
+        qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[201,\"" + reused_address.toStdString() + "\"]"));
+        QTRY_COMPARE(qmltest::Rpc(m_app, "listunspent", {}, wallet_name).size(), 101U);
+
+        // Spend from the repeated address once. Every remaining output at that
+        // address is now dirty; the wallet's change output remains clean.
+        qmltest::Rpc(m_app, "sendtoaddress", qmltest::Json("{\"address\":\"" + destination_address.toStdString() + "\",\"amount\":1,\"fee_rate\":1}"), wallet_name);
+        qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + reused_address.toStdString() + "\"]"));
+        qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[101,\"" + reused_address.toStdString() + "\"]"));
+        const auto wallet_info = qmltest::Rpc(m_app, "getwalletinfo", {}, wallet_name);
+        QCOMPARE(wallet_info.find_value("avoid_reuse").get_bool(), avoid_reuse);
+
+        const auto unspent = qmltest::Rpc(m_app, "listunspent", {}, wallet_name);
+        UniValue clean_inputs{UniValue::VARR};
+        size_t dirty_count{0};
+        for (const auto& coin : unspent.getValues()) {
+            if (coin.find_value("address").get_str() == reused_address.toStdString()) {
+                ++dirty_count;
+                if (avoid_reuse) QVERIFY(coin.find_value("reused").get_bool());
+            } else {
+                UniValue input{UniValue::VOBJ};
+                input.pushKV("txid", coin.find_value("txid"));
+                input.pushKV("vout", coin.find_value("vout"));
+                clean_inputs.push_back(input);
+            }
+        }
+        QVERIFY(dirty_count > 0);
+        QVERIFY(!clean_inputs.empty());
+        QVERIFY(qmltest::Rpc(m_app, "lockunspent", qmltest::Json("[false," + clean_inputs.write() + "]"), wallet_name).get_bool());
+
+        wallet->coinsListModel()->update();
+        QVERIFY(qmltest::Click(m_app, "sendTabButton"));
+        QVERIFY(qmltest::SetText(m_app, "sendAddressInput", destination_address));
+        QVERIFY(qmltest::SetText(m_app, "sendAmountInput", "1"));
+        QTRY_VERIFY(wallet->availableSendBalanceKnown());
+        QTRY_VERIFY(!wallet->feeEstimatePending());
+
+        const auto* review = qmltest::Find(m_app, "sendReviewButton");
+        QVERIFY(review);
+        if (avoid_reuse) {
+            QCOMPARE(wallet->availableSendBalanceSatoshi(), qint64{0});
+            QVERIFY(!review->property("enabled").toBool());
+            QVERIFY(qmltest::Rpc(m_app, "getrawmempool").empty());
+        } else {
+            QVERIFY(wallet->availableSendBalanceSatoshi() > 0);
+            QVERIFY(review->property("enabled").toBool());
+        }
+    }
 };
 
 QString SendPreparedWallet(const QString& selector)

@@ -9,6 +9,7 @@
 #include <qml/walletreview.h>
 #include <qml/senddraft.h>
 #include <qml/secretinput.h>
+#include <qml/models/coinselection.h>
 #include <support/allocators/secure.h>
 #include <wallet/coincontrol.h>
 #include <set>
@@ -21,6 +22,7 @@ struct Request {
     quint64 maximum_token{0};
     wallet::CCoinControl control;
     std::shared_ptr<const std::set<COutPoint>> selected;
+    coinselection::InputMode input_mode{coinselection::InputMode::Automatic};
     std::optional<CAmount> available_balance;
     int remainder{-1};
     bool automatic_fee{false};

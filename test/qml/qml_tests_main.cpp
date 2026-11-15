@@ -1013,6 +1013,8 @@ public:
     Q_PROPERTY(int selectedCoinsCount READ selectedCoinsCount NOTIFY selectedCoinsCountChanged)
     Q_PROPERTY(QString selectionToken READ selectionToken NOTIFY selectionSnapshotChanged)
     Q_PROPERTY(bool selectionPending MEMBER m_selection_pending NOTIFY selectionSnapshotChanged)
+    Q_PROPERTY(bool manualInputSelection READ manualInputSelection NOTIFY selectionSnapshotChanged)
+    Q_PROPERTY(bool selectionReconciliationRequired MEMBER m_selection_reconciliation_required NOTIFY selectionSnapshotChanged)
     Q_PROPERTY(int coinCount READ coinCount NOTIFY coinCountChanged)
     Q_PROPERTY(QString totalSelected READ totalSelected NOTIFY totalSelectedChanged)
     Q_PROPERTY(bool overRequiredAmount READ overRequiredAmount NOTIFY overRequiredAmountChanged)
@@ -1091,6 +1093,26 @@ public:
     int selectedCoinsCount() const
     {
         return std::count_if(m_rows.begin(), m_rows.end(), [](const CoinRow& row) { return row.selected; });
+    }
+    bool manualInputSelection() const { return m_manual_input_selection; }
+    Q_INVOKABLE bool setManualInputSelection(bool manual)
+    {
+        const bool mode_changed = m_manual_input_selection != manual;
+        const bool has_selection = selectedCoinsCount() != 0;
+        if (!mode_changed && (manual || !has_selection)) return true;
+        m_manual_input_selection = manual;
+        if (!manual) for (auto& row : m_rows) row.selected = false;
+        if (!manual && has_selection) {
+            emitAggregateSignals();
+            Q_EMIT selectionSnapshotChanged();
+        } else {
+            ++m_selection_revision;
+            // The real command publishes one admission and one owned outcome.
+            // Keep both observable in this presentation-only fixture.
+            Q_EMIT selectionSnapshotChanged();
+            Q_EMIT selectionSnapshotChanged();
+        }
+        return true;
     }
 
     qint64 totalSelectedSatoshi() const { qint64 sum = 0; for (size_t i=0;i<m_rows.size();++i) if(m_rows[i].selected) sum += m_rows[i].satoshi; return sum; }
@@ -1201,6 +1223,7 @@ public:
     {
         m_selection_pending = false;
         controlCoinActions(true, true); m_min_amount = -1; m_max_amount = -1;
+        m_manual_input_selection = false; m_selection_reconciliation_required = false;
         beginResetModel();
         m_rows = {
             {QStringLiteral("bcrt1qcoin1"), QStringLiteral("0.00100000 BTC"), QStringLiteral("utxo-1"), false, false, QStringLiteral("coin-1"), false, 100000},
@@ -1210,6 +1233,12 @@ public:
         endResetModel();
         Q_EMIT coinCountChanged(); Q_EMIT viewChanged();
         emitAggregateSignals();
+    }
+    Q_INVOKABLE void setSelectionReconciliationRequiredForTest(bool required)
+    {
+        if (m_selection_reconciliation_required == required) return;
+        m_selection_reconciliation_required = required;
+        Q_EMIT selectionSnapshotChanged();
     }
 
     Q_INVOKABLE void update() {}
@@ -1241,7 +1270,7 @@ private:
     qint64 m_min_amount{-1},m_max_amount{-1}; bool m_admit_marks{true},m_admit_locks{true};
     int m_lock_calls{0},m_mark_calls{0}; QStringList m_last_lock_ids;
     QString m_search, m_sort{"date"}, m_filter{"all"}, m_group{"month"};
-    bool m_descending{true};
+    bool m_descending{true}, m_manual_input_selection{false}, m_selection_reconciliation_required{false};
 };
 
 class MockBackupFileOperation : public QObject
@@ -1516,6 +1545,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(bool preparationBusy READ preparationBusy NOTIFY preparationChanged)
     Q_PROPERTY(bool customFeeTargetPending READ customFeeTargetPending CONSTANT)
     Q_PROPERTY(bool coinSelectionPending READ coinSelectionPending CONSTANT)
+    Q_PROPERTY(bool coinSelectionBlocked READ coinSelectionBlocked NOTIFY coinSelectionChanged)
     Q_PROPERTY(bool holdPreparationForTest MEMBER m_hold_preparation)
     Q_PROPERTY(int scheduleFeeEstimatesCalls READ scheduleFeeEstimatesCalls NOTIFY scheduleFeeEstimatesCallsChanged)
     Q_PROPERTY(int sendTransactionCalls READ sendTransactionCalls NOTIFY sendTransactionCallsChanged)
@@ -1647,6 +1677,12 @@ public:
     bool preparationBusy() const { return m_preparation_state == PreparationPending; }
     bool customFeeTargetPending() const { return false; }
     bool coinSelectionPending() const { return false; }
+    bool coinSelectionBlocked() const
+    {
+        auto* coins = qobject_cast<MockCoinsListModel*>(m_coins_list_model);
+        return coins && (coins->property("selectionReconciliationRequired").toBool() ||
+            (coins->manualInputSelection() && coins->selectedCoinsCount() == 0));
+    }
     Q_INVOKABLE quint64 requestPrepareTransaction()
     {
         if (preparationBusy() || psbtActionBusy()) return 0;
@@ -2063,7 +2099,18 @@ public:
     void setBumpModel(QObject* model) { m_bump_model = model; }
     void setSignVerifyMessageModel(QObject* model) { m_sign_verify_model = model; }
     void setRecipients(QObject* model) { m_recipients = model; }
-    void setCoinsListModel(QObject* model) { m_coins_list_model = model; }
+    void setCoinsListModel(QObject* model)
+    {
+        if (m_coins_list_model == model) return;
+        if (m_coins_list_model) QObject::disconnect(m_coins_selection_connection);
+        m_coins_list_model = model;
+        if (auto* coins = qobject_cast<MockCoinsListModel*>(model)) {
+            m_coins_selection_connection = connect(coins, &MockCoinsListModel::selectionSnapshotChanged, this, [this] {
+                Q_EMIT coinSelectionChanged();
+                scheduleFeeEstimates();
+            });
+        }
+    }
     void setCurrentTransaction(QObject* transaction) {
         ++m_review_revision;QObject::disconnect(m_review_rows_connection); m_current_transaction = transaction;
         if (transaction) m_review_rows_connection = connect(transaction, SIGNAL(reviewedRecipientsChanged()), this, SIGNAL(currentTransactionChanged()));
@@ -2128,7 +2175,8 @@ public:
             setTransactionStatus({}, false);
         } else {
             const bool selected_inputs_active{
-                m_coins_list_model && m_coins_list_model->property("selectedCoinsCount").toInt() > 0};
+                m_coins_list_model && (m_coins_list_model->property("manualInputSelection").toBool() ||
+                    m_coins_list_model->property("selectedCoinsCount").toInt() > 0)};
             setTransactionStatus(selected_inputs_active
                 ? QStringLiteral("Selected inputs do not cover the amount plus fee")
                 : QStringLiteral("Amount plus fee exceeds available balance"), false);
@@ -2393,6 +2441,7 @@ Q_SIGNALS:
     void prepareTransactionCallsChanged();
     void preparationChanged();
     void scheduleFeeEstimatesCallsChanged();
+    void coinSelectionChanged();
     void sendTransactionCallsChanged();
     void sendOperationChanged();
     void broadcastCurrentTransactionCallsChanged();
@@ -2428,6 +2477,7 @@ private:
     MockFlowDetails m_flow_details{this};
     quint64 m_flow_revision{0};
     QMetaObject::Connection m_review_rows_connection;
+    QMetaObject::Connection m_coins_selection_connection;
 
     QString m_recipient_labels_error;
     void setTransactionStatus(const QString& error, bool needs_unlock)

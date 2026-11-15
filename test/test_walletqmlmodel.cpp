@@ -2151,6 +2151,61 @@ private Q_SLOTS:
         QVERIFY(!model->transactionError().isEmpty());
         QCOMPARE(wallet->calls.createTransaction.load(), 0);
     }
+    void emptyManualSelectionBlocksPreparationBeforeWalletConstruction()
+    {
+        FeeReadServices services;
+        services.read = [](const FeeReadInput&) { return FeeReadResult{}; };
+        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services));
+        SetValidRecipient(*model);
+        QVERIFY(model->coinsListModel()->setManualInputSelection(true));
+        QTRY_VERIFY(model->coinsListModel()->manualInputSelection() && !model->coinSelectionPending());
+        const auto constructions = wallet->calls.createTransaction.load();
+
+        const auto ticket = model->requestPrepareTransaction();
+        QVERIFY(ticket > 0);
+        QCOMPARE(model->preparationState(), WalletQmlModel::PreparationState::PreparationFailed);
+        QVERIFY(model->transactionError().contains(QStringLiteral("Select at least one coin")));
+        QVERIFY(!model->currentTransaction());
+        QCOMPARE(wallet->calls.createTransaction.load(), constructions);
+    }
+    void unavailableManualSelectionBlocksPreparationUntilReconciled()
+    {
+        const COutPoint selected{Txid::FromUint256(uint256::ONE), 7};
+        const auto present = std::make_shared<std::atomic_bool>(true);
+        FeeReadServices services;
+        services.read = [](const FeeReadInput&) { return FeeReadResult{}; };
+        auto [wallet, model] = MakeConfiguredWalletModel([selected, present](MockWallet& value) {
+            value.list_coins_fn = [selected, present] {
+                interfaces::Wallet::CoinsList coins;
+                if (present->load()) {
+                    const auto destination = DecodeDestination(VALID_MAINNET_ADDRESS.toStdString());
+                    coins[destination].emplace_back(selected,
+                        interfaces::WalletTxOut{CTxOut{10 * COIN, GetScriptForDestination(destination)}, 0, 6, false});
+                }
+                return coins;
+            };
+            value.get_available_balance_fn = [](const wallet::CCoinControl&) { return 10 * COIN; };
+        }, nullptr, nullptr, std::move(services));
+        SetValidRecipient(*model);
+        QVERIFY(model->coinsListModel()->setManualInputSelection(true));
+        QTRY_VERIFY(model->coinsListModel()->manualInputSelection());
+        model->selectCoin(selected);
+        QTRY_VERIFY(!model->coinSelectionPending() && model->isSelectedCoin(selected));
+        QVERIFY(!model->coinSelectionBlocked());
+
+        present->store(false);
+        model->coinsListModel()->update();
+        QTRY_VERIFY(!model->coinsListModel()->loading() && model->coinsListModel()->selectionReconciliationRequired());
+        QVERIFY(model->coinSelectionBlocked());
+        QVERIFY(model->selectedCoins()->contains(selected));
+        const auto constructions = wallet->calls.createTransaction.load();
+
+        const auto ticket = model->requestPrepareTransaction();
+        QVERIFY(ticket > 0);
+        QCOMPARE(model->preparationState(), WalletQmlModel::PreparationState::PreparationFailed);
+        QVERIFY(model->transactionError().contains(QStringLiteral("no longer available")));
+        QCOMPARE(wallet->calls.createTransaction.load(), constructions);
+    }
     void markedFinalInputsDoNotInventSigningAuthority()
     {
         auto document = psbtfeefixture::Legacy(2, false);
@@ -3559,6 +3614,7 @@ private Q_SLOTS:
             };
         });
         SetValidRecipient(*model);
+        QVERIFY(model->coinsListModel()->setManualInputSelection(true));
         model->selectCoin(selected);
         QTRY_VERIFY(!model->coinSelectionPending() && model->isSelectedCoin(selected));
         // With a valid address, preserve the existing amount if no sendall
@@ -5275,6 +5331,7 @@ void WalletQmlModelTests::sendAmountExhaustsBalance_usesCoinControlAvailableBala
 {
     struct Probe {
         std::atomic_bool created{false}, selected_valid{true}, unselected_valid{true};
+        std::atomic_bool manual_empty_seen{false};
     };
     const auto probe = std::make_shared<Probe>();
     const COutPoint selected_outpoint{Txid::FromUint256(uint256::ONE), 1};
@@ -5294,7 +5351,11 @@ void WalletQmlModelTests::sendAmountExhaustsBalance_usesCoinControlAvailableBala
                 if (!control.IsSelected(selected_outpoint) || control.m_allow_other_inputs) probe->selected_valid = false;
                 return CAmount{20'000};
             }
-            if (!control.m_allow_other_inputs) probe->unselected_valid = false;
+            if (!control.m_allow_other_inputs) {
+                probe->manual_empty_seen = true;
+                return CAmount{0};
+            }
+            probe->unselected_valid = true;
             return CAmount{100'000};
         };
         value.create_transaction_fn = [probe](const std::vector<wallet::CRecipient>&,
@@ -5319,6 +5380,9 @@ void WalletQmlModelTests::sendAmountExhaustsBalance_usesCoinControlAvailableBala
     QVERIFY(!model->sendAmountExhaustsBalance());
 
     QSignalSpy spy{model.get(), &WalletQmlModel::sendAmountExhaustsBalanceChanged};
+    probe->unselected_valid = false;
+    QVERIFY(model->coinsListModel()->setManualInputSelection(true));
+    QVERIFY(settled());
     model->selectCoin(selected_outpoint);
     QVERIFY(settled());
     QVERIFY(spy.count() > 0);
@@ -5331,12 +5395,17 @@ void WalletQmlModelTests::sendAmountExhaustsBalance_usesCoinControlAvailableBala
     model->unselectCoin(selected_outpoint);
     QVERIFY(settled());
     QVERIFY(spy.count() > selected_notices);
+    QVERIFY(model->coinsListModel()->manualInputSelection());
+    QVERIFY(model->coinsListModel()->setManualInputSelection(false));
+    QVERIFY(settled());
     QVERIFY(!model->sendAmountExhaustsBalance());
     QVERIFY(AwaitPreparation(*model));
     QVERIFY(probe->created.load());
     QCOMPARE(wallet->calls.createTransaction.load(), 1);
 
     const auto unselected_notices = spy.count();
+    QVERIFY(model->coinsListModel()->setManualInputSelection(true));
+    QVERIFY(settled());
     model->selectCoin(selected_outpoint);
     QVERIFY(settled());
     QVERIFY(spy.count() > unselected_notices);
@@ -5344,6 +5413,7 @@ void WalletQmlModelTests::sendAmountExhaustsBalance_usesCoinControlAvailableBala
     const auto reselected_notices = spy.count();
     model->clearSelectedCoins();
     QVERIFY(settled());
+    QVERIFY(!model->coinsListModel()->manualInputSelection());
     QVERIFY(spy.count() > reselected_notices);
     QVERIFY(!model->sendAmountExhaustsBalance());
 
@@ -5355,6 +5425,7 @@ void WalletQmlModelTests::sendAmountExhaustsBalance_usesCoinControlAvailableBala
     QCOMPARE(wallet->calls.getAvailableBalance.load(), available_reads);
     QVERIFY(probe->selected_valid.load());
     QVERIFY(probe->unselected_valid.load());
+    QVERIFY(probe->manual_empty_seen.load());
 }
 
 void WalletQmlModelTests::clearSelectedCoinsKeepsPendingIntent()
@@ -5392,6 +5463,7 @@ void WalletQmlModelTests::clearSelectedCoinsKeepsPendingIntent()
     QCOMPARE(changes.count(), 2); // The explicit clear follows the held selection.
     QVERIFY(settled());
     QVERIFY(!model->isSelectedCoin(outpoint));
+    QVERIFY(!model->coinsListModel()->manualInputSelection());
     const auto notices = changes.count();
     const auto reads = wallet->calls.getAvailableBalance.load();
     model->clearSelectedCoins();
@@ -5627,6 +5699,7 @@ void WalletQmlModelTests::scheduleFeeEstimates_usesSelectedCoinsInCoinControl()
         return util::Result<CTransactionRef>{MakeTransactionRef(CMutableTransaction{})};
     };
 
+    QVERIFY(model->coinsListModel()->setManualInputSelection(true));
     model->selectCoin(selected_outpoint);
 
     QTRY_COMPARE_WITH_TIMEOUT(calls.Size(), size_t{3}, FEE_ESTIMATE_TIMEOUT_MS);
@@ -5686,6 +5759,7 @@ void WalletQmlModelTests::prepareTransaction_disallowsOtherInputsWhenCoinsSelect
     QVERIFY(recipient);
     recipient->address()->setAddress(VALID_MAINNET_ADDRESS, 0);
     recipient->amount()->setSatoshi(50'000);
+    QVERIFY(model->coinsListModel()->setManualInputSelection(true));
     model->selectCoin(selected_outpoint);
     QVERIFY(QTest::qWaitFor([&] {
         pump();
@@ -5693,6 +5767,8 @@ void WalletQmlModelTests::prepareTransaction_disallowsOtherInputsWhenCoinsSelect
             model->availableSendBalanceKnown() && execution.transportIdle();
     }, 5000));
     QVERIFY(model->sendRecipientList()->allValid());
+    pump();
+    QVERIFY(model->coinsListModel()->manualInputSelection());
     const auto available = probe->available_other_inputs.Snapshot();
     QVERIFY(!available.empty());
     QVERIFY(!available.back()); // The original selection's cached balance excludes other inputs.
@@ -7124,12 +7200,14 @@ void WalletQmlModelTests::sendTransactionClearsSelectedCoins()
     SetPasswordRecipient(*model, 1'000);
     const COutPoint selected_outpoint{Txid::FromUint256(uint256::ONE), 1};
 
+    QVERIFY(model->coinsListModel()->setManualInputSelection(true));
     model->selectCoin(selected_outpoint);
     QTRY_COMPARE(model->selectedCoins()->size(), size_t{1});
 
     QVERIFY(AwaitPreparation(*model, "secret"));
     QVERIFY(AwaitCommittedSend(*model));
     QTRY_VERIFY(model->selectedCoins()->empty());
+    QTRY_VERIFY(!model->coinsListModel()->manualInputSelection());
 }
 
 void WalletQmlModelTests::clearingRecipientsClearsSelectedCoins()
@@ -7137,6 +7215,7 @@ void WalletQmlModelTests::clearingRecipientsClearsSelectedCoins()
     auto [wallet, model] = MakePasswordWalletModel();
     const COutPoint selected_outpoint{Txid::FromUint256(uint256::ONE), 1};
 
+    QVERIFY(model->coinsListModel()->setManualInputSelection(true));
     model->selectCoin(selected_outpoint);
     QTRY_COMPARE(model->selectedCoins()->size(), size_t{1});
 
@@ -8396,6 +8475,7 @@ void WalletQmlModelTests::coreApiFeePreviews()
     // Paying the wallet itself prevents unrelated sweep-discovery state from
     // entering this concrete fee/API contract; selected inputs remain explicit.
     SetValidRecipient(*model, QString::fromStdString(EncodeDestination(own_destination)), env);
+    QVERIFY(model->coinsListModel()->setManualInputSelection(true));
     model->selectCoin(selected);
     if (!maximum) model->sendRecipientList()->currentRecipient()->amount()->setSatoshi(scenario == 109 ? 50'000 : funding_amount);
     if (scenario == 12) { model->setCustomFeeEnabled(true); model->setCustomFeeRate("2"); }

@@ -106,10 +106,9 @@ bool AmountPlusFeeExceedsBalance(const CAmount amount, const CAmount fee, const 
     return fee > balance - amount;
 }
 
-void ApplySelectedInputsPolicy(wallet::CCoinControl& coin_control)
+void ApplySelectedInputsPolicy(wallet::CCoinControl& coin_control, const coinselection::InputMode mode)
 {
-    // Manually selected coins should be the only wallet inputs used.
-    coin_control.m_allow_other_inputs = !coin_control.HasSelected();
+    coinselection::ApplyInputPolicy(coin_control, mode);
 }
 
 std::optional<CTxDestination> PreviewChangeDestination(const OutputType change_type)
@@ -185,10 +184,10 @@ std::optional<SendFeePreview> TryPreviewFee(interfaces::Wallet& wallet,
 }
 
 std::optional<SendFeePreview> EstimatePreviewFee(interfaces::Wallet& wallet,
-    const std::vector<wallet::CRecipient>& recipients, const wallet::CCoinControl& base,
+    const std::vector<wallet::CRecipient>& recipients, const wallet::CCoinControl& base, coinselection::InputMode input_mode,
     OutputType preview_change_type, unsigned int target, int remainder_index = -1, QString* error = nullptr)
 {
-    wallet::CCoinControl control{base}; ApplySelectedInputsPolicy(control);
+    wallet::CCoinControl control{base}; ApplySelectedInputsPolicy(control, input_mode);
     control.m_feerate.reset(); control.m_confirm_target = target;
     ApplyPreviewChangeDestination(control, preview_change_type); //048 remains held pending a supported nonmutating policy port.
     feeestimate::ApplyAutomaticPolicy(wallet, control);
@@ -198,10 +197,10 @@ std::optional<SendFeePreview> EstimatePreviewFee(interfaces::Wallet& wallet,
 }
 
 std::optional<SendFeePreview> EstimateCustomPreviewFee(interfaces::Wallet& wallet,
-    const std::vector<wallet::CRecipient>& recipients, const wallet::CCoinControl& base,
+    const std::vector<wallet::CRecipient>& recipients, const wallet::CCoinControl& base, coinselection::InputMode input_mode,
     OutputType preview_change_type, CAmount rate, int remainder_index = -1, QString* error = nullptr)
 {
-    wallet::CCoinControl control{base}; ApplySelectedInputsPolicy(control);
+    wallet::CCoinControl control{base}; ApplySelectedInputsPolicy(control, input_mode);
     control.m_confirm_target.reset(); control.m_feerate = CFeeRate{rate}; control.fOverrideFeeRate = true;
     ApplyPreviewChangeDestination(control, preview_change_type);
     auto result = TryPreviewFee(wallet, recipients, control, remainder_index, error);
@@ -808,10 +807,10 @@ void WalletQmlModel::initializeFeeEstimator()
             const auto custom_rate = input.custom_rate_per_kvb;
             for (const unsigned int target : STANDARD_FEE_TARGETS) {
                 QString error;
-                if (const auto estimate = EstimatePreviewFee(*wallet, recipients, input.coin_control, change_type, target, input.remainder_index, &error)) result.estimates.insert(target, *estimate);
+                if (const auto estimate = EstimatePreviewFee(*wallet, recipients, input.coin_control, input.input_mode, change_type, target, input.remainder_index, &error)) result.estimates.insert(target, *estimate);
                 else result.errors.insert(target, error.isEmpty() ? tr("Fee estimation is unavailable. Choose Custom to enter a rate.") : error);
             }
-            if (input.custom_fee_enabled && custom_rate) result.custom = EstimateCustomPreviewFee(*wallet, recipients, input.coin_control, change_type, *custom_rate, input.remainder_index, &result.custom_error);
+            if (input.custom_fee_enabled && custom_rate) result.custom = EstimateCustomPreviewFee(*wallet, recipients, input.coin_control, input.input_mode, change_type, *custom_rate, input.remainder_index, &result.custom_error);
             if (result.estimates.isEmpty() && !result.custom) { result.error = feeestimate::Error::Unavailable; result.message = input.custom_fee_enabled ? result.custom_error : result.errors.value(input.coin_control.m_confirm_target.value_or(DEFAULT_STANDARD_FEE_TARGET)); }
             return result;
         };
@@ -2006,6 +2005,8 @@ void WalletQmlModel::requestSendFacts()
         m_send_facts_input->control = m_coin_control;
         m_send_facts_input->control.m_confirm_target = feeTargetBlocks();
         m_send_facts_input->selected = selectedCoins();
+        m_send_facts_input->input_mode = m_coins_list_model && m_coins_list_model->manualInputSelection()
+            ? coinselection::InputMode::Manual : coinselection::InputMode::Automatic;
         m_send_facts_input->draft = m_send_recipients->draftSnapshot();
         m_send_facts_input->maximum_token = m_send_recipients->recipientToken(m_maximum_recipient);
         ++m_send_facts_input->revision;
@@ -2017,12 +2018,14 @@ void WalletQmlModel::requestSendFacts()
                 wallet::CCoinControl control;
                 quint64 revision;
                 std::shared_ptr<const CoinsListModel::Selection> selected;
+                coinselection::InputMode input_mode;
                 std::shared_ptr<const senddraft::Snapshot> draft;
                 quint64 maximum_token;
                 {
                     std::lock_guard lock{input->mutex};
                     control = input->control;
                     selected = input->selected;
+                    input_mode = input->input_mode;
                     draft = input->draft;
                     maximum_token = input->maximum_token;
                     revision = input->revision;
@@ -2030,9 +2033,11 @@ void WalletQmlModel::requestSendFacts()
                 auto wallet = opening->borrow();
                 if (!wallet) throw execution::NotStarted{execution::NotStarted::Cause::Cancelled};
                 if (selected) for (const auto& outpoint : *selected) control.Select(outpoint);
-                ApplySelectedInputsPolicy(control);
+                ApplySelectedInputsPolicy(control, input_mode);
                 SendFacts facts;
-                facts.available = wallet->getAvailableBalance(wallet::CCoinControl{});
+                wallet::CCoinControl automatic_control;
+                ApplySelectedInputsPolicy(automatic_control, coinselection::InputMode::Automatic);
+                facts.available = wallet->getAvailableBalance(automatic_control);
                 facts.selected = wallet->getAvailableBalance(control);
                 if (draft) facts.gross_remainder = senddraft::GrossRemainder(*draft, maximum_token, facts.selected);
                 facts.dust = node ? node->getDustRelayFee().GetFeePerK() : DUST_RELAY_TX_FEE;
@@ -2176,8 +2181,9 @@ void WalletQmlModel::scheduleFeeEstimates()
 void WalletQmlModel::requestFeeEstimatesNow()
 {
     if (!observationsAllowed()) return;
-    if (m_stopping || !m_wallet || !m_send_recipients || coinSelectionPending() || !m_fees || m_fees->policyPending()) { clearFeeEstimates(); return; }
+    if (m_stopping || !m_wallet || !m_send_recipients || coinSelectionPending() || coinSelectionBlocked() || !m_fees || m_fees->policyPending()) { clearFeeEstimates(); return; }
     FeeReadInput input;
+    input.input_mode = m_coins_list_model && m_coins_list_model->manualInputSelection() ? coinselection::InputMode::Manual : coinselection::InputMode::Automatic;
     input.coin_control = m_coin_control; input.coin_control.m_confirm_target = feeTargetBlocks(); input.selected = selectedCoins();
     input.draft = m_send_recipients->draftSnapshot();
     input.maximum_token = m_send_recipients->recipientToken(m_maximum_recipient);
@@ -2247,12 +2253,23 @@ quint64 WalletQmlModel::requestPrepareTransactionInternal(std::optional<QString>
             !live ? tr("This wallet is closing.") : !validation_error.isEmpty() ? validation_error : tr("Enter at least one valid recipient to continue."));
         return ticket;
     }
+    if (m_coins_list_model && m_coins_list_model->selectionReconciliationRequired()) {
+        reject(PreparationState::PreparationFailed, tr("Some manually selected coins are no longer available. Choose Automatic inputs or update the selection."));
+        return ticket;
+    }
+    if (m_coins_list_model && m_coins_list_model->manualInputSelection() &&
+        (!selectedCoins() || selectedCoins()->empty())) {
+        reject(PreparationState::PreparationFailed, tr("Select at least one coin or choose Automatic inputs."));
+        return ticket;
+    }
     auto request = std::make_shared<walletprepare::Request>();
     request->control = m_coin_control;
     request->control.m_confirm_target = feeTargetBlocks();
     request->selected = selectedCoins();
+    request->input_mode = m_coins_list_model && m_coins_list_model->manualInputSelection()
+        ? coinselection::InputMode::Manual : coinselection::InputMode::Automatic;
     if (m_send_facts_known) request->available_balance = m_selected_send_balance;
-    ApplySelectedInputsPolicy(request->control);
+    ApplySelectedInputsPolicy(request->control, request->input_mode);
     request->draft = m_send_recipients->draftSnapshot();
     request->maximum_token = m_send_recipients->recipientToken(m_maximum_recipient);
     request->target_blocks = feeTargetBlocks();
@@ -3286,6 +3303,14 @@ bool WalletQmlModel::coinSelectionPending() const
     return m_coins_list_model && m_coins_list_model->selectionPending();
 }
 
+bool WalletQmlModel::coinSelectionBlocked() const
+{
+    if (!m_coins_list_model) return false;
+    return m_coins_list_model->selectionReconciliationRequired() ||
+        (m_coins_list_model->manualInputSelection() &&
+         (!selectedCoins() || selectedCoins()->empty()));
+}
+
 void WalletQmlModel::clearSelectedCoins()
 {
     if (m_admission_closed) return;
@@ -3296,9 +3321,12 @@ void WalletQmlModel::clearSelectedCoins()
         const auto selection = selectedCoins();
         // Pending commands can change an apparently empty projection. An
         // explicit clear must still follow them; a stable empty fixed draft
-        // needs neither a new selection command nor another facts read.
-        if (!had_maximum && !coinSelectionPending() && selection && selection->empty()) return;
-        m_coins_list_model->requestReplaceSelection({});
+        // needs neither a new selection command nor another facts read. The
+        // explicit clear also returns the input policy to Automatic, including
+        // when the acknowledged selection was already empty.
+        if (!had_maximum && !coinSelectionPending() && selection && selection->empty() &&
+            !m_coins_list_model->manualInputSelection()) return;
+        m_coins_list_model->setManualInputSelection(false);
     }
 }
 

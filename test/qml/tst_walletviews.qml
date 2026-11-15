@@ -343,7 +343,7 @@ TestCase {
         const note = findChild(first.sendPage, "sendNoteInput")
         verify(note !== null)
         note.text = "rent"
-        first.sendPage.manualCoinSelection = true
+        testWalletModel.coinsListModel.setManualInputSelection(true)
 
         testWalletModel.currentPaymentRequest.label = "Alice"
         const firstName = findChild(first.receivePage, "requestPaymentYourNameInput")

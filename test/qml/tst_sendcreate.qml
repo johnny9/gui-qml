@@ -579,7 +579,7 @@ TestCase {
         compare(completePage.targetBlocks, 6)
         verify(completePage.descriptionText.indexOf("6 blocks") >= 0)
         compare(testWalletModel.sendTransactionCalls, callsBefore + 1)
-        page.manualCoinSelection = true
+        testCoinsListModel.setManualInputSelection(true)
         testCoinsListModel.toggleCoinSelection(0)
         findChild(reviewStack, "sendResultDoneButton").clicked()
         tryCompare(popup, "opened", false)
@@ -593,7 +593,7 @@ TestCase {
         page.width = testCase.width
         page.height = testCase.height
         page.visible = true
-        page.manualCoinSelection = true
+        testCoinsListModel.setManualInputSelection(true)
         page.openTransactionReview()
         const popup = findChild(page, "transactionReviewPopup")
         const reviewStack = findChild(popup, "sendTransactionReviewStack")
@@ -2509,7 +2509,7 @@ TestCase {
         const otherNote = otherRecipient.label
         const calls = testWalletModel.sendTransactionCalls
         const otherCalls = testSecondWalletModel.sendTransactionCalls
-        page.manualCoinSelection = true
+        testCoinsListModel.setManualInputSelection(true)
         testCoinsListModel.toggleCoinSelection(0)
         testWalletModel.holdSendForTest = true
         try {
@@ -2589,6 +2589,51 @@ TestCase {
     function test_coin_picker_clears_only_a_real_selection_data() {
         return [{tag: "no-inputs", selected: false}, {tag: "selected-input", selected: true}]
     }
+    function test_manual_empty_selection_is_explicit_and_blocks_review() {
+        const page = createControlledSendPage()
+        const picker = findChild(page, "sendCoinControlPicker")
+        const manual = findChild(picker, "sendCoinControlPickerOption_1")
+        const automatic = findChild(picker, "sendCoinControlPickerOption_0")
+        const review = findChild(page, "sendReviewButton")
+        revealSendControl(page, picker)
+        mouseClick(manual)
+        compare(page.manualCoinSelection, true)
+        compare(picker.currentIndex, 1)
+        compare(testWalletModel.coinSelectionBlocked, true)
+        verify(!review.enabled)
+        compare(findChild(page, "sendInputsSelectedText").text, "No inputs selected")
+
+        testCoinsListModel.toggleCoinSelection(0)
+        compare(testCoinsListModel.selectedCoinsCount, 1)
+        compare(testWalletModel.coinSelectionBlocked, false)
+        verify(review.enabled)
+
+        mouseClick(automatic)
+        compare(page.manualCoinSelection, false)
+        compare(testCoinsListModel.selectedCoinsCount, 0)
+        compare(testWalletModel.coinSelectionBlocked, false)
+        verify(review.enabled)
+    }
+
+    function test_missing_manual_input_blocks_review_until_explicit_reset() {
+        const page = createControlledSendPage()
+        const picker = findChild(page, "sendCoinControlPicker")
+        const manual = findChild(picker, "sendCoinControlPickerOption_1")
+        const review = findChild(page, "sendReviewButton")
+        revealSendControl(page, picker)
+        mouseClick(manual)
+        testCoinsListModel.toggleCoinSelection(0)
+        verify(review.enabled)
+        testCoinsListModel.setSelectionReconciliationRequiredForTest(true)
+        compare(testWalletModel.coinSelectionBlocked, true)
+        verify(!review.enabled)
+        verify(page.formErrorText.indexOf("no longer available") >= 0)
+
+        testCoinsListModel.setSelectionReconciliationRequiredForTest(false)
+        compare(testWalletModel.coinSelectionBlocked, false)
+        verify(review.enabled)
+    }
+
     function test_coin_picker_clears_only_a_real_selection(data) {
         const page = createControlledSendPage()
         const picker = findChild(page, "sendCoinControlPicker")
@@ -2607,8 +2652,8 @@ TestCase {
         compare(page.manualCoinSelection, false)
         compare(picker.currentIndex, 0)
         compare(testCoinsListModel.selectedCoinsCount, 0)
-        compare(selected.count, data.selected ? 1 : 0)
-        compare(testWalletModel.scheduleFeeEstimatesCalls, fees + (data.selected ? 2 : 0))
+        compare(selected.count, 2)
+        compare(testWalletModel.scheduleFeeEstimatesCalls, fees + 2)
         compare(testSendRecipient.address.address, address)
         compare(testSendRecipient.amount.satoshi, amount)
     }

@@ -39,7 +39,8 @@ struct CoinsListModel::View {
     std::shared_ptr<const Selection> selection, marks;
     Controls controls;
     quint64 selection_revision{0}, lock_revision{0}, mark_revision{0};
-    int count{0}, locked_count{0};
+    coinselection::InputMode input_mode{coinselection::InputMode::Automatic};
+    int count{0}, locked_count{0}, missing_selected_coins{0};
     qint64 total{0}, locked_total{0}, selected_total{0}, min{0}, max{0};
     QString selected_text;
     bool read_failed{false};
@@ -165,12 +166,14 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
         quint64 lock_revision{0}, selection_revision{0};
     };
     struct Input { std::mutex mutex; Controls controls; };
-    struct Chunk { std::vector<COutPoint> changed; bool failed{false}, uncertain{false}; };
+    struct Chunk { std::vector<LockItemOutcome> items; Selection changed; bool failed{false}, uncertain{false}; };
     struct LockJob {
         std::shared_ptr<const walletopening::Session::Action> action;
         std::vector<COutPoint> targets;
+        std::vector<LockItemOutcome> items;
+        std::shared_ptr<const Selection> marks_at_admission;
         Selection changed, selected_after;
-        size_t cursor{0};
+        size_t cursor{0}, requested{0};
         bool locked{false}, failed{false}, uncertain{false};
         std::function<void(LockResult)> done;
     };
@@ -180,8 +183,7 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
     std::shared_ptr<execution::SnapshotQuery<std::shared_ptr<const Native>>> native_query;
     std::shared_ptr<execution::SnapshotQuery<std::shared_ptr<const View>>> projection;
     std::shared_ptr<const Native> native;
-    std::shared_ptr<const Selection> selection, previous_selection, marks, empty_selection;
-    quint64 selection_revision{0}, mark_revision{0};
+    std::unique_ptr<coinselection::Session> session;
     std::shared_ptr<std::atomic<quint64>> selection_epoch{std::make_shared<std::atomic<quint64>>(0)};
     std::shared_ptr<std::atomic<quint64>> lock_revision{std::make_shared<std::atomic<quint64>>(0)};
     std::deque<std::shared_ptr<LockJob>> locks;
@@ -189,9 +191,12 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
     Backend(std::shared_ptr<walletopening::Session> owner, execution::SnapshotServices ports)
         : opening(std::move(owner)), services(std::move(ports)) {}
     void start(std::function<void()> notify) {
-        selection = walletopening::RetainValues<Selection>(opening, [] { return std::make_unique<Selection>(); });
-        if (!selection) throw std::runtime_error{"Coin selection cleanup could not be reserved"};
-        marks = empty_selection = selection;
+        session = std::make_unique<coinselection::Session>([opening = opening](Selection values) {
+            return walletopening::RetainValues<Selection>(opening, [values = std::move(values)]() mutable {
+                return std::make_unique<Selection>(std::move(values));
+            });
+        });
+        if (!session->ready()) throw std::runtime_error{"Coin selection cleanup could not be reserved"};
         const auto weak = weak_from_this();
         native_query = std::make_shared<execution::SnapshotQuery<std::shared_ptr<const Native>>>(services.scheduler,
             [opening = opening, revision = lock_revision, selected_revision = selection_epoch] {
@@ -231,14 +236,11 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
             const auto value = *result->snapshot;
             if (value->lock_revision != lock_revision->load()) { native_query->request(); return; }
             native = value;
-            if (native->selection_revision != selection_revision) { native_query->request(); projection->request(); return; }
-            auto pruned = walletopening::RetainValues<Selection>(opening, [&] {
-                auto retained = std::make_unique<Selection>();
-                std::set_intersection(selection->begin(), selection->end(), native->outpoints.begin(), native->outpoints.end(), std::inserter(*retained, retained->end()));
-                return retained;
-            });
-            if (!pruned) { read_failed = true; }
-            else if (*pruned != *selection) { selection = std::move(pruned); ++selection_revision; selection_epoch->store(selection_revision); }
+            if (native->selection_revision != session->revision()) { native_query->request(); projection->request(); return; }
+            // A missing selected input is an explicit reconciliation state.
+            // Keep the user's Manual intent until they choose a replacement
+            // or explicitly switch back to Automatic.
+            session->reconcileCatalog(native->outpoints);
         }
         projection->request();
     }
@@ -247,8 +249,12 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
         if (native->coins.size() > static_cast<size_t>(std::numeric_limits<int>::max())) throw std::runtime_error{"Coin inventory exceeds Qt model index range"};
         Controls controls; { std::lock_guard lock{input->mutex}; controls = input->controls; }
         auto result = walletopening::RetainValues<View>(opening, [&] {
-            auto view = std::make_unique<View>(); view->controls = controls; view->selection = selection; view->marks = marks; view->mark_revision = mark_revision;
-            view->selection_revision = selection_revision; view->lock_revision = native->lock_revision; view->read_failed = read_failed;
+            const auto selection = session->selection();
+            const auto marks = session->marks();
+            auto view = std::make_unique<View>(); view->controls = controls; view->selection = selection; view->marks = marks; view->mark_revision = session->marksRevision();
+            view->input_mode = session->inputMode();
+            view->missing_selected_coins = session->missing().size();
+            view->selection_revision = session->revision(); view->lock_revision = native->lock_revision; view->read_failed = read_failed;
             view->count = native->coins.size();
             bool first{true};
             for (const auto& coin : native->coins) {
@@ -292,61 +298,80 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
         return result;
     }
     SelectionResult select(std::optional<COutPoint> outpoint, SelectionMode mode, const std::shared_ptr<const Selection>& replacement) {
-        if (mode == SelectionMode::Begin) { previous_selection = selection; return {selection, selection_revision, false}; }
-        if (mode == SelectionMode::Apply) { previous_selection.reset(); return {selection, selection_revision, false}; }
-        if (mode == SelectionMode::Cancel && !previous_selection) return {selection, selection_revision, false};
-        const auto original = mode == SelectionMode::Cancel ? previous_selection : replacement;
-        auto value = walletopening::RetainValues<Selection>(opening, [&] {
-            auto next = mode == SelectionMode::Replace || mode == SelectionMode::Cancel ? (original ? std::make_unique<Selection>(*original) : std::make_unique<Selection>()) : std::make_unique<Selection>(*selection);
-            if (outpoint) {
-                if (mode == SelectionMode::Unselect || (mode == SelectionMode::Toggle && next->contains(*outpoint))) next->erase(*outpoint);
-                else next->insert(*outpoint);
-            }
-            return next;
-        });
-        if (!value) return {selection, selection_revision, true};
-        selection = std::move(value); if (mode == SelectionMode::Cancel) previous_selection.reset(); ++selection_revision; selection_epoch->store(selection_revision);
-        try { projection->request(); } catch (...) { read_failed = true; }
-        return {selection, selection_revision, false};
+        auto intent = coinselection::Session::Intent::Toggle;
+        switch (mode) {
+        case SelectionMode::Unselect: intent = coinselection::Session::Intent::Unselect; break;
+        case SelectionMode::Select: intent = coinselection::Session::Intent::Select; break;
+        case SelectionMode::Toggle: intent = coinselection::Session::Intent::Toggle; break;
+        case SelectionMode::Replace: intent = coinselection::Session::Intent::Replace; break;
+        case SelectionMode::Begin: intent = coinselection::Session::Intent::Begin; break;
+        case SelectionMode::Cancel: intent = coinselection::Session::Intent::Cancel; break;
+        case SelectionMode::Apply: intent = coinselection::Session::Intent::Apply; break;
+        case SelectionMode::AutomaticInputs: intent = coinselection::Session::Intent::ChooseAutomatic; break;
+        case SelectionMode::ManualInputs: intent = coinselection::Session::Intent::ChooseManual; break;
+        }
+        const auto result = session->apply(intent, outpoint, replacement);
+        if (result.changed) {
+            selection_epoch->store(result.revision);
+            try { projection->request(); } catch (...) { read_failed = true; }
+        }
+        return {result.selection, result.revision, result.failed, result.mode, session->editing()};
     }
     MarkOutcome mark(std::optional<COutPoint> outpoint) {
-        if (!outpoint) marks = empty_selection;
-        else {
-            auto value = walletopening::RetainValues<Selection>(opening, [&] {
-                auto next = std::make_unique<Selection>(*marks);
-                if (next->contains(*outpoint)) next->erase(*outpoint); else next->insert(*outpoint);
-                return next;
-            });
-            if (!value) return {marks, mark_revision, true};
-            marks = std::move(value);
-        }
-        ++mark_revision;
+        const auto change = session->toggleMark(outpoint);
+        if (change.failed) return {change.marks, change.revision, true};
         try { projection->request(); } catch (...) { read_failed = true; }
-        return {marks, mark_revision, false};
+        return {change.marks, change.revision, false};
     }
     void enqueueLock(std::shared_ptr<const walletopening::Session::Action> action, const QStringList& ids, bool locked, std::function<void(LockResult)> done, bool marked = false) {
         auto job = walletopening::RetainValues<LockJob>(opening, [&] {
-            auto next = std::make_unique<LockJob>(); next->action = std::move(action); next->locked = locked; next->done = std::move(done);
+            auto next = std::make_unique<LockJob>(); next->action = action; next->locked = locked; next->done = done;
+            const auto marks = session->marks();
             if (marked) {
-                if (!native || marks->empty()) { next->failed = true; return next; }
+                next->requested = marks ? marks->size() : 0;
+                next->marks_at_admission = marks;
+                if (!marks || marks->empty()) { next->failed = true; return next; }
                 for (const auto& target : *marks) {
-                    if (!native->outpoints.contains(target)) { next->targets.clear(); next->failed = true; break; }
+                    const QString id = QString::fromStdString(target.hash.GetHex()) + ":" + QString::number(target.n);
+                    next->items.push_back({id, target, LockItemOutcome::State::NotAttempted});
+                    if (!native || !native->outpoints.contains(target)) {
+                        next->items.back().state = LockItemOutcome::State::Failed;
+                        next->failed = true;
+                        continue;
+                    }
                     next->targets.push_back(target);
                 }
+                if (next->failed) next->targets.clear();
                 return next;
             }
             const std::set<QString> requested{ids.begin(), ids.end()};
-            if (!native || requested.empty()) { next->failed = true; return next; }
+            next->requested = requested.size();
+            if (requested.empty()) { next->failed = true; return next; }
+            if (!native) {
+                for (const auto& id : requested) next->items.push_back({id, {}, LockItemOutcome::State::Failed});
+                next->failed = true;
+                return next;
+            }
             for (const auto& id : requested) {
                 const auto found = native->by_id.find(id);
-                if (found == native->by_id.end()) { next->failed = true; next->targets.clear(); break; }
-                next->targets.push_back(native->coins[found->second].outpoint);
+                if (found == native->by_id.end()) {
+                    next->items.push_back({id, {}, LockItemOutcome::State::Failed});
+                    next->failed = true;
+                    continue;
+                }
+                const auto target = native->coins[found->second].outpoint;
+                next->items.push_back({id, target, LockItemOutcome::State::NotAttempted});
+                next->targets.push_back(target);
             }
+            if (next->failed) next->targets.clear();
             return next;
         });
-        if (!job) { done({true, false, static_cast<size_t>(ids.size()), 0, selection, selection_revision, marks, mark_revision}); return; }
+        if (!job) {
+            done({true, false, static_cast<size_t>(ids.size()), 0, session->selection(), session->revision(), session->marks(), session->marksRevision(), {}});
+            return;
+        }
         locks.push_back(std::move(job)); ++*lock_revision;
-        if (marked) { marks = empty_selection; ++mark_revision; try { projection->request(); } catch (...) { read_failed = true; } }
+        if (marked) { session->toggleMark(); try { projection->request(); } catch (...) { read_failed = true; } }
         if (locks.size() == 1) lockChunk();
     }
     void lockChunk() {
@@ -356,20 +381,36 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
         const auto begin = job->cursor, end = std::min(begin + 32, job->targets.size());
         const auto admitted = opening->perform(job->action, [job, begin, end](interfaces::Wallet& wallet) {
             Chunk result;
+            result.items.reserve(end - begin);
             for (auto i = begin; i < end; ++i) {
+                auto item = job->items[i];
                 try {
                     const auto& target = job->targets[i];
-                    if (job->locked ? wallet.lockCoin(target, true) : wallet.unlockCoin(target)) result.changed.push_back(target);
-                    else result.failed = true;
-                } catch (...) { result.uncertain = true; break; }
+                    if (job->locked ? wallet.lockCoin(target, true) : wallet.unlockCoin(target)) {
+                        item.state = LockItemOutcome::State::Changed;
+                        result.changed.insert(target);
+                    } else {
+                        item.state = LockItemOutcome::State::Failed;
+                        result.failed = true;
+                    }
+                } catch (...) {
+                    item.state = LockItemOutcome::State::Unknown;
+                    result.uncertain = true;
+                }
+                result.items.push_back(std::move(item));
+                if (result.uncertain) break;
             }
             return result;
-        }, [self, job, end](Chunk result) {
-            job->cursor = end; job->changed.insert(result.changed.begin(), result.changed.end());
+        }, [self, job, begin](Chunk result) {
+            job->cursor = begin + result.items.size(); job->changed.insert(result.changed.begin(), result.changed.end());
+            for (size_t i = 0; i < result.items.size(); ++i) job->items[begin + i] = std::move(result.items[i]);
             job->failed |= result.failed; job->uncertain |= result.uncertain;
             if (result.uncertain) self->finishLock();
             self->lockChunk();
-        }, [self, job](std::exception_ptr) { job->uncertain = true; self->finishLock(); self->lockChunk(); });
+        }, [self, job, begin, end](std::exception_ptr) {
+            for (auto i = begin; i < end; ++i) job->items[i].state = LockItemOutcome::State::Unknown;
+            job->cursor = end; job->uncertain = true; self->finishLock(); self->lockChunk();
+        });
         if(admitted)return;
         job->failed = true; finishLock();
         }
@@ -380,19 +421,21 @@ struct CoinsListModel::Backend : std::enable_shared_from_this<Backend> {
         // Clear the job before publishing an outcome that aliases its values,
         // otherwise its completion can keep that same cleanup lease alive.
         auto done = std::exchange(job->done, {});
-        if (job->locked && !job->changed.empty()) {
-            try {
-                job->selected_after = *selection;
-                for (const auto& target : job->changed) job->selected_after.erase(target);
-                selection = std::shared_ptr<const Selection>{job, &job->selected_after};
-                ++selection_revision; selection_epoch->store(selection_revision);
-            } catch (...) { job->uncertain = true; }
+        Selection restore;
+        if (job->marks_at_admission) for (const auto& item : job->items) {
+            if (item.state != LockItemOutcome::State::Changed && !item.coin_id.isEmpty()) restore.insert(item.outpoint);
         }
+        const auto prior_selection_revision = session->revision();
+        Selection locked_successes;
+        if (job->locked) locked_successes = job->changed;
+        if (!session->applyLockResults(locked_successes, restore)) job->uncertain = true;
+        if (session->revision() != prior_selection_revision) selection_epoch->store(session->revision());
         ++*lock_revision;
-        const auto requested = job->targets.size(), changed = job->changed.size();
+        const auto requested = job->requested, changed = job->changed.size();
+        auto items = std::move(job->items);
         job->action.reset();
         std::vector<COutPoint>{}.swap(job->targets); Selection{}.swap(job->changed);
-        done({job->failed, job->uncertain, requested, changed, selection, selection_revision, marks, mark_revision});
+        done({job->failed, job->uncertain, requested, changed, session->selection(), session->revision(), session->marks(), session->marksRevision(), std::move(items)});
         locks.pop_front();
         if (locks.empty()) native_query->request();
     }
@@ -402,7 +445,7 @@ struct CoinsListModel::Retired {
     std::shared_ptr<Backend> backend;
     std::shared_ptr<Rows> rows;
     std::shared_ptr<const View> target, published;
-    std::shared_ptr<const Selection> selected, previous;
+    std::shared_ptr<const Selection> selected;
     std::deque<LockCommand> locks;
     std::deque<std::shared_ptr<execution::OwnedCommand<MarkOutcome>>> marks;
     std::deque<std::shared_ptr<execution::OwnedCommand<SelectionResult>>> selections;
@@ -446,7 +489,7 @@ void CoinsListModel::setOpening(std::shared_ptr<walletopening::Session> opening,
         });
         if (!current()) return;
         m_retired = std::move(retired); m_rows = std::move(rows); m_backend = std::move(backend);
-        m_selection = m_backend->selection;
+        m_selection = m_backend->session->selection();
         rebuildView(); if (!current()) return;
         update();
     } catch (...) {
@@ -470,7 +513,7 @@ void CoinsListModel::retireValues()
     if (auto retired = std::move(m_retired)) {
         retired->backend = std::move(m_backend); retired->rows = std::move(m_rows);
         retired->target = std::move(m_target); retired->published = std::move(m_published_view);
-        retired->selected = std::move(m_selection); retired->previous = std::move(m_previous_selection);
+        retired->selected = std::move(m_selection);
         retired->locks = std::move(m_lock_commands); retired->marks = std::move(m_mark_operations);
         retired->selections = std::move(m_selection_operations);
         retired->last_lock = std::move(m_last_lock); retired->last_selection = std::move(m_last_selection);
@@ -596,11 +639,13 @@ void CoinsListModel::reconcile(quint64 turn)
     }
     const bool marks_changed = m_mark_revision != target->mark_revision || m_marked_count != static_cast<int>(target->marks->size());
     m_mark_revision = target->mark_revision; m_marked_count = target->marks->size();
-    const bool selection_changed = m_selection_revision != target->selection_revision || m_selection != target->selection;
+    const bool selection_changed = m_selection_revision != target->selection_revision || m_selection != target->selection ||
+        m_input_mode != target->input_mode || m_missing_selected_coins != target->missing_selected_coins;
     m_coin_count = target->count; m_locked_count = target->locked_count;
     m_total = target->total; m_locked_total = target->locked_total; m_selected_total = target->selected_total;
     m_available_min = target->min; m_available_max = target->max; m_selected_text = target->selected_text;
     m_selection = target->selection; m_selection_revision = target->selection_revision;
+    m_input_mode = target->input_mode; m_missing_selected_coins = target->missing_selected_coins;
     m_selected_count = m_selection->size(); m_published_view = target; m_target.reset(); m_loading = false; m_incomplete = false;
     if (marks_changed) { Q_EMIT marksChanged(); if (!guard || m_stopping) return; }
     Q_EMIT coinCountChanged(); if (!guard || m_stopping) return;
@@ -654,6 +699,8 @@ void CoinsListModel::publishSelections()
         if (result->error || !result->value || result->value->failed) m_read_error = tr("The coin selection could not be updated.");
         else if (result->value->revision >= m_selection_revision) {
             m_selection = result->value->selection; m_selection_revision = result->value->revision;
+            m_input_mode = result->value->input_mode;
+            m_selection_editing = result->value->editing;
         }
     }
     if (!consumed) return;
@@ -708,16 +755,23 @@ void CoinsListModel::publishMarks()
 }
 void CoinsListModel::beginSelection()
 {
-    if (m_stopping || m_previous_selection) return;
-    if (selectionCommand({}, SelectionMode::Begin)) m_previous_selection = m_selection;
+    if (m_stopping || m_selection_editing) return;
+    if (selectionCommand({}, SelectionMode::Begin)) m_selection_editing = true;
 }
 void CoinsListModel::applySelection()
 {
-    if (m_previous_selection && selectionCommand({}, SelectionMode::Apply)) m_previous_selection.reset();
+    if (m_selection_editing && selectionCommand({}, SelectionMode::Apply)) m_selection_editing = false;
 }
 void CoinsListModel::cancelSelection()
 {
-    if (m_previous_selection && selectionCommand({}, SelectionMode::Cancel)) m_previous_selection.reset();
+    if (m_selection_editing && selectionCommand({}, SelectionMode::Cancel)) m_selection_editing = false;
+}
+bool CoinsListModel::setManualInputSelection(const bool manual)
+{
+    if (m_stopping || !m_backend || !m_opening || !m_opening->available()) return false;
+    if (!selectionPending() && manual == manualInputSelection() &&
+        (manual || !m_selection || m_selection->empty())) return true;
+    return selectionCommand({}, manual ? SelectionMode::ManualInputs : SelectionMode::AutomaticInputs) != 0;
 }
 bool CoinsListModel::setCoinsLocked(const QStringList& ids, bool locked) { return lockCoins(ids, locked, false); }
 bool CoinsListModel::lockMarkedCoins(bool locked) { return lockCoins({}, locked, true); }

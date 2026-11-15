@@ -76,7 +76,7 @@ void Reader::consume()
             for (const auto& recipient : input.draft->recipients) input.recipients.push_back({recipient.address.toStdString(), recipient.amount});
         }
         if (input.selected) for (const auto& outpoint : *input.selected) input.coin_control.Select(outpoint);
-        input.coin_control.m_allow_other_inputs = !input.coin_control.HasSelected();
+        coinselection::ApplyInputPolicy(input.coin_control, input.input_mode);
         return self->m_read(input);
     }, [self, drain, intent](FeeReadResult result) { self->complete(intent, std::move(result)); },
        [self, drain, intent](std::exception_ptr error) {
