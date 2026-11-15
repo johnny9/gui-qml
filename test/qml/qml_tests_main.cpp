@@ -6977,6 +6977,7 @@ public Q_SLOTS:
         qmlRegisterUncreatableType<MockTransaction>("org.bitcoincore.qt", 1, 0, "Transaction", "Test stub type");
         qmlRegisterUncreatableType<MockSendRecipient>("org.bitcoincore.qt", 1, 0, "SendRecipient", "Test stub type");
         qmlRegisterUncreatableType<MockBumpTransactionModel>("org.bitcoincore.qt", 1, 0, "BumpTransactionModel", "Test stub type");
+        qmlRegisterType<MockBumpTransactionModel>("org.bitcoincore.qt", 1, 0, "TestBumpTransactionModel");
         qmlRegisterUncreatableType<MockBackupFileOperation>("org.bitcoincore.qt", 1, 0, "BackupFileOperation", "Test stub type");
         qmlRegisterUncreatableType<MockFileExportOperation>("org.bitcoincore.qt", 1, 0, "FileExportOperationModel", "Test stub type");
         qmlRegisterUncreatableType<MockWalletSecurity>("org.bitcoincore.qt", 1, 0, "WalletSecurityModel", "Test fixture");

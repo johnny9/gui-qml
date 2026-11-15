@@ -23,6 +23,8 @@ TestCase {
     Component { id: detailComponent; TransactionDetail { width: 1180; height: 1100; wallet: testWalletModel } }
     Component { id: speedUpCompleteComponent; SpeedUpComplete { width: 560; height: 460 } }
     Component { id: activityComponent; ActivityList { width: 1180; height: 1100; wallet: testWalletModel } }
+    Component { id: bumpComponent; TestBumpTransactionModel {} }
+    Component { id: bumpOverlayComponent; SpeedUpOverlay {} }
     SignalSpy { id: transactionSpy; signalName: "showTransaction" }
 
     function entry(id, amount, ownership, overrides) {
@@ -100,6 +102,26 @@ TestCase {
         compare(testBumpModel.preparationCount, prepared)
         overlay.close()
         tryCompare(overlay, "visible", false)
+    }
+
+    function test_wallet_switch_keeps_cleanup_on_the_original_bump_model() {
+        const first = createTemporaryObject(bumpComponent, this)
+        const second = createTemporaryObject(bumpComponent, this)
+        const overlay = createTemporaryObject(bumpOverlayComponent, this, {bumpModel: first, txid: "first-wallet-transaction"})
+        verify(first !== null && second !== null && overlay !== null)
+        overlay.open()
+        tryCompare(overlay, "readyToConfirm", true)
+        second.requestPrepareFeeBump("second-wallet-transaction", 1)
+        tryCompare(second, "state", BumpTransactionModel.NeedsConfirmation)
+        // Independent models can have identical local sequence numbers.
+        compare(first.attemptId, second.attemptId)
+        const originalCount = second.preparationCount
+        overlay.bumpModel = second
+        tryCompare(overlay, "opened", false)
+        compare(first.state, BumpTransactionModel.Idle)
+        compare(second.state, BumpTransactionModel.NeedsConfirmation)
+        compare(second.oldTxid, "second-wallet-transaction")
+        compare(second.preparationCount, originalCount)
     }
 
     function createDetail(data, properties) {
