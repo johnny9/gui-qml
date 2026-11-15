@@ -58,8 +58,6 @@
 #include <QTest>
 #include <QTimer>
 #include <QUrl>
-#include <QUuid>
-#include <QPointer>
 #include <QVariantList>
 #include <QVariantMap>
 #include <qqml.h>
