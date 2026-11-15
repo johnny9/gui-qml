@@ -238,6 +238,8 @@ private Q_SLOTS:
     void autocompleteRejectsStaleManualResults();
     void secretRequestsAreNotRetained_data();
     void secretRequestsAreNotRetained();
+    void argumentConversionDiagnosticsFollowRequestRedaction_data();
+    void argumentConversionDiagnosticsFollowRequestRedaction();
 };
 
 void RpcConsoleModelTests::constructorReservationKeepsOriginalParentLifetime()
@@ -1091,6 +1093,43 @@ void RpcConsoleModelTests::secretRequestsAreNotRetained()
     QCOMPARE(model.browseHistory(-1, pending), pending);
     QVERIFY(requests_safe); QVERIFY(history_safe);
     QCOMPARE(recalled, method + QString::fromUtf8("(…)"));
+}
+
+void RpcConsoleModelTests::argumentConversionDiagnosticsFollowRequestRedaction_data()
+{
+    QTest::addColumn<QString>("command"); QTest::addColumn<bool>("sensitive");
+    QTest::newRow("sensitive-direct") << "signrawtransactionwithkey deadbeef unique-rpc-secret-92" << true;
+    QTest::newRow("sensitive-nested") << "echo(signrawtransactionwithkey(deadbeef unique-rpc-secret-92))" << true;
+    QTest::newRow("ordinary-conversion-control") << "getblockhash ordinary-parse-control" << false;
+}
+
+void RpcConsoleModelTests::argumentConversionDiagnosticsFollowRequestRedaction()
+{
+    QFETCH(QString, command); QFETCH(bool, sensitive);
+    struct Node final : RpcTestStubNode {
+        int effects{0};
+        UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override { ++effects; return {}; }
+    } node;
+    ManualExecutionEnvironment env;
+    RpcConsoleModel model{node, {env.scheduler, [&](auto turn) { env.post(std::move(turn)); }}};
+    const auto cleanup = qScopeGuard([&] { model.beginShutdown(); env.drain(); env.publishAll(); });
+    QVERIFY(model.submitNodeCommand(command)); env.drain(); env.publishAll();
+    QCOMPARE(node.effects, 0); QVERIFY(!model.executing());
+    bool request{false}, error{false};
+    auto* output = model.outputModel(); QVERIFY(output->rowCount() >= 2);
+    for (int row = 0; row < output->rowCount(); ++row) {
+        const auto index = output->index(row, 0);
+        const auto text = output->data(index, RpcOutputListModel::ContentRole).toString();
+        QVERIFY(!text.contains("unique-rpc-secret-92"));
+        const int category = output->data(index, RpcOutputListModel::CategoryRole).toInt();
+        if (category == RpcConsoleModel::CMD_REQUEST) request |= text.contains(sensitive ? QString::fromUtf8("(…)") : QStringLiteral("ordinary-parse-control"));
+        if (category == RpcConsoleModel::CMD_ERROR) error |= text.contains(sensitive ? QStringLiteral("Invalid RPC arguments.") : QStringLiteral("Error parsing JSON: ordinary-parse-control"));
+    }
+    QVERIFY(request); QVERIFY(error);
+    model.clear(); QCOMPARE(output->rowCount(), 0);
+    const auto recalled = model.browseHistory(1, {});
+    QVERIFY(!recalled.contains("unique-rpc-secret-92"));
+    QVERIFY(recalled.contains(sensitive ? QString::fromUtf8("(…)") : QStringLiteral("ordinary-parse-control")));
 }
 
 #ifdef BITCOINQML_NO_TEST_MAIN

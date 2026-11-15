@@ -93,3 +93,21 @@ public getters still take their existing Core locks and can observe a concurrent
 change between calls. Subsequent real tip notifications retain catch-up work.
 This change does not remove the previously recorded conditional Core lock or
 whole-GUI validation limits.
+
+
+## Sensitive conversion diagnostics
+
+Core's public RPC argument converter includes a rejected JSON argument in its
+exception text. That text is original input. The same nine-command redaction
+policy applies before it enters console output: sensitive conversion failures
+show a generic argument error, while ordinary conversion errors retain useful
+input diagnostics. This changes neither valid arguments nor Core RPC responses.
+The command receipt still distinguishes validation before any RPC effect from a
+failure after an earlier nested effect. Direct and nested malformed-sensitive
+requests, an ordinary conversion control, and the existing full request/history
+and real-process privacy checks qualify this boundary; their execution status is
+recorded with the focused checkpoint rather than inferred from this description.
+
+Clear intentionally resets a wallet context banner. The real-process consumer
+therefore requires the exact banner again for each wallet command after Clear,
+including ordinary commands; all original request/reply/privacy anchors remain.

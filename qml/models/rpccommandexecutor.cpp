@@ -20,6 +20,7 @@
 
 #include <QStringList>
 #include <QUrl>
+#include <QCoreApplication>
 
 namespace {
 
@@ -289,7 +290,17 @@ std::string RpcCommandExecutor::Execute(interfaces::Node& node, const Prepared& 
             // Widgets omits a nested string result when that string is empty.
             if (!call[i].result || !argument.empty()) arguments.push_back(std::move(argument));
         }
-        auto params = RPCConvertValues(method, arguments);
+        const auto params = [&] {
+            try { return RPCConvertValues(method, arguments); }
+            catch (const std::runtime_error&) {
+                // Core's public JSON converter includes the rejected argument
+                // in its exception. That is still original input, not an RPC
+                // reply; the history redaction policy must cover it as well.
+                if (HISTORY_FILTER.contains(QString::fromStdString(method), Qt::CaseInsensitive))
+                    throw std::runtime_error(QCoreApplication::translate("RpcCommandExecutor", "Invalid RPC arguments.").toStdString());
+                throw;
+            }
+        }();
         attempted = true;
         results.push_back(node.executeRpc(method, params, uri));
     }
