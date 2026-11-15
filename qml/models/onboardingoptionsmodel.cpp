@@ -171,7 +171,7 @@ void OnboardingOptionsModel::confirmUnpruning(const QString& token)
 bool OnboardingOptionsModel::checksAvailable() const
 {
     return !m_preparing && !setupCommitPending() && !setupCommitted() && m_setup_commit->load()!=SetupUncertain
-        && !m_stopping && !m_core_settings.pending() && m_core_settings.pruneTargetError().isEmpty()
+        && !m_stopping && !m_path_pending && !m_core_settings.pending() && m_core_settings.pruneTargetError().isEmpty()
         && !m_preview_pending && m_preview_error.isEmpty() && !m_storage_check_pending && !m_storage_projection_pending
         && m_storage_result_valid && m_storage_error_text.isEmpty() && m_storage_info.enough_for_selected;
 }
@@ -183,7 +183,7 @@ void OnboardingOptionsModel::notifyCanFinish()
         const auto request = applyRequest();
         const auto argv = m_argv;
         const bool ipc = m_can_listen_ipc;
-        onboarding::Checks checks{revision, !m_preview_pending && m_preview_error.isEmpty(),
+        onboarding::Checks checks{revision, !m_path_pending && !m_preview_pending && m_preview_error.isEmpty(),
             !m_storage_check_pending && !m_storage_projection_pending && m_storage_result_valid && m_storage_info.enough_for_selected,
             !m_core_settings.pending() && m_core_settings.pruneTargetError().isEmpty(), {}};
         const bool admitted=m_flow->check(checks, [argv,ipc,request,inspect=m_inspect,cancelled=m_inspection_cancel] {
@@ -344,8 +344,12 @@ bool OnboardingOptionsModel::selectCustomDataDir(const QString& path)
     if(m_stopping||setupCommitPending()||setupCommitted()||setupPartial()||setupUncertain())return false;
     invalidateInspection();
     m_path_pending = true;
+    m_preview_pending = true;
+    const auto revision=++m_path_revision;
+    ++m_preview_request_id;++m_storage_request_id;m_path_source=path;
     const QPointer<OnboardingOptionsModel> observer{this};
-    m_core_settings.setAdmissionReady(false);if(!observer||m_stopping)return false;m_core_settings.invalidatePreviewContext();const auto revision=++m_path_revision;++m_preview_request_id;++m_storage_request_id;m_path_source=path;m_preview_pending=true;
+    m_core_settings.setAdmissionReady(false);if(!observer||m_stopping||revision!=m_path_revision)return false;
+    m_core_settings.invalidatePreviewContext();
     const bool admitted=m_work->submit([path]{if(path.size()>32768)throw std::length_error("Data directory path is too long");const auto normalized=QmlDataDir::NormalizeLocalPath(path);return std::pair{normalized,DataDirDisplay(normalized)};},
         [observer,revision](const std::pair<QString,QString>& result){if(!observer||observer->m_stopping||revision!=observer->m_path_revision)return;
             observer->m_path_pending=false;
@@ -353,7 +357,7 @@ bool OnboardingOptionsModel::selectCustomDataDir(const QString& path)
             if(normalized.isEmpty()){observer->setPreviewError(tr("Choose a data directory."));if(observer&&!observer->m_stopping)observer->setPreviewPending(false);return;}
             observer->m_data_dir_source=QmlOnboardingSettings::DataDirSource::UserSelection;
             if(observer->m_custom_datadir_string!=normalized){observer->m_custom_datadir_string=normalized;Q_EMIT observer->customDataDirStringChanged(normalized);}
-            if(observer&&!observer->m_stopping)observer->setDataDir(normalized);
+            if(observer&&!observer->m_stopping&&revision==observer->m_path_revision)observer->setDataDir(normalized);
         },[observer,revision](std::exception_ptr){if(!observer||observer->m_stopping||revision!=observer->m_path_revision)return;
             observer->m_path_pending=false;
             observer->setPreviewError(tr("The selected directory could not be checked."));if(observer&&!observer->m_stopping)observer->setPreviewPending(false);});
@@ -365,14 +369,18 @@ void OnboardingOptionsModel::useDefaultDataDir()
     if(m_stopping||setupCommitPending()||setupCommitted()||setupPartial()||setupUncertain())return;
     invalidateInspection();
     m_path_pending = true;
+    m_preview_pending = true;
+    const auto revision=++m_path_revision;
+    ++m_preview_request_id;++m_storage_request_id;
     const QPointer<OnboardingOptionsModel> observer{this};
-    m_core_settings.setAdmissionReady(false);if(!observer||m_stopping)return;m_core_settings.invalidatePreviewContext();const auto revision=++m_path_revision;++m_preview_request_id;++m_storage_request_id;m_preview_pending=true;
+    m_core_settings.setAdmissionReady(false);if(!observer||m_stopping||revision!=m_path_revision)return;
+    m_core_settings.invalidatePreviewContext();
     m_work->submit([]{return QmlDataDir::DefaultDataDirString();},[observer,revision](const QString& path){
         if(!observer||observer->m_stopping||revision!=observer->m_path_revision)return;
         observer->m_path_pending=false;
         observer->m_path_source=path;observer->m_data_dir_source=QmlOnboardingSettings::DataDirSource::UserSelection;
         if(!observer->m_custom_datadir_string.isEmpty()){observer->m_custom_datadir_string.clear();observer->m_custom_datadir_display.clear();Q_EMIT observer->customDataDirStringChanged({});}
-        if(observer&&!observer->m_stopping)observer->setDataDir(path);
+        if(observer&&!observer->m_stopping&&revision==observer->m_path_revision)observer->setDataDir(path);
     },[observer,revision](std::exception_ptr){if(!observer||observer->m_stopping||revision!=observer->m_path_revision)return;
         observer->m_path_pending=false;
         observer->setPreviewError(tr("The default directory could not be checked."));if(observer&&!observer->m_stopping)observer->setPreviewPending(false);});
@@ -382,8 +390,9 @@ void OnboardingOptionsModel::setDataDir(const QString& canonical)
 {
     if(m_stopping)return;
     const QPointer<OnboardingOptionsModel> observer{this};
+    const auto revision=m_path_revision;
     if(canonical!=m_data_dir){m_data_dir=canonical;Q_EMIT dataDirChanged(m_data_dir);}
-    if(observer&&!m_stopping)refreshPreview();
+    if(observer&&!m_stopping&&revision==m_path_revision)refreshPreview();
 }
 
 void OnboardingOptionsModel::setPrune(bool prune)

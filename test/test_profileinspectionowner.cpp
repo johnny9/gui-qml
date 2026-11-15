@@ -38,7 +38,7 @@ struct ManualOwner {
     QString failure;
     std::unique_ptr<OnboardingOptionsModel> model;
     bool initial_selected{false};
-    explicit ManualOwner(bool explicit_directory = false)
+    explicit ManualOwner(bool explicit_directory = false, bool initial_wallet_data = true)
     {
         QDir(first.path()).mkpath(QStringLiteral("regtest"));
         QDir(second.path()).mkpath(QStringLiteral("regtest"));
@@ -46,12 +46,12 @@ struct ManualOwner {
         if(explicit_directory)argv.push_back("-datadir="+first.path().toStdString());
         model = std::make_unique<OnboardingOptionsModel>(std::move(argv), false, nullptr,
             execution::SnapshotServices{execution.scheduler, [this](auto turn) { gui.emplace_back(std::move(turn)); }},
-            [this](const auto& request, const auto& cancelled) {
+            [this,initial_wallet_data](const auto& request, const auto& cancelled) {
                 requests.push_back(request); cancellations.push_back(cancelled);
                 if (!failure.isEmpty()) {
                     profileinspection::Result result; result.error = failure; return result;
                 }
-                return Found(requests.size() == 1);
+                return Found(initial_wallet_data && requests.size() == 1);
             });
         // Editable chooser tests must not carry an immutable CLI -datadir.
         // Admit the original selection before any GUI startup publication.
@@ -160,6 +160,48 @@ private Q_SLOTS:
         QCOMPARE(QDir(original.directory).canonicalPath(), QDir(fixture.first.filePath(QStringLiteral("regtest"))).canonicalPath());
         for (size_t i = 1; i < fixture.requests.size(); ++i)
             QCOMPARE(QDir(fixture.requests[i].directory).canonicalPath(), QDir(fixture.second.filePath(QStringLiteral("regtest"))).canonicalPath());
+        fixture.model->beginShutdown();
+        QVERIFY(fixture.settle());
+        QVERIFY(fixture.execution.quiescent());
+    }
+    void directoryIngressFencesEligibilityAndKeepsTheReentrantSuccessor_data()
+    {
+        QTest::addColumn<bool>("outer_default");
+        QTest::newRow("chooser")<<false;
+        QTest::newRow("default")<<true;
+    }
+    void directoryIngressFencesEligibilityAndKeepsTheReentrantSuccessor()
+    {
+        QFETCH(bool,outer_default);
+        ManualOwner fixture{false,false};
+        QVERIFY(fixture.settle());
+        QVERIFY2(fixture.model->canFinish(),qPrintable(fixture.model->previewError()));
+        auto* settings=qobject_cast<CoreSettingsModel*>(fixture.model->coreSettings());
+        QVERIFY(settings);
+        bool observed{false},eligible_at_notice{true},pending_at_notice{false},successor_admitted{false};
+        const auto connection=connect(settings,&CoreSettingsModel::statusesChanged,this,[&]{
+            if(observed)return;
+            observed=true;
+            eligible_at_notice=fixture.model->canFinish();
+            pending_at_notice=fixture.model->validationPending();
+            successor_admitted=fixture.model->selectCustomDataDir(fixture.first.path());
+        });
+        const auto disconnect=qScopeGuard([&]{QObject::disconnect(connection);});
+        const auto reads=fixture.requests.size();
+        // The outer directory request loses authority to a newer public
+        // request during the first bounded settings presentation notification.
+        if(outer_default)fixture.model->useDefaultDataDir();
+        else QVERIFY(!fixture.model->selectCustomDataDir(fixture.second.path()));
+        QVERIFY(observed);
+        QVERIFY(!eligible_at_notice);
+        QVERIFY(pending_at_notice);
+        QVERIFY(successor_admitted);
+        QVERIFY(fixture.settle());
+        QCOMPARE(fixture.model->dataDir(),fixture.first.path());
+        QVERIFY(fixture.model->canFinish());
+        QVERIFY(fixture.requests.size()>reads);
+        for(size_t i=reads;i<fixture.requests.size();++i)
+            QCOMPARE(QDir(fixture.requests[i].directory).canonicalPath(),QDir(fixture.first.filePath(QStringLiteral("regtest"))).canonicalPath());
         fixture.model->beginShutdown();
         QVERIFY(fixture.settle());
         QVERIFY(fixture.execution.quiescent());
