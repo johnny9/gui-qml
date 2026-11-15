@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <qml/models/desktopintentmodel.h>
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <qml/guipresentation.h>
 #ifdef ENABLE_WALLET
 #include <qml/models/bitcoinurimodel.h>

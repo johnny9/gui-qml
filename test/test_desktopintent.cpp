@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include <qml/desktopintentowner.h>
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 #include <qml/desktopintentargs.h>
 #include <qml/models/desktopintentmodel.h>
 #ifdef ENABLE_WALLET
@@ -44,6 +45,26 @@ private Q_SLOTS:
         QVERIFY(!desktopintent::ParseArguments(2, arguments, QStringLiteral("process"), QStringLiteral("/captured")).error.isEmpty());
     }
 #ifdef ENABLE_WALLET
+    void retainedFacadeDoesNotHoldPhysicalShutdownAfterStop()
+    {
+        ManualRoutedExecution commands;
+        std::deque<std::function<void()>> gui;
+        const auto post = [&](auto turn) { gui.push_back(std::move(turn)); };
+        const auto drain = [&] {
+            do {
+                commands.drain();
+                while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+            } while (!commands.queuedIdle() || !commands.activeIdle());
+        };
+        BitcoinUriModel factory; factory.setServices({commands.scheduler, post});
+        DesktopIntentModel model{{commands.scheduler, post}, true}; model.setFactory(&factory);
+        QVERIFY(model.owner()->admit({Input(1)}, {})); model.setReady(true); drain();
+        model.inspectNext(); drain(); QVERIFY(model.inspection());
+        const QPointer<PaymentImportOperation> inspection{model.inspection()};
+        model.closeAdmission(); factory.closeAdmission(); drain();
+        QVERIFY(inspection); // The cached presentation deliberately remains alive.
+        QCOMPARE(commands.scheduler->pending(), size_t{0});
+    }
     void creationReceiptSurvivesProjectionLossAndCannotCreateTwice()
     {
         ManualRoutedExecution commands;
