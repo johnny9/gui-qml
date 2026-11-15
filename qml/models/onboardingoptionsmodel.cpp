@@ -47,7 +47,7 @@ OnboardingOptionsModel::OnboardingOptionsModel(std::vector<std::string> argv,boo
     if(!m_services.post)m_services.post=presentation::QueuedPost();
     m_work=std::make_unique<execution::OwnedWork>(m_services);m_preparation_work=std::make_unique<execution::OwnedWork>(m_services);
     m_core_settings.setAdmissionReady(false);m_core_settings.configureServices(m_services);
-    connect(&m_core_settings,&CoreSettingsModel::operationChanged,this,[this]{if(!m_stopping)Q_EMIT canFinishChanged();});
+    connect(&m_core_settings,&CoreSettingsModel::operationChanged,this,[this]{if(m_stopping)return;const QPointer<OnboardingOptionsModel> guard{this};Q_EMIT canFinishChanged();if(guard&&!m_stopping)Q_EMIT pruneTargetInputChanged();});
     m_argv=execution::RetainSnapshot<std::vector<std::string>>(m_services.scheduler,[&]{return std::make_unique<std::vector<std::string>>(std::move(argv));});
     m_core_settings.setAfterChangeHandler([this](const QmlCoreSettings::Change& change,CoreSettingsModel::ChangeOrigin origin){
         const QPointer<OnboardingOptionsModel> observer{this};QmlCoreSettings::EmitCoreSettingSignals(*this,change);if(!observer||m_stopping)return;
@@ -106,19 +106,60 @@ void OnboardingOptionsModel::setPreviewPending(bool pending)
 
 OnboardingOptionsModel::~OnboardingOptionsModel(){closeAdmission();m_preparation_work->close();if(m_executor)m_executor->shutdown();}
 
+QString OnboardingOptionsModel::unpruneConsentToken()const
+{
+    return QString::number(m_core_settings.userRevision())+QLatin1Char(':')+QString::number(m_path_revision);
+}
+void OnboardingOptionsModel::confirmUnpruning(const QString& token)
+{
+    if(!m_stopping&&!setupCommitPending()&&!setupCommitted()&&token==unpruneConsentToken())m_unprune_consent=token;
+}
+void OnboardingOptionsModel::configureSettingsCommit(ArgsManager& args)
+{
+    m_commit_port=[&args](const QmlOnboardingSettings::ApplyRequest& request){QString error;const bool success=QmlOnboardingSettings::ApplyToArgs(args,request.data_dir,request.touched_settings,request.values,&error,request.accept_redownload,false);return std::pair{success,error};};
+}
+void OnboardingOptionsModel::commitSettings()
+{
+    if(!canFinish()||!m_commit_port||m_setup_commit->load()==SetupUncertain)return;
+    const auto request=applyRequest();const auto port=m_commit_port;const auto receipt=m_setup_commit;
+    receipt->store(SetupPending);m_setup_error={};m_core_settings.setAdmissionReady(false);
+    const QPointer<OnboardingOptionsModel> observer{this};
+    m_work->submit([request,port,receipt]{
+        try{auto result=port(request);receipt->store(result.first?SetupCommitted:SetupFailed);return result;}
+        catch(...){receipt->store(SetupUncertain);throw;}
+    },[observer](const std::pair<bool,QString>& result){
+        if(!observer||observer->m_stopping)return;
+        observer->m_setup_error=result.second;
+        if(!result.first)observer->m_core_settings.setAdmissionReady(true);
+        Q_EMIT observer->setupCommitChanged();if(!observer)return;
+        Q_EMIT observer->canFinishChanged();if(observer&&result.first)Q_EMIT observer->settingsCommitted();
+    },[observer,receipt](std::exception_ptr){
+        if(receipt->load()==SetupPending)receipt->store(SetupFailed);
+        if(!observer||observer->m_stopping)return;
+        observer->m_setup_error=receipt->load()==SetupUncertain?tr("The original setup outcome is unknown. It will not be repeated."):tr("Setup could not be scheduled. The edited answers have been retained.");
+        if(receipt->load()!=SetupUncertain)observer->m_core_settings.setAdmissionReady(true);
+        Q_EMIT observer->setupCommitChanged();if(observer)Q_EMIT observer->canFinishChanged();
+    });
+    if(observer)Q_EMIT setupCommitChanged();if(observer)Q_EMIT canFinishChanged();
+}
 void OnboardingOptionsModel::prepareNode(ArgsManager& args,std::function<bool()> prepare_node)
 {
     if(m_preparation_started)return;
+    if(!m_stopping&&(m_core_settings.pending()||!m_core_settings.pruneTargetError().isEmpty())){
+        m_preparation_state->store(PreparationFailed);const QPointer<OnboardingOptionsModel> observer{this};
+        m_services.post([observer]{if(observer)Q_EMIT observer->nodePrepared(false,tr("Finish or correct the staged storage input before preparing the node."));});return;
+    }
     if(m_stopping){const QPointer<OnboardingOptionsModel> observer{this};m_services.post([observer]{if(observer)Q_EMIT observer->nodePrepared(false,tr("The application is shutting down."));});return;}
-    const auto request=applyRequest();m_preparation_started=true;m_preparing=true;
+    const auto request=applyRequest();const bool settings_committed=setupCommitted();m_preparation_started=true;m_preparing=true;
     const auto receipt=m_preparation_state;receipt->store(PreparationPending);
     closeAdmission();const QPointer<OnboardingOptionsModel> observer{this};
-    const bool admitted=m_preparation_work->submit([&args,request,receipt,prepare_node=std::move(prepare_node)] {
+    const bool admitted=m_preparation_work->submit([&args,request,receipt,settings_committed,prepare_node=std::move(prepare_node)] {
         try {
-        QString error;if(!QmlOnboardingSettings::ApplyToArgs(args,request.data_dir,request.touched_settings,request.values,&error)){
+        QString error;if(!settings_committed&&!QmlOnboardingSettings::ApplyToArgs(args,request.data_dir,request.touched_settings,request.values,&error,request.accept_redownload,false)){
             if(error.isEmpty())error=tr("Onboarding settings could not be applied.");
             receipt->store(PreparationFailed);return std::pair{false,error};}
-        const bool success=prepare_node();receipt->store(success?PreparationSucceeded:PreparationFailed);return std::pair{success,QString{}};
+        const bool success=prepare_node();
+        receipt->store(success?PreparationSucceeded:PreparationFailed);return std::pair{success,error};
         } catch(...){receipt->store(PreparationUncertain);throw;}
     },[observer](const std::pair<bool,QString>& result){if(observer)observer->finishNodePreparation(result.first,result.second);},
     [observer,receipt](std::exception_ptr failure){if(receipt->load()==PreparationPending)receipt->store(PreparationFailed);if(!observer)return;QString error;
@@ -156,7 +197,7 @@ QString OnboardingOptionsModel::validateCustomDataDir(const QString& path) const
 }
 bool OnboardingOptionsModel::selectCustomDataDir(const QString& path)
 {
-    if(m_stopping)return false;
+    if(m_stopping||setupCommitPending()||setupCommitted())return false;
     const QPointer<OnboardingOptionsModel> observer{this};
     m_core_settings.setAdmissionReady(false);if(!observer||m_stopping)return false;m_core_settings.invalidatePreviewContext();const auto revision=++m_path_revision;++m_preview_request_id;++m_storage_request_id;m_path_source=path;m_preview_pending=true;
     const bool admitted=m_work->submit([path]{if(path.size()>32768)throw std::length_error("Data directory path is too long");const auto normalized=QmlDataDir::NormalizeLocalPath(path);return std::pair{normalized,DataDirDisplay(normalized)};},
@@ -420,6 +461,9 @@ QmlOnboardingStorage::State OnboardingOptionsModel::storageState() const
     state.prune = m_core_settings.values().prune;
     state.prune_size_gb = m_core_settings.values().prune_size_gb;
     state.existing_profile = m_profile.existing_profile;
+    state.manual_pruning=state.prune&&m_core_settings.values().prune_target_mib==1;
+    state.custom_manual_pruning=m_core_settings.customStorageTarget()==1;
+    state.custom_prune_size_gb=m_core_settings.customStorageSizeGB();
     return state;
 }
 
@@ -535,5 +579,5 @@ void OnboardingOptionsModel::applyPreview(const QmlOnboardingSettings::PreviewRe
 
 QmlOnboardingSettings::ApplyRequest OnboardingOptionsModel::applyRequest() const
 {
-    return {{m_data_dir, m_data_dir_source}, m_core_settings.touchedSettings(), coreValues()};
+    return {{m_data_dir, m_data_dir_source}, m_core_settings.touchedSettings(), coreValues(),m_unprune_consent==unpruneConsentToken()};
 }

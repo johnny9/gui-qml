@@ -14,6 +14,9 @@
 #include <qml/models/walletoperationpresentationmodel.h>
 #include <qml/models/uipreferences.h>
 #include <qml/models/signerdiscoverymodel.h>
+#include <qml/models/settingseditormodel.h>
+#include <qml/settingsparse.h>
+#include <qml/onboarding_storage.h>
 #include <QCryptographicHash>
 #include <test/mocks/manualexecutionenvironment.h>
 #include <QDir>
@@ -3257,6 +3260,8 @@ public:
     SignerDiscoveryModel* signers() const { return m_signers; }
     int signerEnumerationCalls() const { return m_signer_facts->reads; }
     int signerConfigurationWrites() const { return m_signer_facts->writes; }
+    signerdiscovery::Configuration signerConfigurationForTest()const{return m_signer_facts->configuration;}
+    void settingsSignerSavedForTest(const QString& command){++m_signer_facts->writes;const auto old=m_signer_facts->configuration;m_signer_facts->configuration={command,QString::fromLatin1(QCryptographicHash::hash(command.toUtf8(),QCryptographicHash::Sha256).toHex()),old.editable,old.source};m_signers->refresh();}
     Q_INVOKABLE QString signerExecutableForTest() const { return QCoreApplication::applicationFilePath(); }
     Q_INVOKABLE void setSignerFixtureForTest(const QString& command, const QString& fingerprint, const QString& name, const QString& error, bool read_only = false, bool refresh = true) {
         m_signer_facts->configuration = {command, QString::fromLatin1(QCryptographicHash::hash(command.toUtf8(), QCryptographicHash::Sha256).toHex()), !read_only, read_only ? QStringLiteral("CommandLine") : QStringLiteral("Persistent")};
@@ -3708,6 +3713,25 @@ class MockCoreSettingsModel : public QObject
     Q_PROPERTY(QVariantMap statuses READ statuses NOTIFY statusesChanged)
 
 public:
+    enum StorageChoice {FullStorage,ReducedStorage,CustomStorage};Q_ENUM(StorageChoice)
+    Q_PROPERTY(StorageChoice storageChoice READ storageChoice NOTIFY changed)
+    Q_PROPERTY(bool showCustomStorage READ showCustomStorage NOTIFY changed)
+    Q_PROPERTY(QString customStorageDescription READ customStorageDescription NOTIFY changed)
+    Q_PROPERTY(int customStorageSizeGB READ customStorageSizeGB NOTIFY changed)
+    int64_t m_target_mib{1907},m_custom_target{-1};
+    QString m_raw_prune,m_raw_prune_error;
+    QString pruneTargetText()const{return m_raw_prune.isNull()?QString::number(m_prune?m_target_mib:0):m_raw_prune;}
+    QString pruneTargetError()const{return m_raw_prune_error;}
+    void stagePruneLiteral(const QString& text){m_raw_prune=text.isNull()?QStringLiteral(""):text.left(65);const auto value=settingsparse::Integer(text,64);m_raw_prune_error=!value||*value<0||(*value>1&&*value<550)?QStringLiteral("Invalid prune target"):QString{};if(m_raw_prune_error.isEmpty())stagePruneMiB(*value);else Q_EMIT changed();}
+    StorageChoice storageChoice()const{return !m_prune?FullStorage:m_target_mib==1907?ReducedStorage:CustomStorage;}
+    bool showCustomStorage()const{return customTarget()>0;}
+    int64_t customTarget()const{return m_target_mib>0&&m_target_mib!=1907?m_target_mib:m_custom_target;}
+    int customStorageSizeGB()const{return settingsparse::StorageGB(customTarget());}
+    QString customStorageDescription()const{return customTarget()==1?QStringLiteral("Manual pruning. No automatic block storage limit is enforced."):QStringLiteral("Storing recent blocks up to %1 MiB.").arg(customTarget());}
+    Q_INVOKABLE void chooseStorage(StorageChoice choice){m_raw_prune={};m_raw_prune_error={};const auto memory=customTarget();if(memory>0)m_custom_target=memory;if(choice==FullStorage)setPrune(false);else if(choice==ReducedStorage){setPrune(true);m_target_mib=1907;setPruneSizeGB(2);}else if(memory>0)stagePruneMiB(memory);Q_EMIT changed();}
+    void stagePruneMiB(int64_t value){m_target_mib=value;m_prune=value>0;if(value>1)m_prune_size_gb=settingsparse::StorageGB(value);Q_EMIT changed();}
+    Q_INVOKABLE void discardPruneInput(){m_raw_prune={};m_raw_prune_error={};Q_EMIT changed();}
+    Q_INVOKABLE void resetPruneDraftForTest(){m_raw_prune={};m_raw_prune_error={};m_custom_target=-1;m_target_mib=1907;m_prune_size_gb=2;m_prune=true;Q_EMIT changed();}
     enum OperationState {Idle,Pending,Applied,Rejected,Stale,Failed,Closed};
     Q_ENUM(OperationState)
     explicit MockCoreSettingsModel(QObject* parent = nullptr) : QObject{parent} {}
@@ -3765,11 +3789,11 @@ public:
     void setListen(bool value) { setBool(QStringLiteral("listen"), m_listen, value); }
     void setNatpmp(bool value) { setBool(QStringLiteral("natpmp"), m_natpmp, value); }
     void setServer(bool value) { setBool(QStringLiteral("server"), m_server, value); }
-    void setPrune(bool value) { setBool(QStringLiteral("prune"), m_prune, value); }
+    void setPrune(bool value) { m_raw_prune={};m_raw_prune_error={};setBool(QStringLiteral("prune"), m_prune, value); }
     void setPruneSizeGB(int value)
     {
         if (!canEdit(QStringLiteral("prune")) || value == m_prune_size_gb || value < 1) return;
-        m_prune_size_gb = value;
+        m_prune_size_gb = value;m_target_mib=static_cast<int64_t>(value*GB_BYTES/1024/1024);m_raw_prune={};m_raw_prune_error={};
         Q_EMIT static_cast<MockCoreSettingEntryModel*>(entry(QStringLiteral("prune")))->valueChanged();
         Q_EMIT changed();
     }
@@ -4032,6 +4056,20 @@ private:
     bool m_pending{false};
 };
 
+namespace {
+struct MockSettingsStore {
+    std::mutex mutex;
+    effectivesettings::Snapshot snapshot;
+    std::array<effectivesettings::Value,settingsedit::FIELDS> configured;
+    QString rejected;
+    int writes{0};
+    MockSettingsStore(){
+        using namespace effectivesettings;snapshot.ready=true;snapshot.revision=QStringLiteral("settings-0");
+        for(size_t i=0;i<settingsedit::FIELDS;++i){const auto key=static_cast<Key>(i);Value value=Type(key)==Kind::Boolean?Value{key==Key::Listen}:Type(key)==Kind::Text?Value{QString{}}:Value{int64_t{key==Key::Prune?550:key==Key::Threads?0:key==Key::Dbcache?450:300}};configured[i]=value;Field field{key,Type(key),value,value,value};if(key==Key::Signer||key==Key::Natpmp)field.applicability=Applicability::Live;snapshot.fields.push_back(std::move(field));}
+    }
+};
+QList<QPointer<SettingsEditorModel>>& MockSettingsOwners(){static QList<QPointer<SettingsEditorModel>> result;return result;}
+}
 class MockOptionsModel : public QObject
 {
     Q_OBJECT
@@ -4086,9 +4124,12 @@ class MockOptionsModel : public QObject
     Q_PROPERTY(int storageMinimumRequiredGB READ storageMinimumRequiredGB NOTIFY storageStatusChanged)
     Q_PROPERTY(int fullStorageRequiredGB READ fullStorageRequiredGB NOTIFY storageStatusChanged)
     Q_PROPERTY(int prunedStorageRequiredGB READ prunedStorageRequiredGB NOTIFY storageStatusChanged)
+    Q_PROPERTY(int reducedStorageRequiredGB READ reducedStorageRequiredGB NOTIFY storageStatusChanged)
     Q_PROPERTY(int selectedStorageRequiredGB READ selectedStorageRequiredGB NOTIFY storageStatusChanged)
     Q_PROPERTY(bool storageEnoughForSelected READ storageEnoughForSelected NOTIFY storageStatusChanged)
     Q_PROPERTY(bool storageEnoughForFull READ storageEnoughForFull NOTIFY storageStatusChanged)
+    Q_PROPERTY(bool storageEnoughForReduced READ storageEnoughForReduced NOTIFY storageStatusChanged)
+    Q_PROPERTY(bool storageEnoughForCustom READ storageEnoughForCustom NOTIFY storageStatusChanged)
     Q_PROPERTY(QString thirdPartyTransactionUrls MEMBER m_third_party_transaction_urls NOTIFY thirdPartyTransactionUrlsChanged)
     Q_PROPERTY(QString moneyFontChoice MEMBER m_money_font_choice NOTIFY moneyFontChoiceChanged)
     Q_PROPERTY(QString externalSignerPath MEMBER m_external_signer_path NOTIFY externalSignerPathChanged)
@@ -4153,9 +4194,50 @@ public:
     QVariantMap m_core_setting_status_overrides;
     MockCoreSettingsModel m_core_settings;
 
+    Q_PROPERTY(QString pruneTargetText READ pruneTargetText NOTIFY pruneTargetInputChanged)
+    Q_PROPERTY(QString pruneTargetError READ pruneTargetError NOTIFY pruneTargetInputChanged)
+    QString pruneTargetText()const{return m_core_settings.pruneTargetText();}
+    QString pruneTargetError()const{return m_core_settings.pruneTargetError();}
+    Q_INVOKABLE void editPruneTarget(const QString& text){m_core_settings.stagePruneLiteral(text);}
+    std::shared_ptr<MockSettingsStore> m_settings_store;
+    MockWalletController* m_settings_signer{nullptr};
+    void setSettingsSignerForTest(MockWalletController* signer){m_settings_signer=signer;}
+    Q_PROPERTY(bool setupCommitPending READ setupCommitPending NOTIFY setupCommitChanged)
+    Q_PROPERTY(bool setupCommitted READ setupCommitted NOTIFY setupCommitChanged)
+    Q_PROPERTY(QString setupCommitError READ setupCommitError NOTIFY setupCommitChanged)
+    Q_PROPERTY(QString unpruneConsentToken READ unpruneConsentToken CONSTANT)
+    bool m_setup_pending{false},m_setup_committed{false};
+    QString m_setup_error;
+    bool setupCommitPending()const{return m_setup_pending;}
+    bool setupCommitted()const{return m_setup_committed;}
+    QString setupCommitError()const{return m_setup_error;}
+    QString unpruneConsentToken()const{return QStringLiteral("mock-consent");}
+    Q_INVOKABLE void confirmUnpruning(const QString&){}
+    Q_INVOKABLE void commitSettings(){if(!canFinish()||m_setup_pending||m_setup_committed)return;m_setup_pending=true;Q_EMIT setupCommitChanged();QTimer::singleShot(0,this,[this]{m_setup_pending=false;m_setup_committed=true;Q_EMIT setupCommitChanged();Q_EMIT settingsCommitted();});}
+    Q_INVOKABLE void resetSettingsEditorsForTest(){for(const auto& editor:MockSettingsOwners())if(editor)editor->close();m_settings_store.reset();m_setup_pending=m_setup_committed=false;m_setup_error={};Q_EMIT setupCommitChanged();}
+    Q_INVOKABLE int settingsWritesForTest()const{if(!m_settings_store)return 0;std::lock_guard lock{m_settings_store->mutex};return m_settings_store->writes;}
+    Q_INVOKABLE void rejectSettingsForTest(const QString& error){if(!m_settings_store)m_settings_store=std::make_shared<MockSettingsStore>();std::lock_guard lock{m_settings_store->mutex};m_settings_store->rejected=error;}
+    Q_INVOKABLE SettingsEditorModel* createSettingsEditor(){
+        using namespace effectivesettings;if(!m_settings_store)m_settings_store=std::make_shared<MockSettingsStore>();const auto store=m_settings_store;
+        if(m_settings_signer){const auto config=m_settings_signer->signerConfigurationForTest();std::lock_guard lock{store->mutex};auto& field=store->snapshot.fields[size_t(Key::Signer)];field.committed=field.effective=field.next_start=config.command;field.editable=config.editable;field.provenance=config.editable?Provenance::Persistent:Provenance::CommandLine;}
+        SettingsEditorModel::Ports ports;ports.execution=MockFeeServices();
+        ports.read=[store]{std::lock_guard lock{store->mutex};return store->snapshot;};
+        ports.review=[store](const settingsedit::Save& save){std::lock_guard lock{store->mutex};const bool current=save.original.revision==store->snapshot.revision;QString error=store->rejected;for(const auto& edit:save.batch.edits)if(edit.key==Key::Signer&&edit.intent==Intent::ExplicitOverride)if(const auto path_error=signerdiscovery::PathError(std::get<QString>(edit.value));!path_error.isEmpty())error=path_error;return Check{current&&error.isEmpty(),{},{},current?error:QStringLiteral("Configuration changed")};};
+        ports.write=[store](const settingsedit::Save& save){std::lock_guard lock{store->mutex};Result result;if(save.original.revision!=store->snapshot.revision){result.outcome=Outcome::Conflict;result.error=QStringLiteral("Configuration changed");return result;}++store->writes;for(const auto& edit:save.batch.edits){auto& field=store->snapshot.fields[size_t(edit.key)];field.has_override=edit.intent==Intent::ExplicitOverride;field.committed=field.has_override?edit.value:store->configured[size_t(edit.key)];field.next_start=field.committed;field.provenance=field.has_override?Provenance::Persistent:Provenance::Default;result.persisted_values[edit.key]=field.has_override?std::make_optional(field.committed):std::nullopt;}store->snapshot.revision=QStringLiteral("settings-")+QString::number(store->writes);result.snapshot=store->snapshot;result.outcome=Outcome::Applied;result.persisted=result.write_completed=result.runtime_confirmed=true;return result;};
+        auto* editor=new SettingsEditorModel(std::move(ports),this);
+        const auto signer=QPointer<MockWalletController>{m_settings_signer};const auto saved_operation=std::make_shared<QString>();
+        connect(editor,&SettingsEditorModel::changed,editor,[editor,signer,saved_operation]{const auto result=editor->saveResult();if(!signer||!result.persisted||!result.outcomeKnown||*saved_operation==result.operationId)return;*saved_operation=result.operationId;const auto entry=editor->entry(QStringLiteral("signer"));if(entry&&entry->text()!=signer->signerConfigurationForTest().command)signer->settingsSignerSavedForTest(entry->text());});
+        MockSettingsOwners().removeIf([](const auto& item){return !item;});MockSettingsOwners().push_back(editor);connect(editor,&SettingsEditorModel::closed,editor,[editor]{editor->close();editor->deleteLater();});return editor;
+    }
+Q_SIGNALS:
+    void pruneTargetInputChanged();
+    void setupCommitChanged();
+    void settingsCommitted();
+public:
     MockOptionsModel()
     {
         connect(&m_core_settings, &MockCoreSettingsModel::changed, this, &MockOptionsModel::syncCoreSettingsFromDocument);
+        connect(&m_core_settings,&MockCoreSettingsModel::changed,this,&MockOptionsModel::pruneTargetInputChanged);
         m_core_settings.setListen(m_listen);
         m_core_settings.setNatpmp(m_natpmp);
         m_core_settings.setServer(m_server);
@@ -4178,7 +4260,7 @@ public:
         Q_EMIT maxMempoolSizeMBChanged(value);
     }
     QString getDefaultDataDirString() const { return QStringLiteral("/tmp/bitcoin-default"); }
-    bool canFinish() const { return m_preview_error.isEmpty() && !m_storage_check_pending && m_storage_error_text.isEmpty(); }
+    bool canFinish() const { return m_preview_error.isEmpty() && !m_storage_check_pending && m_storage_error_text.isEmpty() && pruneTargetError().isEmpty() && storageEnoughForSelected(); }
     QString storageStatus() const
     {
         if (m_storage_check_pending) return QStringLiteral("checking");
@@ -4199,15 +4281,19 @@ public:
         Q_EMIT canFinishChanged();
     }
     int storageMinimumRequiredGB() const { return m_existing_profile ? 1 : m_assumed_chainstate_size + 2; }
-    int fullStorageRequiredGB() const { return m_assumed_blockchain_size + m_assumed_chainstate_size; }
+    int fullStorageRequiredGB() const { return storageChoices().full_required_gb; }
     bool prune() const { return m_core_settings.prune(); }
     void setPrune(bool value) { m_core_settings.setPrune(value); }
     int pruneSizeGB() const { return m_core_settings.pruneSizeGB(); }
     void setPruneSizeGB(int value) { m_core_settings.setPruneSizeGB(value); }
-    int prunedStorageRequiredGB() const { return pruneSizeGB() + m_assumed_chainstate_size; }
-    int selectedStorageRequiredGB() const { return m_existing_profile ? storageMinimumRequiredGB() : (prune() ? prunedStorageRequiredGB() : fullStorageRequiredGB()); }
-    bool storageEnoughForSelected() const { return m_storage_available_gb >= selectedStorageRequiredGB(); }
-    bool storageEnoughForFull() const { return m_existing_profile ? storageEnoughForSelected() : m_storage_available_gb >= fullStorageRequiredGB(); }
+    int prunedStorageRequiredGB() const { return storageChoices().pruned_required_gb; }
+    int reducedStorageRequiredGB()const{return storageChoices().reduced_required_gb;}
+    int selectedStorageRequiredGB() const { return storageChoices().selected_required_gb; }
+    bool storageEnoughForSelected() const { return storageChoices().enough_for_selected; }
+    bool storageEnoughForFull() const { return storageChoices().enough_for_full; }
+    QmlOnboardingStorage::Info storageChoices()const{QmlOnboardingStorage::State state;state.result_valid=!m_storage_check_pending&&m_storage_error_text.isEmpty();state.available_bytes=static_cast<uint64_t>(std::max(0,m_storage_available_gb))*GB_BYTES;state.assumed_blockchain_size_gb=m_assumed_blockchain_size;state.assumed_chainstate_size_gb=m_assumed_chainstate_size;state.prune=prune();state.prune_size_gb=pruneSizeGB();state.existing_profile=m_existing_profile;state.manual_pruning=m_core_settings.m_target_mib==1;state.custom_manual_pruning=m_core_settings.customTarget()==1;state.custom_prune_size_gb=m_core_settings.customStorageSizeGB();return QmlOnboardingStorage::Evaluate(state);}
+    bool storageEnoughForReduced()const{return storageChoices().enough_for_reduced;}
+    bool storageEnoughForCustom()const{return storageChoices().enough_for_custom;}
     Q_INVOKABLE QString getCustomDataDirString() const { return m_custom_data_dir; }
     Q_INVOKABLE void setCustomDataDirString(const QString& dir) { m_custom_data_dir = dir; }
     Q_INVOKABLE void setCustomDataDirArgs(const QString& dir) { selectCustomDataDir(dir); }
@@ -6511,6 +6597,10 @@ public Q_SLOTS:
         QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, m_settings.path());
         m_qr_executor = std::make_unique<BackendExecutor>(execution::Limits::Bounded());
         MockFeeServices() = {m_qr_executor->scheduler(), [this](std::function<void()> work) { QMetaObject::invokeMethod(this, std::move(work), Qt::QueuedConnection); }};
+        qmlRegisterUncreatableMetaObject(SettingsSaveResult::staticMetaObject,"org.bitcoincore.qt",1,0,"SettingsSaveResult","Retained settings outcome");
+        qRegisterMetaType<SettingsSaveResult>();
+        qmlRegisterUncreatableType<SettingsEditorModel>("org.bitcoincore.qt",1,0,"SettingsEditorModel","Actual controlled editor");
+        qmlRegisterUncreatableType<SettingsEntryModel>("org.bitcoincore.qt",1,0,"SettingsEntryModel","Actual controlled setting");
         qmlRegisterUncreatableType<FeeSelectionModel>("org.bitcoincore.qt", 1, 0, "FeeSelectionModel", "Owned fee policy");
         qmlRegisterUncreatableType<FeeRateEntry>("org.bitcoincore.qt", 1, 0, "FeeRateEntry", "Owned fee input");
         BlockClockDial::setDefaultServices({m_qr_executor->scheduler(),
@@ -6604,6 +6694,7 @@ public Q_SLOTS:
         if (!endControlledPreferences()) m_had_warnings = true;
         for(const auto& store:m_preferences_stores)if(store)store->closeAdmission();
         for (const auto& owner : MockFeeOwners()) if (owner) owner->close();
+        for(const auto& editor:MockSettingsOwners())if(editor){editor->close();editor->deleteLater();}
         MockFeeServices() = {};
         BitcoinAddress::setDefaultServices({});
         QEventLoop loop;
@@ -6679,6 +6770,7 @@ public Q_SLOTS:
         static MockCoinsListModel coins_list_model;
         static MockWalletQmlModel wallet_model;
         static MockWalletController wallet_controller;
+        options_model.setSettingsSignerForTest(&wallet_controller);
         static MockWalletListModel wallet_list_model;
         static MockTransactionActivityModel transaction_activity_model;
         static MockBumpTransactionModel bump_model;

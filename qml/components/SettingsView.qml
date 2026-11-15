@@ -22,6 +22,40 @@ Page {
     // that stack when the wallet section is re-selected.
     signal walletSettingsResetRequested()
 
+    property SettingsEditorModel settingsEditor: null
+    property string pendingSettingsSection: ""
+    property bool pendingSettingsDone: false
+    property bool settingsNavigationPending: false
+    property bool settingsQuestionObserved: false
+    function requestSettingsNavigation(section, done) {
+        if (root.settingsNavigationPending || (root.settingsEditor && (root.settingsEditor.phase === SettingsEditorModel.Checking || root.settingsEditor.phase === SettingsEditorModel.Saving || root.settingsEditor.phase === SettingsEditorModel.Retiring))) return
+        if (root.settingsEditor && root.settingsEditor.dirty) {
+            root.pendingSettingsSection = section
+            root.pendingSettingsDone = done
+            root.settingsNavigationPending = true
+            root.settingsQuestionObserved = false
+            root.settingsEditor.requestClose()
+        } else if (done) root.doneClicked()
+        else root.showSection(section)
+    }
+    function finishSettingsNavigation() {
+        if (!root.settingsNavigationPending) return
+        root.settingsNavigationPending = false
+        const done = root.pendingSettingsDone
+        const section = root.pendingSettingsSection
+        root.settingsEditor = ApplicationModels.optionsModel.createSettingsEditor()
+        if (done) root.doneClicked()
+        else root.showSection(section, true)
+    }
+    Connections {
+        target: root.settingsEditor
+        function onClosed() { root.finishSettingsNavigation() }
+        function onChanged() {
+            if (!root.settingsNavigationPending || !root.settingsEditor) return
+            if (root.settingsEditor.closeQuestion) root.settingsQuestionObserved = true
+            else if (root.settingsQuestionObserved && !root.settingsEditor.busy && root.settingsEditor.phase !== SettingsEditorModel.Closed) root.settingsNavigationPending = false
+        }
+    }
     property bool showDoneButton: true
     // The active wallet's settings stack is shown in walletSettingsHost when
     // the shell provides one; otherwise the wallet section shows the
@@ -145,7 +179,9 @@ Page {
         return ""
     }
 
-    function selectSection(sectionId, forceReload) {
+    function selectSection(sectionId, forceReload) { root.requestSettingsNavigation(sectionId, false) }
+
+    function showSection(sectionId, forceReload) {
         const resolvedId = root.sectionIsVisible(sectionId) ? sectionId : root.firstVisibleSectionId()
         if (resolvedId.length === 0) {
             root.selectedSectionId = ""
@@ -171,27 +207,20 @@ Page {
 
     onSectionsChanged: ensureVisibleSelection()
     onVisibleChanged: {
-        if (visible) root.selectSection(root.selectedSectionId)
+        if (visible) root.showSection(root.selectedSectionId)
     }
 
-    Component.onCompleted: root.selectSection(
-        root.sectionIsVisible(root.selectedSectionId) ? root.selectedSectionId : root.firstVisibleSectionId())
+    Component.onCompleted: {
+        root.settingsEditor = ApplicationModels.optionsModel.createSettingsEditor()
+        root.showSection(root.sectionIsVisible(root.selectedSectionId) ? root.selectedSectionId : root.firstVisibleSectionId())
+    }
+    Component.onDestruction: if (root.settingsEditor) root.settingsEditor.close()
 
     QtObject {
         id: internal
         property Item walletSettingsHost: null
     }
 
-    footer: CoreText {
-        objectName: "settingsOperationStatus"
-        visible: text.length > 0
-        padding: 16
-        wrapMode: Text.WordWrap
-        text: typeof optionsModel === "undefined" ? ""
-            : ApplicationModels.optionsModel.settingsError || (ApplicationModels.optionsModel.settingsReady === false ? qsTr("Loading settings…")
-            : ApplicationModels.optionsModel.settingsPending ? qsTr("Saving settings…") : "")
-        color: ApplicationModels.optionsModel.settingsError ? Theme.color.red : Theme.color.neutral7
-    }
 
     contentItem: RowLayout {
         spacing: 0
@@ -247,7 +276,7 @@ Page {
                             pageContainer.resetSection(sectionId)
                             if (sectionId === "wallet") root.walletSettingsResetRequested()
                         }
-                        root.selectSection(sectionId)
+                        root.requestSettingsNavigation(sectionId, false)
                     }
                 }
 
@@ -255,9 +284,10 @@ Page {
                     objectName: "settingsDoneButton"
                     visible: root.showDoneButton
                     text: qsTr("Done")
+                    enabled: !root.settingsEditor || !root.settingsEditor.busy
                     Layout.alignment: Qt.AlignHCenter
                     Layout.bottomMargin: 20
-                    onClicked: root.doneClicked()
+                    onClicked: root.requestSettingsNavigation("", true)
                 }
             }
         }
@@ -271,6 +301,22 @@ Page {
             Layout.fillWidth: true
             Layout.fillHeight: true
         }
+    }
+
+    footer: ColumnLayout {
+        width: root.width
+        CoreText {
+        objectName: "settingsOperationStatus"
+        visible: text.length > 0
+        padding: 16
+        wrapMode: Text.WordWrap
+        text: typeof optionsModel === "undefined" ? ""
+            : ApplicationModels.optionsModel.settingsError || (ApplicationModels.optionsModel.settingsReady === false ? qsTr("Loading settings…")
+            : ApplicationModels.optionsModel.settingsPending ? qsTr("Saving settings…") : "")
+        color: ApplicationModels.optionsModel.settingsError ? Theme.color.red : Theme.color.neutral7
+    }
+
+        SettingsEditorBar { editor: root.settingsEditor; Layout.fillWidth: true; enabled: root.optionsEditable }
     }
 
     Component {
@@ -317,7 +363,7 @@ Page {
 
     Component {
         id: externalSignerPage
-        SettingsPages.ExternalSignerSettingsPage {}
+        SettingsPages.ExternalSignerSettingsPage { editor: root.settingsEditor }
     }
 
     Component {
@@ -332,12 +378,12 @@ Page {
 
     Component {
         id: storagePage
-        SettingsPages.StorageSettingsPage {}
+        SettingsPages.EffectiveSettingsPage { editor: root.settingsEditor; settingsEditable: root.optionsEditable; section: "storage" }
     }
 
     Component {
         id: connectionPage
-        SettingsPages.ConnectionSettingsPage {}
+        SettingsPages.EffectiveSettingsPage { editor: root.settingsEditor; settingsEditable: root.optionsEditable; section: "connection" }
     }
 
     Component {
@@ -348,7 +394,7 @@ Page {
 
     Component {
         id: mempoolPage
-        SettingsPages.MempoolSettingsPage {}
+        SettingsPages.EffectiveSettingsPage { editor: root.settingsEditor; settingsEditable: root.optionsEditable; section: "mempool" }
     }
 
     Component {

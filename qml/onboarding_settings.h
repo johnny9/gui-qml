@@ -36,6 +36,7 @@ struct ApplyRequest {
     DataDirSelection data_dir;
     QSet<QString> touched_settings;
     QmlCoreSettings::Values values;
+    bool accept_redownload{false};
 };
 
 struct ProfileSummary {
@@ -71,9 +72,10 @@ bool PrepareArgs(ArgsManager& args, const std::vector<std::string>& argv, bool c
 OnboardingStartupStatus ResolveOnboardingStartupStatus(const std::vector<std::string>& argv, bool can_listen_ipc);
 PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const DataDirSelection& data_dir);
 PreviewResult Preview(const std::vector<std::string>& argv, bool can_listen_ipc, const QString& data_dir);
+bool SetQmlOnboarded(ArgsManager& args,bool completed,QString* error=nullptr);
 bool MarkQmlOnboarded(ArgsManager& args, QString* error = nullptr);
-bool ApplyToArgs(ArgsManager& args, const DataDirSelection& data_dir, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error = nullptr);
-bool ApplyToArgs(ArgsManager& args, const QString& data_dir, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error = nullptr);
+bool ApplyToArgs(ArgsManager& args, const DataDirSelection& data_dir, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error = nullptr, bool accept_redownload = false, bool mark_completed = true);
+bool ApplyToArgs(ArgsManager& args, const QString& data_dir, const QSet<QString>& touched_settings, const QmlCoreSettings::Values& values, QString* error = nullptr, bool accept_redownload = false, bool mark_completed = true);
 
 } // namespace QmlOnboardingSettings
 

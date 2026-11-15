@@ -47,21 +47,35 @@ ApplicationWindow {
         settingsModel: ApplicationModels.onboardingOptionsModel
         assumedBlockchainSize: ApplicationModels.onboardingOptionsModel.assumedBlockchainSize
         assumedChainstateSize: ApplicationModels.onboardingOptionsModel.assumedChainstateSize
-        onFinished: {
-            if (!ApplicationModels.onboardingOptionsModel.canFinish) return
+        enabled: !ApplicationModels.onboardingOptionsModel.setupCommitPending && !ApplicationModels.onboardingOptionsModel.setupCommitted
+        onFinished: ApplicationModels.onboardingOptionsModel.commitSettings()
+    }
+
+    Connections {
+        target: ApplicationModels.onboardingOptionsModel
+        function onSettingsCommitted() {
             appWindow.completed = true
             appWindow.starting = true
             appWindow.finished()
         }
     }
-
+    CoreText {
+        objectName: "preInitSettingsCommitError"
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        width: parent.width - 40
+        visible: !appWindow.starting && text.length > 0
+        text: ApplicationModels.onboardingOptionsModel.setupCommitError
+        color: Theme.color.red
+        wrap: true
+    }
     CoreText {
         objectName: "preInitPreviewErrorText"
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 20
-        visible: !appWindow.starting && ApplicationModels.onboardingOptionsModel.previewError.length > 0
+        visible: !appWindow.starting && ApplicationModels.onboardingOptionsModel.setupCommitError.length === 0 && ApplicationModels.onboardingOptionsModel.previewError.length > 0
         text: ApplicationModels.onboardingOptionsModel.previewError
         color: Theme.color.blue
         horizontalAlignment: Text.AlignHCenter

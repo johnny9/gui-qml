@@ -6,6 +6,8 @@
 
 #include <univalue.h>
 #include <qml/backendexecutor.h>
+#include <qml/guiconstants.h>
+#include <common/settings.h>
 #include <qml/guipresentation.h>
 #include <qml/retainedsnapshot.h>
 #include <QQmlEngine>
@@ -138,7 +140,8 @@ struct CoreSettingsProjection {
     QmlCoreSettings::Values values;
     QSet<QString> touched,editable;
     QVariantMap statuses;
-    QString default_address;
+    QString default_address,prune_input,prune_error,custom_description;
+    int64_t custom_target{-1};int custom_size_gb{0};CoreSettingsModel::StorageChoice storage_choice{CoreSettingsModel::FullStorage};
     QmlCoreSettings::Change change;
     quint64 user_revision{0};
     bool stale{false},values_changed{false};
@@ -168,6 +171,12 @@ std::unique_ptr<CoreSettingsProjection> Project(const QmlCoreSettings::Session& 
         if(value.setting_name.isEmpty()||name==value.setting_name)result->notices[i]=7;
         ++i;
     }}
+    const auto target=QmlCoreSettings::PruneSetting(session.values()).getInt<int64_t>();
+    result->storage_choice=target==0?CoreSettingsModel::FullStorage:target==QmlCoreSettings::PruneGBToMiB(DEFAULT_PRUNE_TARGET_GB)?CoreSettingsModel::ReducedStorage:CoreSettingsModel::CustomStorage;
+    result->custom_target=session.customPruneTarget();result->custom_size_gb=result->custom_target>1?QmlCoreSettings::PruneMiBToGB(result->custom_target):0;
+    if(result->custom_target==1)result->custom_description=QObject::tr("Manual pruning. No automatic block storage limit is enforced.");
+    else if(result->custom_target>1)result->custom_description=QObject::tr("Storing recent blocks up to %1 MiB.").arg(result->custom_target);
+    result->prune_input=session.pruneTargetText();result->prune_error=session.pruneTargetError();
     result->default_address=session.defaultProxyAddress();result->user_revision=revision;result->stale=stale;
     for(const auto& name:QmlCoreSettings::OnboardingCoreSettingNames()){if(session.canEdit(name))result->editable.insert(name);}
     return result;
@@ -181,7 +190,7 @@ void CopySettingGroup(QmlCoreSettings::Values& target,const QmlCoreSettings::Val
     if(key==QStringLiteral("listen"))target.listen=source.listen;
     else if(key==QStringLiteral("natpmp"))target.natpmp=source.natpmp;
     else if(key==QStringLiteral("server"))target.server=source.server;
-    else if(key==QStringLiteral("prune")){target.prune=source.prune;target.prune_size_gb=source.prune_size_gb;}
+    else if(key==QStringLiteral("prune")){target.prune=source.prune;target.prune_size_gb=source.prune_size_gb;target.prune_target_mib=source.prune_target_mib;}
     else if(key==QStringLiteral("proxy")){target.proxy_enabled=source.proxy_enabled;target.proxy_address=source.proxy_address;}
     else if(key==QStringLiteral("onion")){target.tor_enabled=source.tor_enabled;target.tor_address=source.tor_address;}
 }
@@ -218,6 +227,15 @@ bool CoreSettingsModel::canEdit(const QString& name) const{return !m_stopping&&m
 bool CoreSettingsModel::isTouched(const QString& name) const{return touchedSettings().contains(name);}
 
 QmlCoreSettings::Change CoreSettingsModel::publishedChange() const{return m_projection?m_projection->change:QmlCoreSettings::Change{};}
+CoreSettingsModel::StorageChoice CoreSettingsModel::storageChoice()const{return m_projection?m_projection->storage_choice:FullStorage;}
+bool CoreSettingsModel::showCustomStorage()const{return m_projection&&m_projection->custom_target>0;}
+QString CoreSettingsModel::customStorageDescription()const{return m_projection?m_projection->custom_description:QString{};}
+int64_t CoreSettingsModel::customStorageTarget()const{return m_projection?m_projection->custom_target:-1;}
+int CoreSettingsModel::customStorageSizeGB()const{return m_projection?m_projection->custom_size_gb:0;}
+void CoreSettingsModel::discardPruneInput(){mutate(ChangeOrigin::User,[](auto& session){return session.discardPruneInput();});}
+void CoreSettingsModel::chooseStorage(StorageChoice choice){if(choice<FullStorage||choice>CustomStorage)return;mutate(ChangeOrigin::User,[choice](auto& session){return session.chooseStorage(static_cast<QmlCoreSettings::StorageChoice>(choice));});}
+QString CoreSettingsModel::pruneTargetText()const{return m_projection?m_projection->prune_input:QString{};}
+QString CoreSettingsModel::pruneTargetError()const{return m_projection?m_projection->prune_error:QString{};}
 QString CoreSettingsModel::defaultProxyAddress() const{return m_projection?m_projection->default_address:QString{};}
 void CoreSettingsModel::refresh(){mutate(ChangeOrigin::Preview,Observe);}
 QObject* CoreSettingsModel::entry(const QString& key){if(!m_work)configureServices({});return ensureEntry(key);}
@@ -268,7 +286,7 @@ quint64 CoreSettingsModel::mutate(ChangeOrigin origin,Mutation mutation,Completi
                         if(result.values){
                             auto merged=state->nativeSession().values();
                             for(const auto& name:QmlCoreSettings::OnboardingCoreSettingNames())if(state->requested[name]<=user_revision)CopySettingGroup(merged,*result.values,name);
-                            state->nativeSession()=QmlCoreSettings::Session{merged,result.statuses};state->uncertain=false;
+                            auto refreshed=QmlCoreSettings::Session{merged,result.statuses};refreshed.preservePruneInput(state->nativeSession());state->nativeSession()=std::move(refreshed);state->uncertain=false;
                             change.after=merged;change.after_statuses=result.statuses;
                             auto completed=execution::RetainSnapshot<CoreSettingsProjection>(scheduler,[&]{return Project(state->nativeSession(),change,state->consumed_user_revision);});
                             if(!completed)throw std::runtime_error("Settings effect outcome capacity unavailable");
@@ -342,6 +360,10 @@ quint64 CoreSettingsModel::changeNatpmp(bool value){return mutate(ChangeOrigin::
 quint64 CoreSettingsModel::changeServer(bool value){return mutate(ChangeOrigin::User,[value](auto& session){auto change=session.changeServer(value);if(!change.accepted&&session.canEdit(QStringLiteral("server"))&&session.values().server==value)change.accepted=true;return change;});}
 quint64 CoreSettingsModel::changePrune(bool value){return mutate(ChangeOrigin::User,[value](auto& session){auto change=session.changePrune(value);if(!change.accepted&&session.canEdit(QStringLiteral("prune"))&&session.values().prune==value)change.accepted=true;return change;});}
 quint64 CoreSettingsModel::changePruneSizeGB(int value){return mutate(ChangeOrigin::User,[value](auto& session){auto change=session.changePruneSizeGB(value);if(!change.accepted&&session.canEdit(QStringLiteral("prune"))&&session.values().prune_size_gb==value)change.accepted=true;return change;});}
+quint64 CoreSettingsModel::changePruneTargetText(const QString& text){
+    const auto bounded=text.left(65);
+    return mutate(ChangeOrigin::User,[bounded](auto& session){return session.changePruneTargetText(bounded);},{},{},{},InputBytes({size_t(bounded.size())}));
+}
 quint64 CoreSettingsModel::changeProxyEnabled(bool value){return mutate(ChangeOrigin::User,[value](auto& session){auto change=session.changeProxyEnabled(value);if(!change.accepted&&session.canEdit(QStringLiteral("proxy"))&&session.values().proxy_enabled==value)change.accepted=true;return change;});}
 quint64 CoreSettingsModel::changeTorEnabled(bool value){return mutate(ChangeOrigin::User,[value](auto& session){auto change=session.changeTorEnabled(value);if(!change.accepted&&session.canEdit(QStringLiteral("onion"))&&session.values().tor_enabled==value)change.accepted=true;return change;});}
 quint64 CoreSettingsModel::changeProxyLocation(const QString& value){return mutate(ChangeOrigin::User,[value](auto& session){return session.changeProxyLocation(value);},{},{},{},InputBytes({size_t(value.size())}));}

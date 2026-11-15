@@ -37,6 +37,7 @@ SettingsPage {
             if (!root.awaitingApply) return
             if (root.proxyDraft.operationState === CoreSettingsModel.Applied) {
                 root.awaitingApply = false
+                root.exitAllowed()
                 root.closeRequested()
             } else if (root.proxyDraft.operationState === CoreSettingsModel.Failed
                        || root.proxyDraft.operationState === CoreSettingsModel.Rejected) {
@@ -66,12 +67,15 @@ SettingsPage {
     }
     function save() { commitProxyDraft() }
 
+    function requestExit() { requestBack() }
+
     function requestBack() {
         if (awaitingApply) return
         if (root.proxyDraftDirty) {
             discardProxyChangesPopup.open()
             return
         }
+        root.exitAllowed()
         root.closeRequested()
     }
 
@@ -185,6 +189,15 @@ SettingsPage {
             text: qsTr("Cancel")
             role: AlertAction.Cancel
             buttonObjectName: "discardProxyChangesCancelButton"
+            onTriggered: root.exitCancelled()
+        }
+
+        AlertAction {
+            text: qsTr("Save")
+            role: AlertAction.Normal
+            buttonObjectName: "discardProxyChangesSaveButton"
+            enabled: root.canSaveProxyDraft
+            onTriggered: root.commitProxyDraft()
         }
 
         AlertAction {
@@ -193,6 +206,7 @@ SettingsPage {
             buttonObjectName: "discardProxyChangesConfirmButton"
             onTriggered: {
                 root.resetProxyDraft()
+                root.exitAllowed()
                 root.closeRequested()
             }
         }

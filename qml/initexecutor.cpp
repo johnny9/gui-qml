@@ -12,6 +12,7 @@
 
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
+#include <node/interface_ui.h>
 #include <util/exception.h>
 #include <util/threadnames.h>
 
@@ -28,8 +29,11 @@ struct QmlInitExecutor::WorkerState {
     std::unique_ptr<interfaces::Handler> subscription;
     std::atomic_bool stopping{false};
     bool initialization_threw{false};
+    StartupOutcomePort outcome;
+    std::shared_ptr<std::atomic_bool> loss;
+    void record(StartupOutcome value)noexcept{try{if(outcome)outcome(value);}catch(...){if(loss)*loss=true;}}
 
-    explicit WorkerState(SubscriptionFactory subscribe) : pending_subscription_factory(std::move(subscribe)) {}
+    explicit WorkerState(SubscriptionFactory subscribe,StartupOutcomePort complete,std::shared_ptr<std::atomic_bool> diagnostic_loss) : pending_subscription_factory(std::move(subscribe)),outcome(std::move(complete)),loss(std::move(diagnostic_loss)) {}
     void retireSubscription()
     {
         subscription.reset();
@@ -37,8 +41,8 @@ struct QmlInitExecutor::WorkerState {
     }
 };
 
-QmlInitExecutor::QmlInitExecutor(interfaces::Node& node, SubscriptionFactory subscribe, std::shared_ptr<std::atomic_bool> diagnostic_loss)
-    : QObject(), m_node(node), m_worker_state(std::make_shared<WorkerState>(std::move(subscribe))), m_diagnostic_loss(std::move(diagnostic_loss))
+QmlInitExecutor::QmlInitExecutor(interfaces::Node& node, SubscriptionFactory subscribe, std::shared_ptr<std::atomic_bool> diagnostic_loss,StartupOutcomePort outcome)
+    : QObject(), m_node(node), m_worker_state(std::make_shared<WorkerState>(std::move(subscribe),std::move(outcome),diagnostic_loss)), m_diagnostic_loss(std::move(diagnostic_loss))
 {
     m_init_and_shutdown_executor.setObjectName(QStringLiteral("node-init-shutdown"));
     m_interrupt_executor.setObjectName(QStringLiteral("node-interrupt"));
@@ -117,6 +121,12 @@ void QmlInitExecutor::initialize()
         try {
             util::ThreadRename("qml-init");
             Result result{};
+            const auto error_seen=std::make_shared<std::atomic_bool>(false);
+            // This public void notification is passive: it never answers or
+            // replaces Core's modal/question handling. Captured ownership also
+            // survives a callback already running while its handler retires.
+            const auto error_observer=state->outcome?node->handleMessageBox([error_seen](const bilingual_str&,unsigned int style){if(style&CClientUIInterface::ICON_ERROR)*error_seen=true;}):nullptr;
+            if(state->outcome&&!error_observer&&loss)*loss=true;
             result.success = node->appInitMain(&result.tip);
 #ifdef ENABLE_TEST_AUTOMATION
             if (result.success && gArgs.IsArgSet("-test-automation") && gArgs.GetArg("-test-fatal-exception", "") == "initialize") {
@@ -129,11 +139,14 @@ void QmlInitExecutor::initialize()
             }
             result.initial_block_download = result.success && node->isInitialBlockDownload();
             result.shutdown_requested = node->shutdownRequested();
+            const bool cancelled=(result.shutdown_requested||state->stopping)&&!(error_seen->load()&&!result.success);
+            state->record(cancelled?StartupOutcome::Cancelled:result.success?StartupOutcome::Ready:StartupOutcome::Failed);
             return result;
         } catch (...) {
             // Shutdown may already be queued behind this task before the GUI
             // receives runawayException. Never clean up a fatally failed node.
             state->initialization_threw = true;
+            state->record(StartupOutcome::Uncertain);
             PrepareRunawayException(*diagnostic, loss);
             Result result{}; result.fatal = true; return result;
         }

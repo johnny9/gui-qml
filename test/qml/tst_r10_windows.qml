@@ -15,6 +15,7 @@ TestCase {
     property var windows: []
     Component { id: finishedSpy; SignalSpy { signalName: "finished" } }
     function init() {
+        optionsModel.resetSettingsEditorsForTest()
         testSetup.failOnWarnings()
         // Keep the engine singleton attached to its original namespace/store.
         verify(typeof Theme.dark === "boolean")
@@ -147,7 +148,7 @@ TestCase {
         compare(findChild(view, "preInitPreviewErrorText").visible, true)
         optionsModel.previewError = ""
         wizard.finished()
-        compare(spy.count, 1)
+        tryCompare(spy, "count", 1)
         compare(view.completed, true)
         compare(view.starting, true)
         compare(findChild(view, "preInitStartupOverlay").visible, true)

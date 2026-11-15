@@ -488,10 +488,84 @@ def run_qml_onboarded_override_reloads_saved_settings_flow():
         cleanup_test_directory(tmpdir)
 
 
+def run_native_startup_failure_reopens_saved_setup_flow():
+    """The actual Core DNS failure must not make partial setup permanent."""
+    from qml_process_checks import check_gui_exit, unexpected_gui_stderr
+    tmpdir = create_test_directory(prefix="qml_setup_recovery_", dir="/tmp")
+    datadir = setup_datadir(tmpdir)
+    write_settings_json(datadir, {"qml_onboarded": True, "proxy": "no-such-host.invalid:9050", "prune": 550})
+    failed = QmlTestHarness(datadir=datadir, tmpdir=tmpdir, reset_settings=False,
+                           start_onboarded=False, extra_args=["-regtest", "-disablewallet", "-lang=en"])
+    recovered = None
+    try:
+        failed.start()
+        failed.driver.wait_for_property("nodeRuntimeDialog", "opened", True, timeout_ms=30000)
+        assert "Invalid -proxy address or hostname" in failed.driver.get_property("nodeRuntimeDialogMessage", "text")
+        try:
+            failed.driver.click("nodeRuntimeDialogButtonOk")
+        except ConnectionError:
+            # Failure shutdown may close the bridge before the click reply.
+            pass
+        failed.process.wait(timeout=20)
+        settings = read_settings_json(datadir)
+        assert settings.get("qml_onboarded") is False, settings
+        assert settings.get("proxy") == "no-such-host.invalid:9050", settings
+        failed.stop(cleanup=False)
+        stdout, stderr = failed.process.communicate()
+        print("Original failure stdout:\n" + stdout.decode("utf8", errors="replace"), flush=True)
+        stderr = stderr.decode("utf8", errors="replace")
+        print("Original failure stderr:\n" + stderr, flush=True)
+        assert failed.process.returncode == 1, (failed.process.returncode, stderr)
+        expected = "Invalid -proxy address or hostname: 'no-such-host.invalid:9050'"
+        unexpected = unexpected_gui_stderr(stderr, socket_path=failed.socket_path)
+        assert all(line in (expected, "Error: " + expected) for line in unexpected), unexpected
+        print("Retained native startup failure: exit=1; marker=false; proxy intent unchanged", flush=True)
+
+        recovered = QmlTestHarness(datadir=datadir, tmpdir=tmpdir, reset_settings=False,
+                                  start_onboarded=False, extra_args=["-regtest", "-disablewallet", "-lang=en"])
+        recovered.start()
+        gui = recovered.driver
+        click_existing_profile_to_connection(gui, datadir)
+        gui.click("connectionSettingsButton")
+        gui.wait_for_page("connectionSettingsPage")
+        gui.click("proxySettingsRow")
+        gui.wait_for_page("proxySettingsPage")
+        gui.wait_for_property("proxyEnableSwitch", "checked", True)
+        gui.click("proxyEnableSwitch")
+        gui.click("proxySettingsSaveButton")
+        gui.wait_for_page("connectionSettingsPage")
+        gui.click("onboardingConnectionSettingsCloseButton")
+        click_onboarding_button(gui, "onboardingConnectionButton")
+        gui = recovered.wait_for_main_window_reconnect()
+        assert_node_shell_visible(gui)
+        settings = read_settings_json(datadir)
+        assert settings.get("qml_onboarded") is True, settings
+        assert settings.get("proxy") is False, settings
+        assert settings.get("proxy-prev") == "no-such-host.invalid:9050", settings
+        assert settings.get("prune") == 550, settings
+        recovered.stop(cleanup=False)
+        _, stderr = recovered.process.communicate()
+        check_gui_exit(recovered.process.returncode, stderr.decode("utf8", errors="replace"), socket_path=recovered.socket_path)
+        print("Recovered original saved setup: actual Core ready; marker=true; exact550MiB retained; exit=0", flush=True)
+    except Exception:
+        if failed.driver is not None:
+            dump_qml_tree(failed.driver)
+        failed.stop(cleanup=False)
+        stdout, stderr = failed.process.communicate()
+        print(f"Failed process diagnostic exit={failed.process.returncode}\n" + stdout.decode("utf8", errors="replace") + stderr.decode("utf8", errors="replace"), flush=True)
+        raise
+    finally:
+        failed.stop(cleanup=False)
+        if recovered is not None:
+            recovered.stop(cleanup=False)
+        cleanup_test_directory(tmpdir)
+
+
 if __name__ == "__main__":
     raise SystemExit(run_scenarios('Pre-init onboarding engine and persisted configuration boundaries', [
         scenario("wallet-onboarding", 4, run_wallet_enabled_flow),
         scenario("node-onboarding", 2, run_wallet_disabled_flow),
+        scenario("native-startup-failure-recovery", 2, run_native_startup_failure_reopens_saved_setup_flow),
         scenario("existing-profile-onboarding", 2, run_existing_profile_full_onboarding_flow),
         scenario("configured-datadir-source", 2, run_configured_datadir_preserves_config_source_flow),
         scenario("root-wallet-discovery", 4, run_existing_profile_preserves_root_wallet_discovery_flow),
