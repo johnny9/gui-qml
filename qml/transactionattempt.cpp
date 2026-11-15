@@ -187,14 +187,14 @@ execution::Admission Owner::begin(StartInput input, Completion done)
 {
     return submit(m_state, m_scheduler, m_key,
         [input = std::move(input)](State& state) mutable {
-            state.kind = input.kind;
-            state.original_txid.clear();
             if (input.intent_revision < state.preparation.intentRevision()) {
                 return Result{Transition::Stale, {}, AdmissionError::StaleIntent};
             }
-            if (input.id == 0 || input.id <= state.preparation.id()) {
+            if (state.preparation.phase() == Phase::Closed || input.id == 0 || input.id <= state.preparation.id()) {
                 return Result{Transition::Ignored, {}, AdmissionError::Closed};
             }
+            state.kind = input.kind;
+            state.original_txid.clear();
             state.preparation.intentChanged(input.intent_revision);
             state.facts = input.facts;
             const auto ticket = state.preparation.begin(input.facts.session, input.facts.review, input.id);
@@ -219,14 +219,14 @@ execution::Admission Owner::beginReplacement(ReplacementStart input, Completion 
 {
     return submit(m_state, m_scheduler, m_key,
         [input = std::move(input)](State& state) mutable {
-            state.kind = Kind::Replacement;
-            state.original_txid = input.original_txid;
             if (input.intent_revision < state.preparation.intentRevision()) {
                 return Result{Transition::Stale, {}, AdmissionError::StaleIntent};
             }
-            if (input.id == 0 || input.id <= state.preparation.id()) {
+            if (state.preparation.phase() == Phase::Closed || input.id == 0 || input.id <= state.preparation.id()) {
                 return Result{Transition::Ignored, {}, AdmissionError::Closed};
             }
+            state.kind = Kind::Replacement;
+            state.original_txid = input.original_txid;
             state.preparation.intentChanged(input.intent_revision);
             state.facts = input.facts;
             const auto ticket = state.preparation.begin(input.facts.session, input.facts.review, input.id);
