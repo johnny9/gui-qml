@@ -1540,7 +1540,7 @@ TestCase {
         const stack = popup.contentItem
         compare(popup.opened, false)
         verify(stack.currentItem !== null)
-        stack.currentItem.transactionSent("fast-completion", WalletQmlModel.SubmissionAccepted)
+        stack.currentItem.transactionSent("fast-completion", WalletQmlModel.SubmissionAccepted, WalletQmlModel.SendRecordUnknown)
         tryVerify(function() { return stack.currentItem && stack.currentItem.objectName === "sendCompletePage" })
         tryCompare(popup, "opened", true)
         const done = findChild(stack.currentItem, "sendResultDoneButton")

@@ -4,6 +4,7 @@
 
 #include <QtQuickTest/quicktest.h>
 #include <test/qmlcoverage.h>
+#include <qml/models/bumptransactionmodel.h>
 #include <qml/models/monospaceoutputmodel.h>
 #include <qml/models/bitcoinaddress.h>
 #include <qml/flowpresentation.h>
@@ -1689,6 +1690,7 @@ class MockWalletQmlModel : public QObject
     Q_PROPERTY(bool sendBusy READ sendBusy NOTIFY sendOperationChanged)
     Q_PROPERTY(QString sendResultTxid READ sendResultTxid NOTIFY sendOperationChanged)
     Q_PROPERTY(int sendSubmission MEMBER m_send_submission NOTIFY sendOperationChanged)
+    Q_PROPERTY(int sendRecordState MEMBER m_send_record_state NOTIFY sendOperationChanged)
     Q_PROPERTY(bool holdSendForTest MEMBER m_hold_send)
     Q_PROPERTY(int sendTransactionWithPassphraseCalls MEMBER m_send_transaction_with_passphrase_calls NOTIFY sendTransactionCallsChanged)
     Q_PROPERTY(bool sendDraftSweepsWallet MEMBER m_send_draft_sweeps_wallet NOTIFY feeEstimateRevisionChanged)
@@ -1809,8 +1811,11 @@ public:
 
     enum SendSubmission { SubmissionUnknown, SubmissionMempool, SubmissionConfirmed, SubmissionNotInMempool, SubmissionConflicted, SubmissionAbandoned, SubmissionAccepted };
     Q_ENUM(SendSubmission)
+    enum SendRecord { SendRecordUnknown, SendRecordAbsentAtObservation, SendRecordRecorded };
+    Q_ENUM(SendRecord)
     int m_send_submission{SubmissionMempool};
-    enum SendState { SendIdle, SendPending, SendNeedsUnlock, SendFailed, SendCommitted, SendUncertain, SendClosed };
+    int m_send_record_state{2};
+    enum SendState { SendIdle, SendPending, SendNeedsConfirmation, SendNeedsUnlock, SendFailed, SendCommitted, SendUncertain, SendClosed };
     enum PreparationState { PreparationIdle, PreparationPending, PreparationNeedsUnlock, PreparationReady, PreparationFailed, PreparationStale, PreparationClosed, PreparationUncertain };
     Q_ENUM(PreparationState)
     int m_preparation_state{PreparationIdle};
@@ -1863,7 +1868,7 @@ public:
     bool m_hold_send{false};
     QPointer<QObject> m_send_review;
     int sendState() const { return m_send_state; }
-    bool sendBusy() const { return m_send_state == SendPending; }
+    bool sendBusy() const { return m_send_state == SendPending || m_send_state == SendNeedsConfirmation; }
     QString sendResultTxid() const { return m_current_transaction ? m_current_transaction->property("txid").toString() : QString{}; }
     Q_INVOKABLE void resetSendForTest() { resetPsbtForTest();m_hold_send = false; m_send_state = SendIdle; m_send_submission = SubmissionMempool; m_send_review.clear(); Q_EMIT sendOperationChanged(); }
     Q_INVOKABLE void finishSendForTest() {
@@ -1872,12 +1877,29 @@ public:
         Q_EMIT sendOperationChanged();
     }
     Q_INVOKABLE quint64 requestSendTransaction() {
-        if (sendBusy() || psbtActionBusy()) return 0; ++m_send_operation_id; m_send_review = m_current_transaction; sendTransaction(); m_send_state = SendPending; Q_EMIT sendOperationChanged();
-        if (!m_hold_send) QTimer::singleShot(0, this, [this] { finishSendForTest(); });
+        if (sendBusy() || psbtActionBusy()) return 0; ++m_send_operation_id; m_send_review = m_current_transaction;
+        if (m_current_transaction_sweeps_wallet) m_send_state = SendNeedsConfirmation;
+        else { sendTransaction(); m_send_state = SendPending; if (!m_hold_send) QTimer::singleShot(0, this, [this] { finishSendForTest(); }); }
+        Q_EMIT sendOperationChanged();
         return m_send_operation_id;
     }
+    Q_INVOKABLE quint64 confirmSendTransaction(quint64 request_id) {
+        if (request_id != m_send_operation_id || m_send_state != SendNeedsConfirmation) return 0;
+        sendTransaction(); m_send_state = SendPending; Q_EMIT sendOperationChanged();
+        if (!m_hold_send) QTimer::singleShot(0, this, [this] { finishSendForTest(); });
+        return request_id;
+    }
+    Q_INVOKABLE quint64 cancelSendTransaction(quint64 request_id) {
+        if (request_id != m_send_operation_id || (m_send_state != SendNeedsConfirmation && m_send_state != SendNeedsUnlock)) return 0;
+        m_send_state = SendFailed; Q_EMIT sendOperationChanged(); return request_id;
+    }
     Q_INVOKABLE quint64 requestSendTransactionWithPassphrase(const QString& passphrase) {
-        if (sendBusy() || psbtActionBusy()) return 0; ++m_send_operation_id; m_send_review = m_current_transaction; sendTransactionWithPassphrase(passphrase); m_send_state = SendPending; Q_EMIT sendOperationChanged();
+        if (psbtActionBusy()) return 0;
+        if (m_send_state != SendNeedsUnlock) {
+            if (sendBusy()) return 0;
+            ++m_send_operation_id; m_send_review = m_current_transaction;
+        }
+        sendTransactionWithPassphrase(passphrase); m_send_state = SendPending; Q_EMIT sendOperationChanged();
         if (!m_hold_send) QTimer::singleShot(0, this, [this] { finishSendForTest(); });
         return m_send_operation_id;
     }
@@ -5015,6 +5037,8 @@ class MockBumpTransactionModel : public QObject
     Q_PROPERTY(QString feeIncrease MEMBER m_fee_increase NOTIFY resultChanged)
     Q_PROPERTY(QString oldTxid MEMBER m_old_txid NOTIFY resultChanged)
     Q_PROPERTY(QString newTxid MEMBER m_new_txid NOTIFY resultChanged)
+    Q_PROPERTY(int walletRecordState MEMBER m_wallet_record_state NOTIFY resultChanged)
+    Q_PROPERTY(int walletSubmissionState MEMBER m_wallet_submission_state NOTIFY resultChanged)
     Q_PROPERTY(QString errorText MEMBER m_error_text NOTIFY resultChanged)
     Q_PROPERTY(QString unlockErrorText MEMBER m_unlock_error_text NOTIFY resultChanged)
     Q_PROPERTY(bool needsUnlock MEMBER m_needs_unlock NOTIFY needsUnlockChanged)
@@ -5022,6 +5046,13 @@ class MockBumpTransactionModel : public QObject
 public:
     enum State { Idle, Preparing, NeedsConfirmation, Committing, Succeeded, Failed, Discarding, Uncertain, Closed };
     Q_ENUM(State)
+
+    enum WalletRecordState { WalletRecordUnknown, WalletRecordAbsentAtObservation, WalletRecordRecorded };
+    Q_ENUM(WalletRecordState)
+
+    enum WalletSubmissionState { WalletSubmissionUnknown, WalletSubmissionMempool, WalletSubmissionConfirmed,
+                                 WalletSubmissionNotInMempool, WalletSubmissionConflicted, WalletSubmissionAbandoned };
+    Q_ENUM(WalletSubmissionState)
 
     enum ActionType { SpeedUp };
     Q_ENUM(ActionType)
@@ -5052,6 +5083,8 @@ public:
         m_preparing = true;
         m_old_txid = txid;
         m_new_txid.clear(); m_error_text.clear(); m_unlock_error_text.clear(); m_needs_unlock = false;
+        m_wallet_record_state = BumpTransactionModel::WalletRecordUnknown;
+        m_wallet_submission_state = BumpTransactionModel::WalletSubmissionUnknown;
         m_old_fee = QStringLiteral("0.00000500 BTC");
         m_new_fee = QStringLiteral("0.00001000 BTC");
         m_fee_increase = QStringLiteral("0.00000500 BTC");
@@ -5080,6 +5113,8 @@ public:
                 setState(NeedsConfirmation);
             } else {
                 m_new_txid = QStringLiteral("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+                m_wallet_record_state = BumpTransactionModel::WalletRecordRecorded;
+                m_wallet_submission_state = BumpTransactionModel::WalletSubmissionMempool;
                 setState(Succeeded);
             }
             Q_EMIT resultChanged();
@@ -5106,6 +5141,8 @@ public:
         m_fee_increase.clear();
         m_old_txid.clear();
         m_new_txid.clear();
+        m_wallet_record_state = BumpTransactionModel::WalletRecordUnknown;
+        m_wallet_submission_state = BumpTransactionModel::WalletSubmissionUnknown;
         m_error_text.clear();
         m_unlock_error_text.clear();
         m_needs_unlock = false;
@@ -5130,6 +5167,8 @@ private:
     QString m_fee_increase;
     QString m_old_txid;
     QString m_new_txid;
+    int m_wallet_record_state{BumpTransactionModel::WalletRecordUnknown};
+    int m_wallet_submission_state{BumpTransactionModel::WalletSubmissionUnknown};
     QString m_error_text;
     QString m_unlock_error_text;
     bool m_needs_unlock{false};

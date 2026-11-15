@@ -109,7 +109,7 @@ PageStack {
         if (root.wallet.preparationState === WalletQmlModel.PreparationReady) {
             reviewPassphrasePopup.close()
             root.openTransactionReview()
-        } else if (root.wallet.transactionNeedsUnlock) {
+        } else if (root.wallet.preparationState === WalletQmlModel.PreparationNeedsUnlock) {
             reviewPassphrasePopup.open()
         } else if (root.wallet.preparationState !== WalletQmlModel.PreparationStale) {
             root.prepareTransactionErrorText = root.wallet.transactionError.length > 0
@@ -437,11 +437,12 @@ PageStack {
                     SendTransactionReview {
                         wallet: transactionReviewPopup.reviewWallet
                         onBack: transactionReviewPopup.close()
-                        onTransactionSent: (txid, submissionState) => {
+                        onTransactionSent: (txid, submissionState, recordState) => {
                             transactionReviewPopup.sent = true
                             reviewStack.push(sendCompletePage, {
                                 "txid": txid,
                                 "submissionState": submissionState,
+                                "recordState": recordState,
                                 "targetBlocks": !transactionReviewPopup.importedReview && wallet && wallet.currentTransaction.reviewFeeSource === FeeSelectionModel.Estimated
                                     ? wallet.currentTransaction.reviewTargetBlocks : 0
                             })
