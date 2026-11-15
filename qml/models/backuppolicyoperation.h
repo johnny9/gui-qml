@@ -55,6 +55,7 @@ public:
     void retire();
     /** Retire an accepted continuation only if destination inspection requires confirmation. */
     void retireIfAwaitingConfirmation();
+    bool retiredBeforeWrite() const; // Native admission proof; no later file write can start.
     void failBeforeStart(Error error);
     void abandonBeforeStart();
 
