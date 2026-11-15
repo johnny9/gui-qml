@@ -1,0 +1,148 @@
+{
+  "status": "Focused composed gate passed; R21/R22 repaired contribution components and R24/R25 focused acceptance restored/satisfied",
+  "tested_app": "a218208883ee409bfd648bab98ba598ffdf24c9a",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "runtime": [
+    {
+      "id": "signing-contribution-context",
+      "executed": 18,
+      "passed": 18,
+      "skipped": 0
+    },
+    {
+      "id": "standalone-signing-and-original-export",
+      "executed": 24,
+      "passed": 24,
+      "skipped": 0
+    },
+    {
+      "id": "standalone-model-quarantine-export",
+      "executed": 15,
+      "passed": 15,
+      "skipped": 0
+    },
+    {
+      "id": "original-wallet-quarantine",
+      "executed": 3,
+      "passed": 3,
+      "skipped": 0
+    },
+    {
+      "id": "replacement-wallet-context",
+      "executed": 5,
+      "passed": 5,
+      "skipped": 0
+    },
+    {
+      "id": "replacement-signed-result-and-outcome",
+      "executed": 8,
+      "passed": 8,
+      "skipped": 0
+    },
+    {
+      "id": "domain-original-attempt",
+      "executed": 13,
+      "passed": 13,
+      "skipped": 0
+    },
+    {
+      "id": "shared-file-policy-retirement",
+      "executed": 56,
+      "passed": 56,
+      "skipped": 0
+    },
+    {
+      "id": "csv-original-snapshot-native-cleanup",
+      "executed": 12,
+      "passed": 12,
+      "skipped": 0
+    },
+    {
+      "id": "original-psbt-effect-and-view-admission",
+      "executed": 21,
+      "passed": 21,
+      "skipped": 0
+    },
+    {
+      "id": "review-export-qml",
+      "executed": 3,
+      "passed": 3,
+      "skipped": 0
+    },
+    {
+      "id": "signer-qml",
+      "executed": 8,
+      "passed": 8,
+      "skipped": 0
+    },
+    {
+      "id": "original-model-transaction-detail",
+      "executed": 40,
+      "passed": 40,
+      "skipped": 0
+    },
+    {
+      "id": "exact-Core-replacement",
+      "executed": 1,
+      "passed": 1,
+      "skipped": 0
+    },
+    {
+      "id": "exact-Core-psbt",
+      "executed": 1,
+      "passed": 1,
+      "skipped": 0
+    },
+    {
+      "id": "csvConsentKeepsItsOriginalSnapshotUnitAndTargetAcrossLiveFilterChanges",
+      "executed": 1,
+      "passed": 1,
+      "skipped": 0
+    }
+  ],
+  "actual_bodies": 229,
+  "static_entries_passed": 14,
+  "static_scope": "7 composed C++ units +7 freshly generated app MOC aggregates; pinned clang-tidy23/Core449 checks/Bitcoin plugin",
+  "qml_lint": {
+    "qt62": {
+      "files": 259,
+      "gate_exit": 0,
+      "raw_retained_Qt62_compatibility_notes": 1111
+    },
+    "qt65": {
+      "files": 259,
+      "gate_exit": 0,
+      "raw_retained_Qt62_compatibility_notes": 1111
+    }
+  },
+  "app_lint": {
+    "exit": 0,
+    "seconds": 2.5898019510204904,
+    "app": "a218208883ee409bfd648bab98ba598ffdf24c9a",
+    "post_branch": "",
+    "post_status": "",
+    "Core": "44901d8f64cb617714707bd025ecd83f108353c2"
+  },
+  "actual_processes": {
+    "passed": 3,
+    "cases": [
+      "signer-substitution-speed-up",
+      "encrypted-replacement",
+      "bridge-protocol"
+    ],
+    "outer_stderr_bytes": 0,
+    "child_status_and_stderr_checked": true,
+    "IPC_enabled": true
+  },
+  "commands": "R25/composed-01/{inside.sh,docker-command.json,focused.json};R25/composed-lint-02/command.json",
+  "evidence": "R25/composed-01/{focused/report.json,tidy/results.json,qml-lint,host-result.json};R25/composed-lint-02/RESULT.json",
+  "component_sources": {
+    "R25": "4d84fe7c3e5056702bf4636a800e84d0fcc49e64:127 actual bodies,15 current static+2 explicit CPP carries,3 processes",
+    "R21_R22_signing": "55a054a367662d5af505d23458e9cd316799de2b:374 actual bodies,17 static,4processes",
+    "R24": "4c3d01e6e631265ebab4328a6719759910906fc1:177 identities via explicit carries, separate process/static receipts",
+    "R32": "be2a3869be89f9c3767ce1d3e90b5b5be0a49aa2:194 current+205 explicit earlier carries; composed799:159"
+  },
+  "counts_policy": "Component and composition counts overlap and must not be added as unique tests or represented as one final-head full suite. No canonical finding/scope register overwritten.",
+  "remaining": "R09 conditional device/Core atomicity limits, R17 preview, R20 receipt, R30 capability deferrals remain. R42 exhaustive coverage/full suites/configuration/platform/native Windows/sanitizers pending. Existing two WalletOpening failures and whole-Core-PSBT timeout retained separately. No Core/Qt changes or push.",
+  "binary_hash_inventory_limitation": "Optional inventory requested bin/bitcoinqml_integration instead of configured bin/bitcoinqml_integration_tests; test runner used correct binary and build/XML/input evidence retained. Extra driver stderr and missing hash documented; no hash backfilled from later source."
+}

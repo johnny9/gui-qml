@@ -1,5 +1,5 @@
 {
-  "status": "Pending final gate; not shared finding closure",
+  "status": "Focused accepted at composed a218208883e; R42 final qualification pending",
   "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
   "scopes": [
     {
@@ -10,7 +10,7 @@
         "bumpFeePresentationTracksUnitWithoutRepreparing"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-046-RC08",
@@ -22,7 +22,7 @@
         "confirmFeeBump_rechecksEligibility"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-056-RC08",
@@ -34,7 +34,7 @@
         "confirmFeeBump_rejectsWhenNotReady"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-103-RC42",
@@ -47,7 +47,7 @@
         "committedOutcomeSurvivesResetCloseAndObserverLoss"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-113-D113",
@@ -60,7 +60,7 @@
         "test_fee_bump_revalidation_requires_explicit_reprepare"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-114-D114",
@@ -73,7 +73,7 @@
         "test_fee_bump_revalidation_requires_explicit_reprepare"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-115-D115",
@@ -86,7 +86,7 @@
         "committedOutcomeSurvivesResetCloseAndObserverLoss"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-116-D116",
@@ -98,7 +98,7 @@
         "confirmFeeBump_rejectsWhenNotReady"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-117-D117",
@@ -111,7 +111,7 @@
         "test_fee_bump_revalidation_requires_explicit_reprepare"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-118-RC42",
@@ -124,7 +124,7 @@
         "committedOutcomeSurvivesResetCloseAndObserverLoss"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-119-D119",
@@ -137,7 +137,7 @@
         "test_fee_bump_revalidation_requires_explicit_reprepare"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-120-RC08",
@@ -149,7 +149,7 @@
         "confirmFeeBump_rejectsWhenNotReady"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-121-RC08",
@@ -161,7 +161,7 @@
         "confirmFeeBump_rechecksEligibility"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-140-RC42",
@@ -174,7 +174,7 @@
         "committedOutcomeSurvivesResetCloseAndObserverLoss"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-278-RC08",
@@ -186,7 +186,7 @@
         "confirmFeeBump_rechecksEligibility"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-288-D288",
@@ -199,7 +199,7 @@
         "committedOutcomeSurvivesResetCloseAndObserverLoss"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-303-RC08",
@@ -210,7 +210,7 @@
         "replacementAttemptKeepsApprovedInputScopeAndRequiresFreshIntent"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-305-RC09",
@@ -221,7 +221,7 @@
         "futureLockRemainsInReviewAndIndependentAbandonmentInvalidatesIt"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     },
     {
       "case_id": "draft-306-RC08",
@@ -232,12 +232,14 @@
         "futureLockRemainsInReviewAndIndependentAbandonmentInvalidatesIt"
       ],
       "disposition": "Current contract guarded; inventory-only allegations are not promoted into fabricated original runtime failures",
-      "status": "Final static/process and composed-source gate pending"
+      "status": "Focused contract gate satisfied; inventory/held caveats retained; R42 pending"
     }
   ],
   "limits": [
     "Transaction-level timing controls do not establish exhaustive script-timelock qualification.",
     "Conditional R09/R20 receipt/atomicity limits remain explicit.",
     "R42 full coverage/matrices/native Windows/sanitizers pending."
-  ]
+  ],
+  "focused_evidence": "evidence/R25_FOCUSED.json",
+  "composition_evidence": "evidence/R21_R25_COMPOSED.json"
 }

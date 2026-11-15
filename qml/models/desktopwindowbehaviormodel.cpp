@@ -5,6 +5,7 @@
 #include <qml/models/desktopwindowbehaviormodel.h>
 #include <qml/backendexecutor.h>
 #include <qml/guipresentation.h>
+#include <qml/settingsnamespace.h>
 
 #include <QPointer>
 #include <QSettings>
@@ -37,8 +38,10 @@ DesktopWindowBehaviorModel::DesktopWindowBehaviorModel(bool desktop_platform, ex
     if (!m_services.post) m_services.post = presentation::QueuedPost();
     m_key = m_services.scheduler->allocateKey();
     const bool public_store = !m_store.read && !m_store.write && !m_store.write_fields;
-    if (!m_store.read) m_store.read = [] {
-        QSettings settings;
+    const auto identity=UiPreferencesNamespace::Capture();
+    const auto open=[identity]{return OpenPreferences(identity);};
+    if (!m_store.read) m_store.read = [open] {
+        const auto owner=open();QSettings& settings=*owner;
         settings.sync();
         Values values{!settings.value(KEY_HIDE_TRAY_ICON, false).toBool(),
             settings.value(KEY_MINIMIZE_TO_TRAY, false).toBool(), settings.value(KEY_MINIMIZE_ON_CLOSE, false).toBool()};
@@ -50,8 +53,8 @@ DesktopWindowBehaviorModel::DesktopWindowBehaviorModel(bool desktop_platform, ex
         if (settings.status() != QSettings::NoError) throw std::runtime_error("Desktop preferences could not be read");
         return values;
     };
-    if (!m_store.write && !m_store.write_fields) m_store.write_fields = [](Values values, unsigned fields) {
-        QSettings settings;
+    if (!m_store.write && !m_store.write_fields) m_store.write_fields = [open](Values values, unsigned fields) {
+        const auto owner=open();QSettings& settings=*owner;
         settings.sync();
         if (settings.status() != QSettings::NoError) throw std::runtime_error("Desktop preferences could not be read before saving");
         if (fields & 1) settings.setValue(KEY_HIDE_TRAY_ICON, !values.show_tray);
@@ -62,7 +65,7 @@ DesktopWindowBehaviorModel::DesktopWindowBehaviorModel(bool desktop_platform, ex
         return Values{!settings.value(KEY_HIDE_TRAY_ICON, false).toBool(),
             settings.value(KEY_MINIMIZE_TO_TRAY, false).toBool(), settings.value(KEY_MINIMIZE_ON_CLOSE, false).toBool()};
     };
-    if (!m_store.watch_paths) m_store.watch_paths = [public_store] { if (!public_store) return preferences::WatchPaths{}; QSettings settings; return preferences::Paths(settings); };
+    if (!m_store.watch_paths) m_store.watch_paths = [public_store,open] { if (!public_store) return preferences::WatchPaths{}; const auto settings=open(); return preferences::Paths(*settings); };
     if (!desktop_platform) apply({false, false, false});
     submit({}, true);
 }

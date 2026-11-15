@@ -1,0 +1,92 @@
+{
+  "status": "R35 focused acceptance satisfied after coordinator composition",
+  "tested_app": "eec5c0292fb1331d7fac1b4bee39cf57579d4295",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "runtime": [
+    {
+      "id": "revisioned-onboarding-domain-manual-and-real-workers",
+      "executed": 31,
+      "passed": 31,
+      "skipped": 0
+    },
+    {
+      "id": "actual-startup-errors-and-recovery-identity",
+      "executed": 9,
+      "passed": 9,
+      "skipped": 0
+    },
+    {
+      "id": "actual-Core-and-Qt-profile-write-readback-recovery",
+      "executed": 17,
+      "passed": 17,
+      "skipped": 0
+    },
+    {
+      "id": "manual-and-real-original-profile-ownership",
+      "executed": 9,
+      "passed": 9,
+      "skipped": 0
+    },
+    {
+      "id": "existing-onboarding-path-and-preparation-consumers",
+      "executed": 18,
+      "passed": 18,
+      "skipped": 0
+    },
+    {
+      "id": "declarative-profile-result-and-recovery-controls",
+      "executed": 8,
+      "passed": 8,
+      "skipped": 0
+    },
+    {
+      "id": "shared-preference-original-namespace",
+      "executed": 3,
+      "passed": 3,
+      "skipped": 0
+    }
+  ],
+  "actual_distinct_bodies": 95,
+  "initial_nonpass": "composed-01 ran95 positive bodies but old manifest expected8 StartupProfile rows, actual9; runner correctly failed that selection. Original result retained.",
+  "corrected_focused_gate": "composed-count-02 reruns all9 StartupProfile bodies successfully, exact same production source/configuration; no assertion/selection removed",
+  "static": {
+    "passed": 14,
+    "handwritten_CPP": 7,
+    "fresh_MOC": 7,
+    "tool": "Pinned clang-tidy23/Core449 checks/Bitcoin plugin"
+  },
+  "app_lint": {
+    "exit": 0,
+    "seconds": 2.443224563030526,
+    "app": "eec5c0292fb1331d7fac1b4bee39cf57579d4295",
+    "post_branch": "",
+    "post_status": "",
+    "Core": "44901d8f64cb617714707bd025ecd83f108353c2"
+  },
+  "qml_lint": {
+    "exit": 0,
+    "files_per_variant": 259,
+    "variants": [
+      "qt65",
+      "qt62"
+    ],
+    "notes": "Raw Qt6.2 compatibility notes retained under original gate policy, not newly suppressed"
+  },
+  "actual_GUI_processes": {
+    "cases": [
+      "root-wallet-discovery",
+      "explicit-walletdir-discovery",
+      "bridge-protocol"
+    ],
+    "passed": 3,
+    "outer_stderr_bytes": 0,
+    "child_exit_and_unexpected_stderr_checked": true,
+    "IPC_enabled": true
+  },
+  "component_receipts": "R35/PUBLIC_HELPER_{ACCEPTANCE,DELIVERY}_15.json:226 distinct source-specific Linux identities, supplementalMac27+8QML,6actualCore-helper cases; overlap with composition is not additive",
+  "scope_map": "plan/R35_SCOPE_MAP.json",
+  "upstream_note": "plan/R35_PUBLIC_DIRECTORY_ADAPTER_UPSTREAM.md",
+  "commands": "R35/composed-01/{docker-command.json,inside.sh,focused.json};R35/composed-count-02/command.json;R35/composed-lint-01/command.json",
+  "artifact_inventory_limitation": "BINARY_HASH_LIMITATION.json records the optional SHA inventory wrong integration filename; actual tests use the correct configured target. No absent hash is backfilled.",
+  "pending": "R42 exhaustive coverage/full suites/configuration/platform/native Windows/sanitizers; explicit066 held/263candidate provenance preserved. R36 whole lifecycle is a separate pending order. No Core/Qt changes or push."
+}
