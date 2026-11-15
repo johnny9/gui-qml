@@ -66,9 +66,15 @@ Popup {
             prompt.unavailable()
         }
     }
+    Timer {
+        id: runtimeButtonTags
+        interval: 0
+        repeat: false
+        onTriggered: root.tagRuntimeButtons()
+    }
     visible: prompt !== null
     onOpened: {
-        Qt.callLater(function() { root.tagRuntimeButtons() })
+        runtimeButtonTags.restart()
         const window = root.presentationWindow
         if (prompt !== null && window !== null) {
             window.show()
@@ -189,9 +195,9 @@ Popup {
             standardButtons: root.prompt !== null ? root.prompt.buttons : DialogButtonBox.NoButton
             background: Item {}
 
-            onCountChanged: Qt.callLater(function() { root.tagRuntimeButtons() })
-            onStandardButtonsChanged: Qt.callLater(function() { root.tagRuntimeButtons() })
-            Component.onCompleted: Qt.callLater(function() { root.tagRuntimeButtons() })
+            onCountChanged: runtimeButtonTags.restart()
+            onStandardButtonsChanged: runtimeButtonTags.restart()
+            Component.onCompleted: runtimeButtonTags.restart()
             onClicked: function(button) {
                 if (root.prompt !== null) root.prompt.answer(root.standardButtonId(button))
             }

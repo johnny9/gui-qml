@@ -21,7 +21,7 @@ struct Fixture {
     std::shared_ptr<Service> service;
     explicit Fixture(execution::Limits limits=execution::Limits::Bounded()):execution(limits){service=std::make_shared<Service>(execution::SnapshotServices{execution.scheduler,{}},[this]{
         if(reject_projection)throw std::runtime_error{"presentation rejected"};
-        gui.push_back([this]{++publications;});},[this]{++drained;});}
+        gui.emplace_back([this]{++publications;});},[this]{++drained;});}
     ~Fixture(){service->close();execution.drain();service.reset();execution.drain();}
     std::shared_ptr<const Request> request(QString summary=QStringLiteral("Original question"),uint32_t buttons=OK|CANCEL){
         return std::make_shared<const Request>(Origin::Runtime,buttons|CClientUIInterface::MODAL,true,std::move(summary));}
@@ -38,18 +38,21 @@ private Q_SLOTS:
         QVERIFY(f.service->visible(id));f.settle();QVERIFY(f.service->answer(id,OK));f.execution.drain();
         f.service->close(); // Native has not reacquired its answer or acknowledged return.
         QVERIFY(one->wait().affirmative());QVERIFY(!two->wait().affirmative());f.execution.drain();
-        QCOMPARE(f.service->projection().state,State::Stopped);QCOMPARE(f.service->projection().pending,size_t{0});
-        one.reset();two.reset();f.execution.drain();QCOMPARE(f.drained,1);QCOMPARE(f.execution.scheduler->pending(),size_t{0});
+        // Answer consumption is separate from the original producer's final
+        // post-answer work. Neither popup loss nor close invents that receipt.
+        QCOMPARE(f.service->projection().state,State::Stopping);QCOMPARE(f.service->projection().pending,size_t{2});QCOMPARE(f.drained,0);
+        one.reset();two.reset();f.execution.drain();
+        QCOMPARE(f.service->projection().state,State::Stopped);QCOMPARE(f.service->projection().pending,size_t{0});QCOMPARE(f.drained,1);QCOMPARE(f.execution.scheduler->pending(),size_t{0});
     }
     void staleQtHandleCannotAnswerItsSuccessor(){
         Fixture f;std::shared_ptr<Continuation> one,two;const auto first=f.request(),second=f.request(QStringLiteral("Second question"));
         QVERIFY(f.service->enqueue(first,true,one));QVERIFY(f.service->enqueue(second,true,two));f.settle();
         RuntimePromptModel old{f.service->projection().active,f.service,nullptr};QVERIFY(old.presented());f.settle();
-        QVERIFY(old.answer(OK));f.execution.drain();QVERIFY(one->wait().affirmative());f.settle();
+        QVERIFY(old.answer(OK));f.execution.drain();QVERIFY(one->wait().affirmative());one.reset();f.settle();
         const auto current=f.service->projection().active;QVERIFY(current);QVERIFY(current->descriptor.id!=old.id());
         RuntimePromptModel next{current,f.service,nullptr};QVERIFY(next.presented());f.settle();
         QVERIFY(old.answer(OK));f.settle();QVERIFY(!second->answer->result());QCOMPARE(f.service->projection().last,Disposition::StaleToken);
-        QVERIFY(next.answer(CANCEL));f.execution.drain();QVERIFY(!two->wait().affirmative());f.settle();
+        QVERIFY(next.answer(CANCEL));f.execution.drain();QVERIFY(!two->wait().affirmative());two.reset();f.settle();
         QCOMPARE(f.service->projection().state,State::Idle);
     }
     void invalidCompositeAndEarlyAnswersDoNotConsumeQuestion(){
@@ -59,7 +62,7 @@ private Q_SLOTS:
         QVERIFY(f.service->visible(id));f.settle();QVERIFY(f.service->answer(id,OK|CANCEL));f.settle();
         QCOMPARE(f.service->projection().last,Disposition::InvalidButton);QVERIFY(!request->answer->result());
         QVERIFY(f.service->answer(id,CClientUIInterface::BTN_YES));f.settle();QVERIFY(!request->answer->result());
-        QVERIFY(f.service->answer(id,OK));f.execution.drain();QVERIFY(completion->wait().affirmative());f.settle();
+        QVERIFY(f.service->answer(id,OK));f.execution.drain();QVERIFY(completion->wait().affirmative());completion.reset();f.settle();
     }
     void heldGuiDeliveryDoesNotBlockNativeRetirement(){
         Fixture f;std::shared_ptr<Continuation> continuation;const auto request=f.request();QVERIFY(f.service->enqueue(request,true,continuation));f.execution.drain();
@@ -78,10 +81,10 @@ private Q_SLOTS:
         Fixture f;const auto first=f.request(),second=f.request(QStringLiteral("Successor"));std::shared_ptr<Continuation> one,two;
         QVERIFY(f.service->enqueue(first,true,one));QVERIFY(f.service->enqueue(second,true,two));f.settle();
         RuntimePromptModel retired{f.service->projection().active,f.service,nullptr};QVERIFY(retired.presented());f.settle();
-        QVERIFY(retired.unavailable());f.execution.drain();QVERIFY(!one->wait().affirmative());f.settle();
+        QVERIFY(retired.unavailable());f.execution.drain();QVERIFY(!one->wait().affirmative());one.reset();f.settle();
         const auto successor=f.service->projection().active;QVERIFY(successor);QVERIFY(successor->descriptor.id!=retired.id());
         QVERIFY(retired.unavailable());f.settle();QVERIFY(!second->answer->result());
-        f.service->close();QVERIFY(!two->wait().affirmative());f.execution.drain();QCOMPARE(f.drained,1);
+        f.service->close();QVERIFY(!two->wait().affirmative());two.reset();f.execution.drain();QCOMPARE(f.drained,1);
     }
     void fixedIngressBudgetRejectsWithoutWaitingOrReplacingTheFirst(){
         Fixture f;std::vector<std::shared_ptr<Continuation>> continuations;continuations.reserve(32);
@@ -96,15 +99,15 @@ private Q_SLOTS:
         Fixture f;f.reject_projection=true;std::shared_ptr<Continuation> continuation;const auto request=f.request();
         QVERIFY(f.service->enqueue(request,true,continuation));f.execution.drain();const auto id=f.service->projection().active->descriptor.id;
         QVERIFY(f.service->visible(id));f.execution.drain();QVERIFY(f.service->answer(id,OK));f.execution.drain();
-        QVERIFY(continuation->wait().affirmative());f.execution.drain();QCOMPARE(f.service->projection().state,State::Idle);QCOMPARE(f.publications,0);
+        QVERIFY(continuation->wait().affirmative());continuation.reset();f.execution.drain();QCOMPARE(f.service->projection().state,State::Idle);QCOMPARE(f.publications,0);
     }
     void nativeWaitUsesOnlyItsOriginalAnswerCell(){
         Fixture f;const auto request=f.request();std::shared_ptr<Continuation> continuation;QVERIFY(f.service->enqueue(request,true,continuation));f.settle();
-        QSemaphore entered,returned;bool affirmative{false};std::thread producer{[&]{entered.release();affirmative=continuation->wait().affirmative();returned.release();}};
-        const auto cleanup=qScopeGuard([&]{f.service->close();f.execution.drain();producer.join();});
+        QSemaphore entered,returned;bool affirmative{false};std::thread producer{[&,owned=std::move(continuation)]{entered.release();affirmative=owned->wait().affirmative();returned.release();}};
+        const auto cleanup=qScopeGuard([&]{f.service->close();f.execution.drain();if(producer.joinable())producer.join();});
         QVERIFY(entered.tryAcquire(1,5000));QCOMPARE(returned.available(),0);
         const auto id=f.service->projection().active->descriptor.id;QVERIFY(f.service->visible(id));f.settle();QVERIFY(f.service->answer(id,OK));f.execution.drain();
-        QVERIFY(returned.tryAcquire(1,5000));f.settle();QVERIFY(affirmative);QCOMPARE(f.service->projection().state,State::Idle);
+        QVERIFY(returned.tryAcquire(1,5000));producer.join();f.settle();QVERIFY(affirmative);QCOMPARE(f.service->projection().state,State::Idle);
     }
     void saturatedOrdinaryAdmissionCannotStrandTheOriginalQuestionReturn(){
         auto limits=execution::Limits::Bounded();limits.ordinary.tasks=1;Fixture f{limits};

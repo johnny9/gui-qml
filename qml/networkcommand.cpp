@@ -136,6 +136,10 @@ struct Service::State {
     struct Snapshot { Projection value; std::shared_ptr<State> original; };
     struct Input { Intent intent; std::shared_ptr<execution::Scheduler> action; };
     struct Availability { bool available; uint64_t revision; };
+    struct Demand {
+        std::optional<Intent> effect;
+        std::shared_ptr<execution::Scheduler> read_scope;
+    };
     const execution::SnapshotServices execution;
     const Ports ports;
     const std::shared_ptr<Publication> publication;
@@ -194,8 +198,9 @@ struct Service::State {
             if (!running && !queued) entry = actions.erase(entry); else ++entry;
         }
     }
-    void consume()
+    Demand takeInputs()
     {
+        Demand demand;
         std::optional<Input> input;
         std::optional<Observation> observed;
         std::optional<Availability> status;
@@ -206,21 +211,46 @@ struct Service::State {
         }
         if (stopping) {
             command.close(); if (input) acknowledged = std::max(acknowledged, input->intent.id);
-            actions.clear(); lifetime.store({}); publish(); return;
+            actions.clear(); lifetime.store({}); return demand;
         }
         if (status) command.setAvailable(status->available, status->revision);
         if (observed) command.observe(*observed);
         if (input) {
             acknowledged = std::max(acknowledged, input->intent.id);
             actions[input->intent.id] = std::move(input->action);
-            const auto effect = command.request(input->intent);
-            if (effect) dispatch(*effect);
+            demand.effect = command.request(input->intent);
             prune();
         }
-        if (status && status->available && !command.projection().known) read(lifetime.load());
+        if (status && status->available && !command.projection().known) demand.read_scope = lifetime.load();
+        return demand;
+    }
+    void consume() { advance(takeInputs()); }
+    void advance(Demand demand)
+    {
+        // Synchronous rejection accounts for known non-execution in this
+        // original Domain turn. It neither calls an asynchronous completion
+        // inline nor admits another turn to rescue an accepted outcome.
+        // No inbox is consumed in this loop, so only the already owned running
+        // intent and its one coalesced successor can be considered here.
+        if (stopping) command.close();
+        while (demand.effect) {
+            std::optional<Effect> rejected;
+            if (stopping) {
+                command.close();
+                Effect not_started; not_started.id = demand.effect->id; not_started.status = EffectStatus::NotStarted;
+                rejected = not_started;
+            } else {
+                rejected = dispatch(*demand.effect);
+            }
+            if (!rejected) break;
+            demand.effect = command.finish(*rejected);
+            prune();
+        }
+        if (demand.read_scope) read(demand.read_scope);
+        if (stopping) command.close();
         publish();
     }
-    void dispatch(Intent intent)
+    std::optional<Effect> dispatch(Intent intent)
     {
         const auto self = owner.lock();
         const auto action = actions.at(intent.id);
@@ -261,12 +291,14 @@ struct Service::State {
             return result;
         };
         const auto done = [self, action](Effect result) {
-            self->consume(); // Reconcile ingress that raced this Domain receipt.
+            // Reconcile latest ingress before accounting, without starting
+            // effects from inside the outcome reducer.
+            auto demand = self->takeInputs();
             const auto next_effect = self->command.finish(result);
             self->prune();
-            if (next_effect && !self->stopping) self->dispatch(*next_effect);
-            if (result.status == EffectStatus::Uncertain && !self->stopping) self->read(action);
-            self->publish();
+            if (next_effect) demand.effect = next_effect;
+            if (result.status == EffectStatus::Uncertain && !self->stopping) demand.read_scope = action;
+            self->advance(std::move(demand));
         };
         const auto failed = [done, id=intent.id](std::exception_ptr error) {
             Effect result; result.id = id; result.status = EffectStatus::Uncertain; result.attempted = true;
@@ -275,8 +307,9 @@ struct Service::State {
             catch (...) {}
             done(result);
         };
-        if (!execution::Submit(*action, work, done, failed, {execution::Lane::Core, 512, native, execution::WorkClass::Action}))
-            failed(std::make_exception_ptr(execution::NotStarted{execution::NotStarted::Cause::Transport}));
+        if (execution::Submit(*action, work, done, failed, {execution::Lane::Core, 512, native, execution::WorkClass::Action})) return {};
+        Effect rejected; rejected.id = intent.id; rejected.status = EffectStatus::NotStarted;
+        return rejected;
     }
     void read(const std::shared_ptr<execution::Scheduler>& scope)
     {
@@ -300,7 +333,14 @@ struct Service::State {
             try { result.value = self->ports.observe(); } catch (...) {}
             return result;
         }, finish, [finish](std::exception_ptr) { finish({}); },
-            {execution::Lane::Core, 256, native, execution::WorkClass::Observation})) finish({});
+            {execution::Lane::Core, 256, native, execution::WorkClass::Observation})) {
+            // A read that never started has no outcome callback to follow.
+            // Account its failure here; only an admitted asynchronous read's
+            // completion may dispatch the one coalesced follow-up.
+            reading = false;
+            if (!stopping && availability == revision) command.queryUnavailable();
+            publish();
+        }
     }
 };
 

@@ -292,6 +292,20 @@ private Q_SLOTS:
         QCOMPARE(fixture.initializes, 0);
     }
 
+    void rejectedAcceptedInitializationStillCompletesPendingShutdown()
+    {
+        Fixture fixture; const auto held = fixture.startHeldInitialization(); QVERIFY(held);
+        QVERIFY(fixture.driver->shutdown()); fixture.controlAndDomain();
+        QCOMPARE(fixture.interrupts, 1); QCOMPARE(fixture.shutdowns, 0);
+        fixture.execution.scheduler->closeOrdinaryAdmission();
+        QVERIFY(fixture.execution.scheduler->cancelQueued(*held));
+        QVERIFY(fixture.execution.finishWork(*held)); fixture.settle();
+        const auto value = fixture.driver->projection();
+        QCOMPARE(fixture.initializes, 0); QCOMPARE(fixture.shutdowns, 1);
+        QVERIFY(value.initialization); QVERIFY(!value.initialization->attempted); QVERIFY(value.initialization->cancelled);
+        QCOMPARE(value.phase, Phase::Stopped); QCOMPARE(value.core_exit_status, std::optional<int>{7});
+    }
+
     void cancelledDomainIngressHasKnownUnattemptedOutcome()
     {
         Fixture fixture; QVERIFY(fixture.driver->initialize());

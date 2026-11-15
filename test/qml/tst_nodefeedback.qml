@@ -352,7 +352,7 @@ TestCase {
         verify(popup !== null)
         tryCompare(testWindow, "visible", true)
         tryCompare(popup, "opened", true)
-        verify(findChild(popup, "nodeRuntimeDialogButtonOk") !== null)
+        verify(waitForChild(popup, "nodeRuntimeDialogButtonOk") !== null)
     }
 
     function test_retired_popup_resolves_only_its_original_prompt() {

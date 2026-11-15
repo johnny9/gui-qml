@@ -24,12 +24,20 @@ public:
     ~Continuation();
     Continuation(const Continuation&)=delete;
     Continuation& operator=(const Continuation&)=delete;
+    // Reading the answer does not finish the original Native scope. Its owner
+    // retains this continuation through post-answer work and then releases it.
     Answer wait();
 private:
     friend class Service;
-    void rejected() { m_request->answer->cancel(); if(const auto delivered=std::exchange(m_delivered,{}))delivered(); }
-    const std::shared_ptr<const Request> m_request;
-    std::function<void()> m_delivered;
+    void rejected();
+    struct Completion {
+        std::function<void()> delivered;
+        void release(){if(const auto done=std::exchange(delivered,{}))done();}
+        ~Completion(){release();}
+    };
+    Completion m_completion; // Last retired: the original request drops first.
+    std::shared_ptr<const Request> m_request;
+
 };
 class Service final {
 public:

@@ -210,7 +210,12 @@ struct Driver::State {
         const auto done = [self, operation, attempt, diagnostic, action](Result result) {
             self->completed(operation, attempt, std::move(result), diagnostic, action);
         };
-        const auto failed = [self, operation, attempt, action](std::exception_ptr error) { self->rejected(operation, attempt, error, action); };
+        const auto failed = [self, operation, attempt, action](std::exception_ptr error) {
+            self->rejected(operation, attempt, error, action);
+            // This is the already admitted asynchronous outcome turn. Only
+            // it may advance a shutdown waiting for initialization accounting.
+            self->maybeShutdown();
+        };
         const bool control = operation == Operation::Interrupt;
         const auto scheduler = control ? execution.scheduler : action;
         // Action scopes deliberately reject Control. The root's Control
@@ -265,6 +270,9 @@ struct Driver::State {
     void rejected(Operation operation, uint64_t attempt, std::exception_ptr error,
                   const std::shared_ptr<execution::Scheduler>& action)
     {
+        // Leaf accounting also serves synchronous dispatch rejection. Forward
+        // shutdown progress belongs to the already admitted outcome callback,
+        // never to this path back into the Native dispatcher.
         if (operation == Operation::Initialize) initialization_pending = false;
         if (operation == Operation::Initialize && NotStarted(error)) {
             if (stopping->load()) flow.stop();
@@ -274,7 +282,6 @@ struct Driver::State {
                 initialization->cancelled = cancelled;
                 notify(Event::Initialized, {}, {}, flow.phase() != Phase::Fatal);
             }
-            maybeShutdown();
             return;
         }
         const auto text = execution::RetainValues<QString>(action, [] {
@@ -286,8 +293,10 @@ struct Driver::State {
     {
         if (flow.attempt() || terminal()) return;
         const auto attempt = flow.start();
-        if (attempt) rejected(Operation::Initialize, *attempt, error, action);
-        else {
+        if (attempt) {
+            rejected(Operation::Initialize, *attempt, error, action);
+            maybeShutdown();
+        } else {
             initialization = NativeInitialization{};
             initialization->cancelled = stopping->load();
             notify(Event::Initialized);

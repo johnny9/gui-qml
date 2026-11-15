@@ -236,6 +236,25 @@ private Q_SLOTS:
         QCOMPARE(fixture.reads, 2);
     }
 
+    void rejectedCoalescedReadIsPublishedWithoutAdmissionRescue()
+    {
+        Fixture fixture;
+        fixture.model->setAvailable(true);
+        QVERIFY(fixture.execution.step(execution::Lane::Domain));
+        const auto held = fixture.execution.dispatchNext(execution::Lane::Core); QVERIFY(held);
+        fixture.model->setAvailable(true);
+        while (fixture.execution.step(execution::Lane::Domain)) {}
+        fixture.execution.rejectLane(execution::Lane::Core);
+        QVERIFY(fixture.execution.finishWork(*held)); fixture.settle();
+        QVERIFY(!fixture.model->known()); QVERIFY(!fixture.model->ready());
+        QVERIFY(!fixture.model->pending()); QVERIFY(!fixture.model->error().isEmpty());
+        QCOMPARE(fixture.writes, 0); QCOMPARE(fixture.reads, 0);
+        QCOMPARE(fixture.execution.coreSubmissions(), size_t{2});
+        fixture.ready();
+        QVERIFY(fixture.model->known()); QVERIFY(fixture.model->ready()); QVERIFY(fixture.model->error().isEmpty());
+        QCOMPARE(fixture.reads, 1); QCOMPARE(fixture.execution.coreSubmissions(), size_t{3});
+    }
+
     void guiBurstCoalescesWithoutEffectOrGetterLoop()
     {
         Fixture fixture; fixture.ready();
@@ -352,6 +371,25 @@ private Q_SLOTS:
         QVERIFY(fixture.model->known()); QVERIFY(!fixture.model->observedActive());
         QVERIFY(fixture.model->requestActive(true));
         fixture.settle();
+        QCOMPARE(fixture.writes, 2); QVERIFY(fixture.active);
+    }
+
+    void rejectedRecoveryReadDoesNotRewriteUncertainMutation()
+    {
+        Fixture fixture; fixture.ready(); fixture.throw_write = true;
+        QVERIFY(fixture.model->requestActive(false));
+        QVERIFY(fixture.execution.step(execution::Lane::Domain));
+        QVERIFY(fixture.execution.step(execution::Lane::Core));
+        fixture.execution.rejectLane(execution::Lane::Core);
+        fixture.settle();
+        QCOMPARE(fixture.model->outcome(), NetworkModel::Uncertain); QVERIFY(!fixture.model->pending());
+        QVERIFY(fixture.model->effect().attempted); QCOMPARE(fixture.model->effect().status, EffectStatus::Uncertain);
+        QCOMPARE(fixture.writes, 1); QCOMPARE(fixture.reads, 1);
+        QCOMPARE(fixture.execution.coreSubmissions(), size_t{3});
+        fixture.model->observe(fixture.active, fixture.generation); fixture.settle();
+        QCOMPARE(fixture.model->outcome(), NetworkModel::Uncertain);
+        QCOMPARE(fixture.writes, 1);
+        QVERIFY(fixture.model->requestActive(true)); fixture.settle();
         QCOMPARE(fixture.writes, 2); QVERIFY(fixture.active);
     }
 

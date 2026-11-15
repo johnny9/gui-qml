@@ -106,8 +106,10 @@ struct NodeModel::Notifications : std::enable_shared_from_this<Notifications> {
             if(dialogs.size()>=32){runtime_overflow=true;schedule();return false;}
             dialogs.push_back(std::move(diagnostic));schedule();return false;
         }
+        const bool complete=bool(details);
+        summary=summary.left(static_cast<qsizetype>(runtimeprompt::MAX_SUMMARY_CHARACTERS));
         const auto request=std::make_shared<const runtimeprompt::Request>(runtime?runtimeprompt::Origin::Runtime:runtimeprompt::Origin::Startup,
-            style,question,std::move(summary),std::move(details));
+            style,question,std::move(summary),std::move(details),complete);
         const bool blocking=!gui&&(question||(style&CClientUIInterface::MODAL));
         std::shared_ptr<runtimeprompt::Continuation> continuation;
         if(!prompts||!prompts->enqueue(request,blocking,continuation)){
@@ -1202,8 +1204,10 @@ bool NodeModel::showRuntimeDialogOnGuiThread(const QString& message,unsigned int
     auto details=startupdiagnostics::RetainText(m_query_scheduler,m_dialog_text_budget,message);
     QString summary=message.left(16'384);
     if(!details){if(m_services.diagnostic_loss)*m_services.diagnostic_loss=true;summary+=QStringLiteral(" ")+tr("[complete message unavailable: diagnostic capacity exhausted]");}
+    const bool complete=bool(details);
+    summary=summary.left(static_cast<qsizetype>(runtimeprompt::MAX_SUMMARY_CHARACTERS));
     const auto request=std::make_shared<const runtimeprompt::Request>(startup_summary?runtimeprompt::Origin::StartupSummary:
-        m_runtime_dialogs_enabled?runtimeprompt::Origin::Runtime:runtimeprompt::Origin::Startup,style,question,std::move(summary),std::move(details));
+        m_runtime_dialogs_enabled?runtimeprompt::Origin::Runtime:runtimeprompt::Origin::Startup,style,question,std::move(summary),std::move(details),complete);
     std::shared_ptr<runtimeprompt::Continuation> unused;
     if(!m_prompt_service->enqueue(request,false,unused)){
         m_status_error=tr("A node dialog could not be shown because the dialog queue is full.");Q_EMIT observationErrorChanged();

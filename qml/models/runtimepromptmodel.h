@@ -17,6 +17,7 @@ class RuntimePromptModel final : public QObject {
     Q_PROPERTY(QString icon READ icon CONSTANT)
     Q_PROPERTY(unsigned int buttons READ buttons CONSTANT)
     Q_PROPERTY(bool question READ question CONSTANT)
+    Q_PROPERTY(bool diagnosticsComplete READ diagnosticsComplete CONSTANT)
     Q_PROPERTY(QAbstractItemModel* diagnostics READ diagnostics CONSTANT)
 public:
     RuntimePromptModel(std::shared_ptr<const runtimeprompt::Prompt> prompt,
@@ -27,6 +28,7 @@ public:
     QString icon()const;
     unsigned int buttons()const{return m_descriptor.buttons;}
     bool question()const;
+    bool diagnosticsComplete()const{return m_descriptor.diagnostics_complete;}
     QAbstractItemModel* diagnostics()const{return m_diagnostics;}
     Q_INVOKABLE bool presented();
     Q_INVOKABLE bool answer(unsigned int button);

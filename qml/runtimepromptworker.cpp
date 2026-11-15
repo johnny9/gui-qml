@@ -14,17 +14,12 @@
 
 namespace runtimeprompt {
 Continuation::Continuation(std::shared_ptr<const Request> request, std::function<void()> delivered)
-    : m_request(std::move(request)), m_delivered(std::move(delivered)) {}
-Continuation::~Continuation()
+    :m_completion{std::move(delivered)},m_request(std::move(request)){}
+Continuation::~Continuation(){if(m_request)m_request->answer->cancel();}
+Answer Continuation::wait(){return m_request->answer->wait();}
+void Continuation::rejected()
 {
-    m_request->answer->cancel();
-    if (m_delivered) m_delivered();
-}
-Answer Continuation::wait()
-{
-    const auto result = m_request->answer->wait();
-    if (const auto delivered = std::exchange(m_delivered, {})) delivered();
-    return result;
+    m_request->answer->cancel();m_request.reset();m_completion.release();
 }
 struct Service::Publication {
     std::mutex mutex;
