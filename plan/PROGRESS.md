@@ -1,5 +1,13 @@
 # Implementation progress
 
+Current correctness follow-up (2026-11-15): the R24 contributed-signature audit
+reproduced the same unfinished-signature installation gap in local SignOnly and
+standalone PSBT Sign. The R21/R22 signing-result components are reopened while
+shared typed validity/quarantine handling is propagated. Their previously
+qualified export/admission behavior retains its evidence; whole-order completion
+must not be inferred from those earlier receipts. See
+[the follow-up record](SIGNATURE_CONTRIBUTION_FOLLOWUP_20261115.md).
+
 The [approved cadence](QT6_VALIDATION_CADENCE_20261114.md) separates implementation
 progress from final qualification. The copied CSV registers in `tracking/`
 retain their historical provenance; this file records later branch-local
