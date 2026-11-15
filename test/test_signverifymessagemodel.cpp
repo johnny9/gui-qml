@@ -341,7 +341,10 @@ private Q_SLOTS:
         QCOMPARE(f.model->signingResult()->error, actual->error); QCOMPARE(f.wallet->signs, 0); QVERIFY(f.wallet->locked);
         if (prompt) QVERIFY(prompt->submit("stale secret").isEmpty());
         QVERIFY(f.model->requestSignMessage(Address(), "statement")); f.finish();
-        QVERIFY(f.model->signingPrompt()); QVERIFY(f.model->signingPrompt()->error().isEmpty());
+        QVERIFY(f.model->signingPrompt());
+        QCOMPARE(f.model->error().code, MessageSigningError::NeedsUnlock);
+        QCOMPARE(f.model->signingPrompt()->error(), f.model->signingError());
+        QVERIFY(!f.model->signingPrompt()->error().contains("incorrect", Qt::CaseInsensitive));
         QCOMPARE(f.wallet->unlocks, wrong_password ? 1 : 0);
     }
     void cancelledReauthorizationPreservesTheOriginalValidSignature()
@@ -385,6 +388,29 @@ private Q_SLOTS:
         QCOMPARE(f.model->signingMessage(), QStringLiteral("original")); QVERIFY(f.model->signingBusy());
         f.finish(); QVERIFY(f.model->signingSucceeded()); QCOMPARE(f.wallet->last_message, QStringLiteral("original"));
         QCOMPARE(f.wallet->signs, 1);
+    }
+    void narrowCommandsRejectDuplicateAndClosedIntents()
+    {
+        Fixture f; f.setInput("original"); QSignalSpy rejected{f.model.get(), &SignVerifyMessageModel::commandRejected};
+        QVERIFY(!f.model->sign().isEmpty()); const auto owner = f.model->signingOperation();
+        QVERIFY(f.model->sign().isEmpty()); QCOMPARE(rejected.size(), 1); QCOMPARE(f.wallet->signs, 0);
+        f.model->cancel(); QVERIFY(f.model->signingBusy()); f.finish();
+        QCOMPARE(f.wallet->signs, 1); QVERIFY(owner->result()->value); QCOMPARE(owner->result()->value->signature, QStringLiteral("owned-signature"));
+        QVERIFY(f.model->signature().isEmpty()); QVERIFY(!f.model->signingBusy());
+        QVERIFY(f.model->verify(QString(32769, 'x')).isEmpty()); QCOMPARE(rejected.size(), 2); QVERIFY(!f.model->verificationOperation());
+        f.model->closeAdmission(); QVERIFY(f.model->sign().isEmpty()); QVERIFY(f.model->verify("signature").isEmpty());
+        QCOMPARE(rejected.size(), 4); QCOMPARE(f.wallet->signs, 1);
+    }
+    void cancelledVerificationDrainsItsOriginalCpuReceipt()
+    {
+        Fixture f; CKey key; key.MakeNewKey(true); const QString address = QString::fromStdString(EncodeDestination(PKHash{key.GetPubKey()}));
+        std::string signature; QVERIFY(MessageSign(key, "original verification", signature));
+        f.model->setVerificationAddress(address); f.model->setVerificationMessage("original verification"); f.finish();
+        QVERIFY(!f.model->verify(QString::fromStdString(signature)).isEmpty()); const auto owner = f.model->verificationOperation(); QVERIFY(owner);
+        f.model->cancel(); QVERIFY(f.model->verificationBusy()); QCOMPARE(f.model->verificationState(), SignVerifyMessageModel::VerificationDiscarding);
+        f.finish(); QVERIFY(owner->result()->value); QVERIFY(owner->result()->value->valid);
+        QCOMPARE(f.model->verificationState(), SignVerifyMessageModel::VerificationIdle); QVERIFY(!f.model->verification().valid);
+        QVERIFY(!f.model->verificationBusy()); QCOMPARE(f.wallet->signs, 0); QCOMPARE(f.wallet->unlocks, 0);
     }
     void realThreadSigningNeverCallsCoreOnGui()
     {

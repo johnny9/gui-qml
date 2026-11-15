@@ -108,7 +108,8 @@ struct TextEditSessionModel::State : std::enable_shared_from_this<State> {
                 if (self->editor.phase() == persistentedit::Phase::Loading || value.value != self->editor.base()[0])
                     self->editor.observe({std::move(value.value)}, ++self->observation);
                 self->validation_valid = self->evaluate();
-                if (!self->error_from_save && self->editor.phase() != persistentedit::Phase::Uncertain) self->error = {};
+                if (!self->error_from_save && self->editor.phase() != persistentedit::Phase::Uncertain)
+                    self->error = self->validation_valid ? TextEditError{} : TextEditError{TextEditError::Invalid, tr("The text is too long or is not valid.")};
                 const auto queued = std::exchange(self->pending_input, {});
                 if (const auto save = std::exchange(self->pending_save, {})) {
                     self->edit(save->value, save->input); self->save(save->writer, save->scope, save->request);
@@ -149,7 +150,9 @@ struct TextEditSessionModel::State : std::enable_shared_from_this<State> {
             pending_save = PendingSave{pending_input->first, pending_input->second, std::move(writer), std::move(action), request}; return;
         }
         seen_request = std::max(seen_request, request);
-        if (reading) { error = {TextEditError::Refused, tr("The current value is still being checked.")}; reject(error); publish(); return; }
+        // A loaded editor can save its captured draft while a refresh is in
+        // flight: the writer checks the original base against actual storage.
+        // The read token below fences that older read from the save outcome.
         const auto attempt = editor.check();
         if (!attempt) {
             if (editor.conflicts().any()) { error = {TextEditError::Changed, tr("Resolve the changed value before saving.")}; reject(error); }
@@ -381,7 +384,10 @@ void TextEditSessionModel::answerClose(const QString& token, CloseChoice choice)
     if (!okay || choice < Save || choice > KeepEditing || refuseBusy(QStringLiteral("answerClose"))) return;
     if (choice == Save) { saveCommand(number); return; }
     submit([number, choice](State& state) {
-        state.editor.answerClose(number, static_cast<persistentedit::CloseChoice>(choice)); state.publish();
+        if (state.editor.answerClose(number, static_cast<persistentedit::CloseChoice>(choice)) && choice == Discard) {
+            state.error = {}; state.error_from_save = false; state.validation_valid = state.evaluate();
+        }
+        state.publish();
     }, QStringLiteral("answerClose"));
 }
 void TextEditSessionModel::resolveConflict(const QString& field, ConflictChoice choice)

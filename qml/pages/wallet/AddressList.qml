@@ -297,6 +297,7 @@ SettingsPage {
             delegate: AddressRow {
                 width: ListView.view.width
                 addressModel: root.addressModel
+                commitOnFocusLoss: root.visible && (!root.navigationStack || root.StackView.status === StackView.Active)
                 showDivider: index < addressList.count - 1
                 onDetailsRequested: (address, label, amount, hasAmount, category, scriptType, used) => {
                     root.selectedAddress = address;

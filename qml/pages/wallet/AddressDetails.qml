@@ -33,7 +33,6 @@ ColumnLayout {
     function resetNoteEditor() {
         if (!root.editor) {
             noteRow.text = root.label
-            if (noteRow.field) noteRow.field.text = root.label
         }
         root.noteErrorText = ""
     }
@@ -41,7 +40,6 @@ ColumnLayout {
     onLabelChanged: {
         if (!root.editor && noteRow.field && !noteRow.field.activeFocus) {
             noteRow.text = root.label
-            noteRow.field.text = root.label
         }
     }
 
@@ -185,31 +183,34 @@ ColumnLayout {
         contentItem: GridLayout {
             columns: noteCloseDialog.width < 480 ? 1 : 3
             NeutralButton {
+                id: keepEditingButton
                 objectName: "addressNoteKeepEditingButton"
                 Layout.fillWidth: true
                 enabled: root.editor !== null && !root.editor.busy
                 property TextEditClosePrompt pressedPrompt: null
-                onPressed: pressedPrompt = root.editor ? root.editor.closePrompt : null
+                onPressed: keepEditingButton.pressedPrompt = root.editor ? root.editor.closePrompt : null
                 text: qsTr("Keep editing")
-                onClicked: if (pressedPrompt) pressedPrompt.answer(TextEditClosePrompt.KeepEditing)
+                onClicked: if (keepEditingButton.pressedPrompt) keepEditingButton.pressedPrompt.answer(TextEditClosePrompt.KeepEditing)
             }
             NeutralButton {
+                id: discardAndCloseButton
                 objectName: "addressNoteDiscardAndCloseButton"
                 Layout.fillWidth: true
                 enabled: root.editor !== null && !root.editor.busy
                 property TextEditClosePrompt pressedPrompt: null
-                onPressed: pressedPrompt = root.editor ? root.editor.closePrompt : null
+                onPressed: discardAndCloseButton.pressedPrompt = root.editor ? root.editor.closePrompt : null
                 text: qsTr("Discard")
-                onClicked: if (pressedPrompt) pressedPrompt.answer(TextEditClosePrompt.Discard)
+                onClicked: if (discardAndCloseButton.pressedPrompt) discardAndCloseButton.pressedPrompt.answer(TextEditClosePrompt.Discard)
             }
             ContinueButton {
+                id: saveAndCloseButton
                 objectName: "addressNoteSaveAndCloseButton"
                 Layout.fillWidth: true
                 property TextEditClosePrompt pressedPrompt: null
-                onPressed: pressedPrompt = root.editor ? root.editor.closePrompt : null
+                onPressed: saveAndCloseButton.pressedPrompt = root.editor ? root.editor.closePrompt : null
                 text: qsTr("Save")
                 enabled: root.editor !== null && root.editor.valid && !root.editor.conflict && !root.editor.busy
-                onClicked: if (pressedPrompt) pressedPrompt.answer(TextEditClosePrompt.Save)
+                onClicked: if (saveAndCloseButton.pressedPrompt) saveAndCloseButton.pressedPrompt.answer(TextEditClosePrompt.Save)
             }
         }
     }

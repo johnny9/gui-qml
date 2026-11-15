@@ -91,6 +91,26 @@ private Q_SLOTS:
         f.drain(); QCOMPARE(f.persisted, QString{"first"}); QCOMPARE(f.editor->text()->text(), QString{"later"});
         QCOMPARE(f.writes, 1); QVERIFY(f.editor->dirty());
     }
+    void refreshingCannotCancelOrRetargetAnOriginalSave_data()
+    {
+        QTest::addColumn<bool>("external_change");
+        QTest::newRow("unchanged-storage") << false; QTest::newRow("changed-storage") << true;
+    }
+    void refreshingCannotCancelOrRetargetAnOriginalSave()
+    {
+        QFETCH(bool, external_change); Fixture f; f.drain();
+        f.editor->text()->edit("accepted"); f.domain();
+        f.editor->refresh(); f.domain(); // Hold the actual Core read.
+        QCOMPARE(f.reads, 1); f.editor->save(); f.domain(); QVERIFY(f.editor->busy());
+        f.editor->text()->edit("successor"); f.domain();
+        if (external_change) f.persisted = "external";
+        f.drain(); QCOMPARE(f.writes, 1); QCOMPARE(f.reads, 3);
+        QCOMPARE(f.editor->text()->text(), QStringLiteral("successor")); QVERIFY(f.editor->dirty());
+        QCOMPARE(f.persisted, external_change ? QStringLiteral("external") : QStringLiteral("accepted"));
+        QCOMPARE(f.editor->saveResult().persisted, !external_change);
+        QCOMPARE(f.editor->conflict(), external_change);
+        QCOMPARE(f.editor->saveResult().outcome, external_change ? TextEditSaveResult::Rejected : TextEditSaveResult::Saved);
+    }
     void failedSaveKeepsTheExactDraftAndItsScopedError()
     {
         Fixture f; f.drain(); f.fail = true;

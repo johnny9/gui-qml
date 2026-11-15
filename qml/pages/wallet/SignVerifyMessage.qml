@@ -22,6 +22,9 @@ SettingsPage {
     readonly property bool verifyResultSuccess: signVerifyModel ? signVerifyModel.verificationValid : false
     property int initialTab: SignVerifyMessage.SignTab
     property int selectedMode: root.initialTab
+    onVisibleChanged: if (!root.visible && signPassphrasePopup && signPassphrasePopup.context) signPassphrasePopup.context.retire()
+    onSignVerifyModelChanged: if (signPassphrasePopup && signPassphrasePopup.context
+            && (!root.signVerifyModel || root.signVerifyModel.signingPrompt !== signPassphrasePopup.context)) signPassphrasePopup.context.retire()
 
     enum Tabs { SignTab, VerifyTab }
     readonly property bool signingComplete: !!root.signVerifyModel
@@ -60,7 +63,7 @@ SettingsPage {
     Binding { target: root.signVerifyModel; property: "signingMessage"; value: signMessageText.exactText; when: root.signVerifyModel !== null }
     Binding { target: root.signVerifyModel; property: "verificationAddress"; value: verifyAddressModel.address; when: root.signVerifyModel !== null }
     Binding { target: root.signVerifyModel; property: "verificationMessage"; value: verifyMessageText.exactText; when: root.signVerifyModel !== null }
-    Binding { target: root.signVerifyModel; property: "verificationSignature"; value: verifySignature.text; when: root.signVerifyModel !== null }
+    Binding { target: root.signVerifyModel; property: "verificationSignature"; value: verifySignature.exactText; when: root.signVerifyModel !== null }
 
     function submitSign(passphrase) {
         if (!root.signVerifyModel || root.signVerifyModel.signingBusy || !signMessageText.exactTextValid
@@ -71,7 +74,8 @@ SettingsPage {
 
     function submitVerify() {
         if (root.signVerifyModel && !root.signVerifyModel.verificationBusy
-                && verifyMessageText.exactTextValid && !verifyAddressModel.normalizationPending && verifyAddressModel.normalizationError.length === 0)
+                && verifyMessageText.exactTextValid && verifySignature.exactTextValid
+                && !verifyAddressModel.normalizationPending && verifyAddressModel.normalizationError.length === 0)
             root.signVerifyModel.verify(verifySignature.exactText)
     }
 
@@ -269,7 +273,8 @@ SettingsPage {
                         text: qsTr("Verify message")
                         enabled: !!root.signVerifyModel
                             && root.signVerifyModel.canVerify
-                            && verifyMessageText.exactTextValid && !verifyAddressModel.normalizationPending && verifyAddressModel.normalizationError.length === 0
+                            && verifyMessageText.exactTextValid && verifySignature.exactTextValid
+                            && !verifyAddressModel.normalizationPending && verifyAddressModel.normalizationError.length === 0
                             && verifySignature.text.length > 0
                         onClicked: root.submitVerify()
                     }
@@ -315,9 +320,10 @@ SettingsPage {
         readonly property bool contextValid: context !== null && context.pending && root.visible
             && root.signVerifyModel !== null && root.signVerifyModel.signingPrompt === context
         onAboutToShow: context = root.signVerifyModel ? root.signVerifyModel.signingPrompt : null
-        onContextValidChanged: if (!contextValid) {
-            if (context) context.retire()
-            close()
+        Timer {
+            interval: 0
+            running: signPassphrasePopup.visible && !signPassphrasePopup.contextValid
+            onTriggered: if (!signPassphrasePopup.contextValid) signPassphrasePopup.close()
         }
         onClosed: {
             if (context) context.cancel()

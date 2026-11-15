@@ -2006,10 +2006,12 @@ TextEditSessionModel* WalletQmlModel::editAddressLabel(const QString& address, Q
             std::string label; wallet::AddressPurpose purpose;
             if (!IsValidDestination(destination) || !wallet.getAddress(destination, &label, &purpose) || purpose != wallet::AddressPurpose::RECEIVE)
                 result.error = {TextEditError::Invalid, tr("This receiving address is no longer available.")};
-            else if (label.size() > 32768) result.error = {TextEditError::Invalid, tr("The saved note is too long to edit here.")};
+            // UTF8 bytes and UTF16 editor units have different bounds. A
+            // supported16384-unit note must survive its own readback.
+            else if (label.size() > 65536) result.error = {TextEditError::Invalid, tr("The saved note is too long to edit here.")};
             else result.value = QString::fromStdString(label);
             return result;
-        }, done, [done](std::exception_ptr) { done({{}, {TextEditError::Refused, tr("The address note could not be read.")}}); });
+        }, done, [done](std::exception_ptr) { done({{}, {TextEditError::Refused, tr("The address note could not be read.")}}); }, execution::WorkClass::Observation, 262144);
     };
     ports.admitWrite = [weak_store = std::weak_ptr<walletrequests::Store>{m_request_store}, weak_opening = std::weak_ptr<walletopening::Session>{m_opening}, address]() -> TextEditSessionModel::Writer {
         const auto store = weak_store.lock(); const auto opening = weak_opening.lock();

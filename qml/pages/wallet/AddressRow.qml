@@ -29,6 +29,7 @@ AbstractButton {
     property AddressListModel addressModel: null
     property TextEditSessionModel editor: addressModel ? addressModel.labelEditor(address) : null
     property string editorError: ""
+    property bool commitOnFocusLoss: true
 
     signal noteDraftEdited(string address, string label)
     signal noteDraftDiscarded(string address)
@@ -50,9 +51,6 @@ AbstractButton {
     Accessible.role: Accessible.ListItem
 
     onClicked: root.openDetails()
-    onPendingLabelChanged: {
-        if (!root.editor && !noteField.activeFocus) noteField.text = root.pendingLabel
-    }
 
     HoverHandler {
         cursorShape: Qt.PointingHandCursor
@@ -88,7 +86,7 @@ AbstractButton {
                 property string submittedText: root.label
                 width: Math.min(350, parent.width)
                 implicitHeight: 30
-                text: root.editor && root.editor.phase !== TextEditSessionModel.Loading ? root.editor.text.text : root.pendingLabel
+                text: root.editor && root.editor.available && root.editor.phase !== TextEditSessionModel.Loading ? root.editor.text.text : root.pendingLabel
                 placeholderText: root.canEditLabel
                     //: Placeholder shown when an address has no label yet.
                     ? qsTr("Add label...")
@@ -137,6 +135,7 @@ AbstractButton {
                 }
                 onAccepted: noteField.focus = false
                 onEditingFinished: {
+                    if (!root.visible || !root.commitOnFocusLoss) return
                     if (root.editor) { root.editor.save(); return }
                     if (noteField.text !== root.label
                             && noteField.text !== noteField.submittedText) {
@@ -160,7 +159,7 @@ AbstractButton {
             anchors.leftMargin: 16
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 4
-            text: root.editor ? root.editor.error.message : root.editorError
+            text: root.editor && root.editor.available ? root.editor.error.message : root.editorError
             visible: text.length > 0
             color: Theme.color.red
             font: Theme.text.caption.font

@@ -701,6 +701,39 @@ TestCase {
         compare(mockSignVerifyModel.lastSigningMessage, data.value)
     }
 
+    function test_exact_native_text_budget_blocks_an_effect_until_corrected_data() {
+        return [{tag: "signing-message", verifyMode: false},
+                {tag: "verification-signature", verifyMode: true}]
+    }
+    function test_exact_native_text_budget_blocks_an_effect_until_corrected(data) {
+        mockSignVerifyModel.manualCompletion = true
+        const page = createControlledPage()
+        if (data.verifyMode) fillVerification(page, "test-signature")
+        else fillSigning(page)
+        const field = findChild(page, data.verifyMode ? "verifyMessageSignatureField" : "signMessageMessageField")
+        const entry = findChild(page, data.verifyMode ? "verifyMessageSignatureEntry" : "signMessageMessageEntry")
+        verify(testSetup.replaceText(field, "x".repeat(32769)))
+        tryCompare(entry, "exactTextValid", false)
+        compare(findChild(page, data.verifyMode ? "verifyMessageButton" : "signMessageButton").enabled, false)
+        if (data.verifyMode) page.submitVerify()
+        else page.submitSign()
+        compare(mockSignVerifyModel.signCalls, 0)
+        compare(mockSignVerifyModel.verifyCalls, 0)
+        verify(testSetup.replaceText(field, data.verifyMode ? "test-signature" : "Corrected message"))
+        tryCompare(entry, "exactTextValid", true)
+        clickVisible(page, data.verifyMode ? "verifyMessageButton" : "signMessageButton")
+        compare(mockSignVerifyModel.signCalls, data.verifyMode ? 0 : 1)
+        compare(mockSignVerifyModel.verifyCalls, data.verifyMode ? 1 : 0)
+        if (data.verifyMode) {
+            verify(mockSignVerifyModel.completeVerificationForTest())
+            compare(page.verifyResultSuccess, true)
+        } else {
+            compare(mockSignVerifyModel.lastSigningMessage, "Corrected message")
+            verify(mockSignVerifyModel.completeSigningForTest("success", ""))
+            compare(page.signingComplete, true)
+        }
+    }
+
     function test_held_verification_discards_edited_input_outcome() {
         mockSignVerifyModel.manualCompletion = true
         const page = createControlledPage()

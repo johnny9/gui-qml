@@ -214,6 +214,8 @@ class AddressListModelTests : public QObject
 private Q_SLOTS:
     void initTestCase();
     void labelEditorInventoryKeepsDirtyOriginalsAndDrainsBeforeGuiDestruction();
+    void labelEditorRoundTripsItsSupportedUnicodeBoundary_data();
+    void labelEditorRoundTripsItsSupportedUnicodeBoundary();
     void localeFormattingUsesTheWalletDisplayConvention_data();
     void localeFormattingUsesTheWalletDisplayConvention();
     void receiveAddressesHideUsedUntilEnabled();
@@ -256,7 +258,7 @@ void AddressListModelTests::receiveAddressesHideUsedUntilEnabled()
 
     QTRY_COMPARE(model->rowCount(), 1);
     QCOMPARE(model->data(model->index(0), AddressListModel::LabelRole).toString(), QStringLiteral("unused"));
-    QTRY_COMPARE(model->data(model->index(0), AddressListModel::DisplayAmountRole).toString(), QStringLiteral("₿ 0"));
+    QTRY_COMPARE(model->data(model->index(0), AddressListModel::DisplayAmountRole).toString(), QStringLiteral("0.00000000 BTC"));
     QCOMPARE(model->data(model->index(0), AddressListModel::HasAmountRole).toBool(), false);
 
     model->setShowUsed(true);
@@ -406,6 +408,38 @@ void AddressListModelTests::labelEditorInventoryKeepsDirtyOriginalsAndDrainsBefo
     QTRY_VERIFY(wallet_model.shutdownComplete() && backend->isDrained());
     // The wallet facade and its remaining editor QObjects still exist here.
     QVERIFY(editors[1]); QCOMPARE(editors[1]->phase(), TextEditSessionModel::Closed);
+}
+
+void AddressListModelTests::labelEditorRoundTripsItsSupportedUnicodeBoundary_data()
+{
+    QTest::addColumn<QString>("note");
+    QTest::newRow("ascii") << QString(16384, QChar{'x'});
+    QTest::newRow("three-byte-bmp") << QString(16384, QChar{0x20ac});
+    QTest::newRow("surrogate-pairs") << QString::fromUcs4(U"\U0001f680").repeated(8192);
+}
+void AddressListModelTests::labelEditorRoundTripsItsSupportedUnicodeBoundary()
+{
+    QFETCH(QString, note); QCOMPARE(note.size(), 16384);
+    auto wallet = std::make_unique<TestAddressWallet>(); auto* native = wallet.get();
+    const auto destination = TestDestination(1);
+    wallet->m_addresses.emplace_back(destination, true, wallet::AddressPurpose::RECEIVE, "original");
+    WalletQmlModel model{std::move(wallet)}; const auto backend = model.backendExecutor();
+    const auto cleanup = qScopeGuard([&] {
+        model.beginShutdown();
+        if (!QTest::qWaitFor([&] { return model.shutdownComplete() && backend->isDrained(); }, 5000))
+            QTest::qFail("Unicode note editor did not drain", __FILE__, __LINE__);
+    });
+    auto* addresses = model.addressListModel(); QTRY_COMPARE(addresses->count(), 1);
+    auto* editor = addresses->editLabel(addresses->addressAt(0)); QVERIFY(editor);
+    QTRY_COMPARE(editor->phase(), TextEditSessionModel::Editing);
+    editor->text()->edit(note); editor->save(); QTRY_VERIFY(editor->saveResult().present);
+    QVERIFY2(editor->saveResult().persisted, qPrintable(editor->saveResult().error.message));
+    QTRY_VERIFY(!editor->busy() && editor->valid() && editor->error().code == TextEditError::None);
+    QCOMPARE(editor->text()->text(), note); QCOMPARE(editor->committedText(), note);
+    QCOMPARE(native->label_writes.load(), 1);
+    { std::lock_guard lock{native->m_mutex}; QCOMPARE(QString::fromStdString(native->m_labels.at(destination)), note); }
+    QSignalSpy refreshed{editor, &TextEditSessionModel::changed}; editor->refresh(); QTRY_VERIFY(!refreshed.isEmpty());
+    QVERIFY(editor->valid()); QCOMPARE(editor->text()->text(), note);
 }
 
 void AddressListModelTests::localeFormattingUsesTheWalletDisplayConvention_data()
@@ -696,7 +730,7 @@ void AddressListModelTests::labelRefreshPreservesInventoryAndOriginalInterest()
     } else {
         QCOMPARE(f.model->count(), boundary == 6 ? 1 : 97);
         QCOMPARE(original_target.data(AddressListModel::HasAmountRole).toBool(), true);
-        QCOMPARE(original_target.data(AddressListModel::DisplayAmountRole).toString(), QStringLiteral("₿ 0.0004"));
+        QCOMPARE(original_target.data(AddressListModel::DisplayAmountRole).toString(), QStringLiteral("0.00040000 BTC"));
         if (boundary == 6) QCOMPARE(original_target.data(AddressListModel::CategoryRole).toString(), QStringLiteral("change"));
         else QVERIFY(find(used_address).data(AddressListModel::UsedRole).toBool());
         QCOMPARE(f.wallet->history_reads->load(), history_before + 1);

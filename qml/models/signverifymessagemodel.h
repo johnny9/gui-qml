@@ -73,8 +73,8 @@ public:
     bool canVerify() const { return !m_closed && !m_verify_active && !m_address_pending && m_verify_address_valid; }
     MessageSigningError error() const;
     MessageVerificationSnapshot verification() const;
-    Q_INVOKABLE QString sign() { const auto id = requestSignMessage(m_address_input_text.text(), m_message_input_text.text()); return id ? QString::number(id) : QString{}; }
-    Q_INVOKABLE QString verify(const QString& signature) { const auto id = requestVerifyMessage(m_verify_address_input_text.text(), m_verify_message_input_text.text(), signature); return id ? QString::number(id) : QString{}; }
+    Q_INVOKABLE QString sign();
+    Q_INVOKABLE QString verify(const QString& signature);
     Q_INVOKABLE void cancel();
     QString signature() const { return m_signature; }
     SigningState signingState() const { return m_signing_state; }
@@ -101,6 +101,7 @@ public:
     bool addressValidationPending() const { return m_address_pending; }
     std::optional<walletmessage::SignResult> signingResult() const;
     std::shared_ptr<const execution::OwnedCommand<walletmessage::SignResult>> signingOperation() const { return m_sign_operation; }
+    std::shared_ptr<const execution::OwnedCommand<walletmessage::VerifyResult>> verificationOperation() const { return m_verify_operation; }
 
     Q_INVOKABLE quint64 requestSignMessage(const QString& address, const QString& message);
     Q_INVOKABLE quint64 requestSignMessageWithPassphrase(const QString& address, const QString& message, const QString& passphrase);

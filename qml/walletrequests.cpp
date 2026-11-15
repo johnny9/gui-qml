@@ -303,16 +303,19 @@ void Store::planMutation(Queued queued)
         const auto admitted = m_opening->perform(original->action, [address = original->command.draft.address](interfaces::Wallet& wallet) -> std::optional<QString> {
             const auto destination = DecodeDestination(address.toStdString());
             std::string label;
-            if (!IsValidDestination(destination) || !wallet.getAddress(destination, &label, nullptr) || label.size() > 32768) return {};
-            return QString::fromStdString(label);
+            if (!IsValidDestination(destination) || !wallet.getAddress(destination, &label, nullptr) || label.size() > 65536) return {};
+            auto note = QString::fromStdString(label);
+            if (note.size() > 32768) return {};
+            return note;
         }, [self, original](std::optional<QString> note) {
             if (!note) { self->fail(original->operation, Error::Invalid); return; }
             original->command.draft.note = *note;
+            if (Bytes(original->command) > MAX_COMMAND_BYTES) { self->fail(original->operation, Error::Rejected); return; }
             const auto& address = original->command.draft.address;
             const auto previous = self->m_labels.find(address);
             if (previous == self->m_labels.end() || previous->second != *note) { self->m_labels[address] = *note; ++self->m_revision; }
             self->planMutation(std::move(*original));
-        }, [self, original](std::exception_ptr) { self->fail(original->operation, Error::Persistence); });
+        }, [self, original](std::exception_ptr) { self->fail(original->operation, Error::Persistence); }, 262144);
         if (!admitted) fail(original->operation, Error::Rejected);
         return;
     }

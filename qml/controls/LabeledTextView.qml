@@ -60,6 +60,6 @@ LabeledField {
             border.color: root.focusBorderColor
         }
 
-        onTextChanged: root.textEdited(text)
+        onTextChanged: if (length <= 32768) root.textEdited(text)
     }
 }

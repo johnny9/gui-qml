@@ -131,7 +131,28 @@ void SignVerifyMessageModel::cancel()
     if (m_closed) return;
     ++m_sign_revision; m_signing_error.clear(); m_signing_needs_unlock = false; m_error = {};
     m_signing_state = m_sign_active ? SigningDiscarding : m_signature.isEmpty() ? SigningIdle : SigningSucceeded;
-    notifySigning();
+    invalidateVerification();
+    if (notifySigning()) notifyVerification();
+}
+QString SignVerifyMessageModel::sign()
+{
+    const QPointer<SignVerifyMessageModel> observer{this};
+    const auto id = requestSignMessage(m_address_input_text.text(), m_message_input_text.text());
+    if (id) return QString::number(id);
+    if (observer) Q_EMIT commandRejected(QUuid::createUuid().toString(QUuid::WithoutBraces),
+        (MessageSigningError{m_closed ? MessageSigningError::Closed : MessageSigningError::Refused,
+            m_closed ? tr("This wallet opening has closed.") : tr("The signing request could not be admitted.")}));
+    return {};
+}
+QString SignVerifyMessageModel::verify(const QString& signature)
+{
+    const QPointer<SignVerifyMessageModel> observer{this};
+    const auto id = signature.size() <= 32768 ? requestVerifyMessage(m_verify_address_input_text.text(), m_verify_message_input_text.text(), signature) : 0;
+    if (id) return QString::number(id);
+    if (observer) Q_EMIT commandRejected(QUuid::createUuid().toString(QUuid::WithoutBraces),
+        (MessageSigningError{m_closed ? MessageSigningError::Closed : MessageSigningError::Refused,
+            m_closed ? tr("This wallet opening has closed.") : tr("The verification request could not be admitted.")}));
+    return {};
 }
 void SignVerifyMessageModel::retireSigningPrompt()
 {

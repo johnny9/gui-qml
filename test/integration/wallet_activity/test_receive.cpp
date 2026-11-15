@@ -41,7 +41,7 @@ class ReceiveIntegrationTests : public QObject
         QList<QQuickItem*> pending{m_app.window()->contentItem()};
         while (!pending.isEmpty()) {
             auto* item = pending.takeLast();
-            if (item->objectName() == "addressRow" && item->property("address").toString() == address) return item;
+            if (item->isVisible() && item->objectName() == "addressRow" && item->property("address").toString() == address) return item;
             pending.append(item->childItems());
         }
         return nullptr;
@@ -61,6 +61,7 @@ class ReceiveIntegrationTests : public QObject
         auto* item = qobject_cast<QQuickItem*>(object);
         if (!item || !item->window()) return false;
         item->forceActiveFocus();
+        if (!item->hasActiveFocus()) return false;
         if (!QMetaObject::invokeMethod(item, "selectAll")) return false;
         QTest::keyClick(item->window(), Qt::Key_Backspace, Qt::NoModifier, 1);
         QInputMethodEvent edit; edit.setCommitString(text);
@@ -74,8 +75,24 @@ class ReceiveIntegrationTests : public QObject
     }
     bool openAddresses()
     {
-        return qmltest::SelectSettings(m_app, "wallet") && qmltest::Click(m_app, "walletAddressesRow") &&
-            qmltest::WaitForVisible(m_app, "addressListPage");
+        if (!qmltest::SelectSettings(m_app, "wallet") || !qmltest::Click(m_app, "walletAddressesRow")) return false;
+        auto* page = qmltest::WaitForVisible(m_app, "addressListPage");
+        return page && QTest::qWaitFor([page] {
+            auto* stack = page->property("navigationStack").value<QObject*>();
+            return !stack || !stack->property("busy").toBool();
+        });
+    }
+    bool editorCenterIsHittable(QObject* object)
+    {
+        auto* item = qobject_cast<QQuickItem*>(object);
+        return item && QTest::qWaitFor([item] {
+            if (!item->window() || !item->isVisible() || !item->isEnabled() || item->width() <= 0 || item->height() <= 0) return false;
+            const auto scene = item->mapToScene(item->boundingRect().center());
+            if (!QRectF{0, 0, qreal(item->window()->width()), qreal(item->window()->height())}.contains(scene)) return false;
+            for (auto* parent = item->parentItem(); parent; parent = parent->parentItem())
+                if (parent->clip() && !parent->boundingRect().contains(parent->mapFromScene(scene))) return false;
+            return true;
+        });
     }
     bool openMessages()
     {
@@ -788,6 +805,7 @@ private Q_SLOTS:
         QPointer<QObject> field = qmltest::Find(second, "addressRowNoteField"); QVERIFY(field);
         QSignalSpy reset{wallet->addressListModel(), &QAbstractItemModel::modelReset};
         QVERIFY(enterText(qmltest::Find(first, "addressRowNoteField"), "Alpha committed"));
+        QVERIFY(editorCenterIsHittable(field));
         QVERIFY(qmltest::Click(field)); QTRY_VERIFY(field->property("activeFocus").toBool());
         QTRY_COMPARE(addressNote(wallet->name(), alpha), QStringLiteral("Alpha committed"));
         QVERIFY(first && second && field); QCOMPARE(addressRow(beta), second.data());

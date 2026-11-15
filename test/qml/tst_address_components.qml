@@ -954,6 +954,13 @@ TestCase {
         compare(fixture.editor.error.message, failure)
         compare(fixture.editor.saveResult.persisted, false)
         verify(fixture.editor.dirty)
+        fixture.editor.requestClose()
+        tryVerify(() => fixture.editor.closePrompt !== null)
+        fixture.editor.closePrompt.answer(TextEditClosePrompt.Discard)
+        tryCompare(fixture.editor, "phase", TextEditSessionModel.Closed)
+        compare(fixture.editor.error.message, "")
+        compare(fixture.editor.saveResult.persisted, false)
+        compare(fixture.editor.saveResult.error.message, failure)
     }
 
 }

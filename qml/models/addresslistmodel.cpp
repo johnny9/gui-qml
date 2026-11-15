@@ -523,7 +523,14 @@ TextEditSessionModel* AddressListModel::editLabel(const QString& address)
     // Keep dirty drafts instead of evicting them to admit another editor.
     if (m_label_editors.size() >= 32) return nullptr;
     auto* editor = m_wallet_model->editAddressLabel(address, this);
-    if (editor) m_label_editors.insert(address, editor);
+    if (editor) {
+        m_label_editors.insert(address, editor);
+        connect(this, &QAbstractItemModel::dataChanged, editor, [address, editor](const QModelIndex& first, const QModelIndex& last, const QList<int>& roles) {
+            if (!roles.isEmpty() && !roles.contains(LabelRole)) return;
+            if (first == last && first.data(AddressRole).toString() != address) return;
+            editor->refresh();
+        });
+    }
     return editor;
 }
 
