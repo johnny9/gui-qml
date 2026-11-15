@@ -123,8 +123,15 @@ private Q_SLOTS:
         QVERIFY(!desktopintent::ParseArguments(2, arguments, QStringLiteral("process"), QStringLiteral("/captured")).error.isEmpty());
     }
 #ifdef ENABLE_WALLET
+    void nativeAdmissionFenceBeatsAHeldReadyProjection_data()
+    {
+        QTest::addColumn<bool>("hold_factory");
+        QTest::newRow("before-domain-handoff") << false;
+        QTest::newRow("after-domain-before-gui-factory") << true;
+    }
     void nativeAdmissionFenceBeatsAHeldReadyProjection()
     {
+        QFETCH(bool, hold_factory);
         ManualRoutedExecution commands;
         std::deque<std::function<void()>> gui;
         const auto post = [&](auto turn) { gui.push_back(std::move(turn)); };
@@ -140,8 +147,14 @@ private Q_SLOTS:
         model.setAdmissionGate(native_closed);
         model.setReady(true); drain();
         QVERIFY(model.state() == DesktopIntentModel::State::Ready);
+        if (hold_factory) {
+            QVERIFY(model.owner()->admit({Input(1)}, {}));
+            commands.drain(); // Domain has posted the factory handoff; GUI remains held.
+            QVERIFY(!model.hasInspection()); QVERIFY(!gui.empty());
+        }
         native_closed->store(true); // The terminal phase's GUI notification is deliberately held.
-        QVERIFY(model.owner()->admit({Input(1)}, {})); drain();
+        if (!hold_factory) QVERIFY(model.owner()->admit({Input(1)}, {}));
+        drain();
         QVERIFY(!model.hasInspection()); QCOMPARE(model.pendingCount(), 1);
         QVERIFY(model.state() == DesktopIntentModel::State::WaitingReady);
         model.inspectNext(); drain(); // An explicit retry still cannot bypass Native admission.
