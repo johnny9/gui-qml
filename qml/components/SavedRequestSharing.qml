@@ -11,8 +11,8 @@ ColumnLayout {
     id: root
     required property RequestSharingModel sharing
     property bool interested: true
-    property FileExportOperationModel exportOperation: null
-    property FileExportOperationModel chooserOperation: null
+    property RequestImageExportOperation exportOperation: null
+    property RequestImageExportOperation chooserOperation: null
     readonly property bool exportPending: exportOperation !== null && (exportOperation.busy || exportOperation.choosing || exportOperation.confirmationRequired)
     Binding { target: root.sharing; property: "active"; value: root.visible && root.interested; when: root.sharing !== null }
     onVisibleChanged: if (!visible) {
@@ -58,7 +58,7 @@ ColumnLayout {
             ContinueButton {
                 objectName: "savedRequestApproveExportButton"
                 text: root.exportOperation && root.exportOperation.replacing ? qsTr("Replace file") : qsTr("Save file")
-                property FileExportOperationModel pressedOperation: null
+                property RequestImageExportOperation pressedOperation: null
                 onPressed: pressedOperation = root.exportOperation
                 onCanceled: pressedOperation = null
                 onClicked: if (pressedOperation) pressedOperation.approve()
@@ -76,7 +76,7 @@ ColumnLayout {
         contextObject: root.chooserOperation
         enabled: root.visible && root.interested && root.sharing !== null && root.sharing.active
         onChosen: function(context, file) {
-            const original = context as FileExportOperationModel
+            const original = context as RequestImageExportOperation
             if (original) original.choose(file)
         }
         onRejected: if (root.chooserOperation) root.chooserOperation.cancel()

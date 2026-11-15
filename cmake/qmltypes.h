@@ -250,14 +250,14 @@ struct ReceiveReservationModelForeign { Q_GADGET QML_FOREIGN(ReceiveReservationM
 struct ReceiveAuthorizationPromptForeign { Q_GADGET QML_FOREIGN(ReceiveAuthorizationPrompt) QML_NAMED_ELEMENT(ReceiveAuthorizationPrompt) QML_UNCREATABLE("Owned by an original receiving intent") };
 struct RequestSharingModelForeign { Q_GADGET QML_FOREIGN(RequestSharingModel) QML_NAMED_ELEMENT(RequestSharingModel) QML_UNCREATABLE("Owned by a request view") };
 struct ShareOperationModelForeign { Q_GADGET QML_FOREIGN(ShareOperationModel) QML_NAMED_ELEMENT(ShareOperationModel) QML_UNCREATABLE("Owned by an original sharing action") };
-struct FileExportOperationModelForeign { Q_GADGET QML_FOREIGN(FileExportOperationModel) QML_NAMED_ELEMENT(FileExportOperationModel) QML_UNCREATABLE("Owned by an original export action") };
+struct RequestImageExportOperationForeign { Q_GADGET QML_FOREIGN(RequestImageExportOperation) QML_NAMED_ELEMENT(RequestImageExportOperation) QML_UNCREATABLE("Owned by an original export action") };
 struct ReceiveErrorForeign { Q_GADGET QML_FOREIGN(ReceiveError) QML_NAMED_ELEMENT(ReceiveError) QML_UNCREATABLE("Error value") };
 struct ReceiveTypeStatusForeign { Q_GADGET QML_FOREIGN(ReceiveTypeStatus) QML_NAMED_ELEMENT(ReceiveTypeStatus) QML_UNCREATABLE("Capability value") };
 struct SharingErrorForeign { Q_GADGET QML_FOREIGN(SharingError) QML_NAMED_ELEMENT(SharingError) QML_UNCREATABLE("Error value") };
-struct FileExportErrorForeign { Q_GADGET QML_FOREIGN(FileExportError) QML_NAMED_ELEMENT(FileExportError) QML_UNCREATABLE("Error value") };
+struct RequestImageExportErrorForeign { Q_GADGET QML_FOREIGN(RequestImageExportError) QML_NAMED_ELEMENT(RequestImageExportError) QML_UNCREATABLE("Error value") };
 struct RequestSaveResultForeign { Q_GADGET QML_FOREIGN(RequestSaveResult) QML_ANONYMOUS };
 struct ShareResultForeign { Q_GADGET QML_FOREIGN(ShareResult) QML_ANONYMOUS };
-struct FileExportResultForeign { Q_GADGET QML_FOREIGN(FileExportResult) QML_ANONYMOUS };
+struct RequestImageExportResultForeign { Q_GADGET QML_FOREIGN(RequestImageExportResult) QML_ANONYMOUS };
 struct OwnedQrImageForeign { Q_GADGET QML_FOREIGN(OwnedQrImage) QML_NAMED_ELEMENT(OwnedQrImage) };
 struct MessageSigningPromptForeign { Q_GADGET QML_FOREIGN(MessageSigningPrompt) QML_NAMED_ELEMENT(MessageSigningPrompt) QML_UNCREATABLE("Owned by a signing attempt") };
 struct MessageSigningErrorForeign { Q_GADGET QML_FOREIGN(MessageSigningError) QML_ANONYMOUS };

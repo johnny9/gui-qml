@@ -117,7 +117,7 @@ WalletReceiveModel::Ports MakeReceivePorts(const std::shared_ptr<walletopening::
         else clipboard->setImage(pixels);
         return requestshare::Delivery::Accepted;
     };
-    auto files = std::make_shared<fileexport::Services>();
+    auto files = std::make_shared<requestimageexport::Services>();
     files->inspect = [](const QUrl& url) {
         const auto bytes = url.toString(QUrl::FullyEncoded).toUtf8();
         return backup::InspectPng({bytes.constData(), static_cast<size_t>(bytes.size())});

@@ -16,17 +16,17 @@ struct Fixture {
     std::unique_ptr<RequestSharingModel> context;
     Fixture() : context(std::make_unique<RequestSharingModel>(17, ports.sharing())) { context->setActive(true); ports.drain(); }
     ~Fixture() { context.reset(); ports.drain(); QVERIFY(ports.execution.quiescent()); }
-    std::unique_ptr<FileExportOperationModel> exportImage()
+    std::unique_ptr<RequestImageExportOperation> exportImage()
     {
-        auto operation = std::unique_ptr<FileExportOperationModel>{context->beginQrExport()}; ports.drain(); return operation;
+        auto operation = std::unique_ptr<RequestImageExportOperation>{context->beginQrExport()}; ports.drain(); return operation;
     }
-    void toHeldWrite(FileExportOperationModel& operation)
+    void toHeldWrite(RequestImageExportOperation& operation)
     {
         QVERIFY(operation.choose(QUrl::fromLocalFile("/controlled/request.png")));
         while (ports.execution.step(Lane::Domain)) {}
         QVERIFY(ports.execution.step(Lane::Core));
         while (ports.execution.step(Lane::Domain)) {}
-        QCOMPARE(operation.phase(), FileExportOperationModel::Writing); QCOMPARE(ports.file_writes, 0);
+        QCOMPARE(operation.phase(), RequestImageExportOperation::Writing); QCOMPARE(ports.file_writes, 0);
     }
 };
 }
@@ -150,7 +150,7 @@ private Q_SLOTS:
     void choosingAndOverwriteConsentHoldNoBackgroundLease()
     {
         Fixture f; f.ports.target_exists = true; auto operation = f.exportImage();
-        QCOMPARE(operation->phase(), FileExportOperationModel::Choosing); QVERIFY(f.ports.execution.quiescent());
+        QCOMPARE(operation->phase(), RequestImageExportOperation::Choosing); QVERIFY(f.ports.execution.quiescent());
         QVERIFY(operation->choose(QUrl::fromLocalFile("/controlled/original.png"))); f.ports.drain();
         QVERIFY(operation->confirmationRequired()); QCOMPARE(f.ports.inspections, 1); QCOMPARE(f.ports.file_writes, 0);
         QVERIFY(f.ports.execution.quiescent()); QVERIFY(operation->approve()); f.ports.drain();
@@ -160,51 +160,51 @@ private Q_SLOTS:
     {
         Fixture f; auto operation = f.exportImage(); f.ports.execution.scheduler->closeOrdinaryAdmission();
         QVERIFY(!operation->choose(QUrl::fromLocalFile("/controlled/rejected.png"))); f.ports.drain();
-        QCOMPARE(operation->error(), FileExportError::Rejected); QCOMPARE(f.ports.inspections, 0); QCOMPARE(f.ports.file_writes, 0);
+        QCOMPARE(operation->error(), RequestImageExportError::Rejected); QCOMPARE(f.ports.inspections, 0); QCOMPARE(f.ports.file_writes, 0);
     }
     void cancellationBeforeNativeInstallRetainsAnExplicitCancelledResult()
     {
         Fixture f; auto operation = f.exportImage(); f.toHeldWrite(*operation); operation->cancel(); f.ports.drain();
-        QCOMPARE(operation->phase(), FileExportOperationModel::Cancelled); QVERIFY(operation->result().present); QVERIFY(!operation->result().written);
+        QCOMPARE(operation->phase(), RequestImageExportOperation::Cancelled); QVERIFY(operation->result().present); QVERIFY(!operation->result().written);
         QCOMPARE(f.ports.file_writes, 0);
     }
     void paidSourceBeforeNativeInstallNeverWritesTheTarget()
     {
         Fixture f; auto operation = f.exportImage(); f.toHeldWrite(*operation); f.ports.useSaved(17); f.ports.drain();
-        QCOMPARE(operation->error(), FileExportError::Source); QVERIFY(!operation->result().admitted); QCOMPARE(f.ports.file_writes, 0);
+        QCOMPARE(operation->error(), RequestImageExportError::Source); QVERIFY(!operation->result().admitted); QCOMPARE(f.ports.file_writes, 0);
     }
     void changedDestinationIsNotMisreportedAsSourceRevocation()
     {
         Fixture f; auto operation = f.exportImage(); f.toHeldWrite(*operation); f.ports.target_changed = true; f.ports.drain();
-        QCOMPARE(operation->error(), FileExportError::Changed); QVERIFY(!operation->result().written); QCOMPARE(f.ports.file_writes, 0);
+        QCOMPARE(operation->error(), RequestImageExportError::Changed); QVERIFY(!operation->result().written); QCOMPARE(f.ports.file_writes, 0);
     }
     void chooserFailureIsKnownAndDoesNotBecomeSuccessfulExport()
     {
         Fixture f; auto operation = f.exportImage(); operation->chooserFailed();
-        QCOMPARE(operation->phase(), FileExportOperationModel::Failed); QCOMPARE(operation->error(), FileExportError::Chooser);
+        QCOMPARE(operation->phase(), RequestImageExportOperation::Failed); QCOMPARE(operation->error(), RequestImageExportError::Chooser);
         QVERIFY(operation->result().outcomeKnown); QVERIFY(!operation->result().written); QCOMPARE(f.ports.file_writes, 0);
     }
     void writerWithoutAdmissionProofCannotClaimSuccessfulExport()
     {
-        ReceiveEditorPorts ports; auto services = ports.sharing(); auto files = std::make_shared<fileexport::Services>(*services.files);
+        ReceiveEditorPorts ports; auto services = ports.sharing(); auto files = std::make_shared<requestimageexport::Services>(*services.files);
         files->write = [](const auto&, bool, const auto&, const auto&) { return backup::WriteResult{}; }; services.files = files;
         RequestSharingModel context{17, services}; context.setActive(true); ports.drain();
-        auto operation = std::unique_ptr<FileExportOperationModel>{context.beginQrExport()}; ports.drain(); QVERIFY(operation->choosing());
+        auto operation = std::unique_ptr<RequestImageExportOperation>{context.beginQrExport()}; ports.drain(); QVERIFY(operation->choosing());
         QVERIFY(operation->choose(QUrl::fromLocalFile("/controlled/unproven.png"))); ports.drain();
-        QCOMPARE(operation->phase(), FileExportOperationModel::OutcomeUnknown); QVERIFY(!operation->result().written); QVERIFY(!operation->result().outcomeKnown);
+        QCOMPARE(operation->phase(), RequestImageExportOperation::OutcomeUnknown); QVERIFY(!operation->result().written); QVERIFY(!operation->result().outcomeKnown);
         QCOMPARE(ports.file_writes, 0); QVERIFY(!operation->approve());
     }
     void writerThrowAfterAdmissionRetainsUnknownWithoutReplay()
     {
-        ReceiveEditorPorts ports; auto services = ports.sharing(); auto files = std::make_shared<fileexport::Services>(*services.files);
+        ReceiveEditorPorts ports; auto services = ports.sharing(); auto files = std::make_shared<requestimageexport::Services>(*services.files);
         files->write = [&ports](const auto&, bool, const auto&, const std::shared_ptr<requestshare::Grant>& grant) -> backup::WriteResult {
             if (!grant->admit()) return {backup::Error::Changed};
             ++ports.file_writes; throw std::runtime_error{"installation receipt lost"};
         }; services.files = files;
         RequestSharingModel context{17, services}; context.setActive(true); ports.drain();
-        auto operation = std::unique_ptr<FileExportOperationModel>{context.beginQrExport()}; ports.drain(); QVERIFY(operation->choosing());
+        auto operation = std::unique_ptr<RequestImageExportOperation>{context.beginQrExport()}; ports.drain(); QVERIFY(operation->choosing());
         QVERIFY(operation->choose(QUrl::fromLocalFile("/controlled/unknown.png"))); ports.drain();
-        QCOMPARE(operation->phase(), FileExportOperationModel::OutcomeUnknown); QVERIFY(operation->result().admitted); QVERIFY(!operation->result().outcomeKnown);
+        QCOMPARE(operation->phase(), RequestImageExportOperation::OutcomeUnknown); QVERIFY(operation->result().admitted); QVERIFY(!operation->result().outcomeKnown);
         QVERIFY(!operation->approve()); context.refresh(); ports.drain(); QCOMPARE(ports.file_writes, 1);
     }
     void originalConsentCannotApproveADifferentOrCompletedTarget()
@@ -227,7 +227,7 @@ private Q_SLOTS:
                 source.payload = "bitcoin:original"; source.current = [] { return true; }; return source; }, std::move(done), {}, {Lane::Domain, 1024});
         };
         services.render = [](const QString&) { QImage image{21, 21, QImage::Format_RGB32}; image.fill(Qt::black); return image; };
-        auto files = std::make_shared<fileexport::Services>();
+        auto files = std::make_shared<requestimageexport::Services>();
         files->inspect = [](const QUrl&) { return backup::Proposal{"/controlled/threaded.png", {}, false, false, backup::Error::None}; };
         files->write = [&](const auto&, bool, const auto&, const std::shared_ptr<requestshare::Grant>& grant) {
             writer_thread.store(QThread::currentThread());
@@ -235,11 +235,11 @@ private Q_SLOTS:
             admitted.release(); release.acquire(); ++writes; return backup::WriteResult{};
         };
         services.files = std::move(files);
-        auto operation = std::make_unique<FileExportOperationModel>(17, services, view);
+        auto operation = std::make_unique<RequestImageExportOperation>(17, services, view);
         QTRY_VERIFY(operation->choosing()); QVERIFY(operation->choose(QUrl::fromLocalFile("/controlled/threaded.png")));
         const bool entered = admitted.tryAcquire(1, 5000);
         if (!entered) release.release();
-        QVERIFY(entered); operation->cancel(); release.release(); QTRY_COMPARE(operation->phase(), FileExportOperationModel::Completed);
+        QVERIFY(entered); operation->cancel(); release.release(); QTRY_COMPARE(operation->phase(), RequestImageExportOperation::Completed);
         QCOMPARE(writes.load(), 1); QVERIFY(operation->result().admitted); QVERIFY(operation->result().written); QVERIFY(writer_thread.load() != gui);
         operation.reset(); executor.shutdown(); QTRY_VERIFY(executor.isDrained());
     }

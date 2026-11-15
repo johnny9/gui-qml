@@ -412,7 +412,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "MessageSigningPrompt", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "AddressListModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "PaymentRequest", "Wallet support is not compiled");
-    for (const auto* type : {"WalletReceiveModel", "PaymentRequestEditorModel", "ReceiveReservationModel", "ReceiveAuthorizationPrompt", "RequestSharingModel", "ShareOperationModel", "FileExportOperationModel", "ReceiveError", "ReceiveTypeStatus", "SharingError", "FileExportError"})
+    for (const auto* type : {"WalletReceiveModel", "PaymentRequestEditorModel", "ReceiveReservationModel", "ReceiveAuthorizationPrompt", "RequestSharingModel", "ShareOperationModel", "RequestImageExportOperation", "ReceiveError", "ReceiveTypeStatus", "SharingError", "RequestImageExportError"})
         qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, type, "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "ReceiveRequestOperation", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "Transaction", "Wallet support is not compiled");

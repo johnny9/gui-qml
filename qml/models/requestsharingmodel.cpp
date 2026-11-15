@@ -262,11 +262,11 @@ ShareOperationModel* RequestSharingModel::copy(requestshare::Kind kind)
 }
 ShareOperationModel* RequestSharingModel::copyUri() { return copy(requestshare::Kind::Uri); }
 ShareOperationModel* RequestSharingModel::copyQr() { return copy(requestshare::Kind::Qr); }
-FileExportOperationModel* RequestSharingModel::beginQrExport()
+RequestImageExportOperation* RequestSharingModel::beginQrExport()
 {
     requestshare::Source expected;
     if (m_cache) expected = m_cache->source; else expected.error = requestshare::Error::Rejected;
-    const auto operation = new FileExportOperationModel(m_request_id, m_services, m_view, std::move(expected));
+    const auto operation = new RequestImageExportOperation(m_request_id, m_services, m_view, std::move(expected));
     QQmlEngine::setObjectOwnership(operation, QQmlEngine::JavaScriptOwnership);
     return operation;
 }

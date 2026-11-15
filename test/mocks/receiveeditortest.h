@@ -174,7 +174,7 @@ struct ReceiveEditorPorts {
             if (delivery == requestshare::Delivery::Accepted) { if (kind == requestshare::Kind::Uri) clipboard_text = text; else clipboard_image = image; }
             return delivery;
         };
-        auto files = std::make_shared<fileexport::Services>();
+        auto files = std::make_shared<requestimageexport::Services>();
         files->inspect = [this](const QUrl& url) {
             ++inspections;
             return backup::Proposal{url.toLocalFile().toStdString(), target_version, target_exists, false, backup::Error::None};

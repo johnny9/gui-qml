@@ -13,7 +13,7 @@
 #include <mutex>
 #include <optional>
 
-namespace fileexport { struct Services; }
+namespace requestimageexport { struct Services; }
 
 class SharingError {
     Q_GADGET
@@ -79,7 +79,7 @@ struct Services {
     // Necessary native handoff, on GUI only. Its result describes this local
     // adapter effect, not durable clipboard ownership by another OS process.
     std::function<Delivery(Kind, const QString&, const QImage&)> deliver;
-    std::shared_ptr<const fileexport::Services> files;
+    std::shared_ptr<const requestimageexport::Services> files;
 };
 QString ErrorText(Error error);
 QImage RenderQr(const QString& payload);

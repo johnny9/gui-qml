@@ -15,11 +15,11 @@ inline void RegisterReceiveTypes()
     qmlRegisterUncreatableType<ReceiveAuthorizationPrompt>(uri, 1, 0, "ReceiveAuthorizationPrompt", "Owned by an original receiving intent");
     qmlRegisterUncreatableType<RequestSharingModel>(uri, 1, 0, "RequestSharingModel", "Owned by a request view");
     qmlRegisterUncreatableType<ShareOperationModel>(uri, 1, 0, "ShareOperationModel", "Owned by an original sharing action");
-    qmlRegisterUncreatableType<FileExportOperationModel>(uri, 1, 0, "FileExportOperationModel", "Owned by an original export action");
+    qmlRegisterUncreatableType<RequestImageExportOperation>(uri, 1, 0, "RequestImageExportOperation", "Owned by an original export action");
     qmlRegisterUncreatableMetaObject(ReceiveError::staticMetaObject, uri, 1, 0, "ReceiveError", "Error value");
     qmlRegisterUncreatableMetaObject(ReceiveTypeStatus::staticMetaObject, uri, 1, 0, "ReceiveTypeStatus", "Capability value");
     qmlRegisterUncreatableMetaObject(SharingError::staticMetaObject, uri, 1, 0, "SharingError", "Error value");
-    qmlRegisterUncreatableMetaObject(FileExportError::staticMetaObject, uri, 1, 0, "FileExportError", "Error value");
-    qRegisterMetaType<RequestSaveResult>(); qRegisterMetaType<ShareResult>(); qRegisterMetaType<FileExportResult>();
+    qmlRegisterUncreatableMetaObject(RequestImageExportError::staticMetaObject, uri, 1, 0, "RequestImageExportError", "Error value");
+    qRegisterMetaType<RequestSaveResult>(); qRegisterMetaType<ShareResult>(); qRegisterMetaType<RequestImageExportResult>();
 }
 #endif // BITCOIN_QML_RECEIVETYPEREGISTRATION_H

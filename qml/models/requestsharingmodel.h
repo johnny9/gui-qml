@@ -5,7 +5,7 @@
 #define BITCOIN_QML_MODELS_REQUESTSHARINGMODEL_H
 
 #include <qml/requestsharing.h>
-#include <qml/models/fileexportoperationmodel.h>
+#include <qml/models/requestimageexportoperation.h>
 
 #include <QImage>
 #include <QObject>
@@ -104,7 +104,7 @@ public:
     Q_INVOKABLE void setActive(bool active);
     Q_INVOKABLE ShareOperationModel* copyUri();
     Q_INVOKABLE ShareOperationModel* copyQr();
-    Q_INVOKABLE FileExportOperationModel* beginQrExport();
+    Q_INVOKABLE RequestImageExportOperation* beginQrExport();
     void refresh();
     Q_INVOKABLE void retire();
 Q_SIGNALS:

@@ -259,8 +259,8 @@ add_executable(bitcoinqml_qmltests
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/walletreceivemodel.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/requestsharingmodel.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/requestsharingmodel.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/fileexportoperationmodel.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/fileexportoperationmodel.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/requestimageexportoperation.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/requestimageexportoperation.h
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/models/backuppolicy.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/walletrequesterror.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../qml/walletrequesterror.h

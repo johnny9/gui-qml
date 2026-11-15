@@ -111,6 +111,39 @@ public:
     explicit ReceiveIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
 
 private Q_SLOTS:
+    void savedQrActionsRequireAnEncodableOriginalPayload_data()
+    {
+        QTest::addColumn<int>("characters");
+        QTest::newRow("encodable-control") << 20; QTest::newRow("original-4250-character-failure") << 4250;
+    }
+    void savedQrActionsRequireAnEncodableOriginalPayload()
+    {
+        QFETCH(int, characters);
+        auto* wallet = qmltest::CreateWallet(m_app, "qr-action-gate"); QVERIFY(wallet);
+        auto* request = wallet->currentPaymentRequest(); request->setMessage(QString(characters, QLatin1Char('x')));
+        QVERIFY(AwaitReceiveRequest(wallet->commitPaymentRequest())); QTRY_VERIFY(!wallet->receiveRequestReconciliationPending());
+        QVERIFY(qmltest::Click(m_app, "activityTabButton")); auto* activity = qmltest::Find(m_app, "activityStack"); QVERIFY(activity);
+        QVERIFY(QMetaObject::invokeMethod(activity, "openPaymentRequest", Q_ARG(QVariant, QVariant{request->id()})));
+        QVERIFY(qmltest::WaitForVisible(m_app, "paymentRequestModal"));
+        QObject* copy{nullptr}; QObject* save{nullptr};
+        QTRY_VERIFY((copy = qmltest::Find(m_app, "savedRequestCopyQrButton")) || (copy = qmltest::Find(m_app, "requestPaymentQRContextCopy")));
+        QTRY_VERIFY((save = qmltest::Find(m_app, "savedRequestExportQrButton")) || (save = qmltest::Find(m_app, "requestPaymentQRContextSave")));
+        const bool encodable = characters == 20;
+        if (encodable) { QTRY_VERIFY(copy->property("enabled").toBool()); QTRY_VERIFY(save->property("enabled").toBool()); }
+        else {
+            // The original provider returned a transparent Image.Ready result
+            // for this real saved payload. Neither QR action may admit it.
+            if (auto* error = qmltest::Find(m_app, "savedRequestSharingError")) QTRY_VERIFY(!error->property("text").toString().isEmpty());
+            else { auto* image = qmltest::Find(m_app, "requestPaymentQRImage"); QVERIFY(image); QTRY_COMPARE(image->property("status").toInt(), 1); }
+            QVERIFY(!copy->property("enabled").toBool()); QVERIFY(!save->property("enabled").toBool());
+        }
+        const auto stored = qmltest::Call(m_app, [name = wallet->name()](interfaces::Node* node) {
+            for (auto& handle : node->walletLoader().getWallets()) if (handle->getWalletName() == name.toStdString()) return handle->getAddressReceiveRequests();
+            return std::vector<std::string>{};
+        });
+        QCOMPARE(stored.size(), size_t{1}); const auto decoded = walletrequests::Decode(stored);
+        QCOMPARE(decoded.entries.size(), size_t{1}); QCOMPARE(decoded.entries.front().recipient.message, std::string(size_t(characters), 'x'));
+    }
     void typedReceiveKeepsCanonicalAmountAndExportsTheExactSavedPayload_data()
     {
         QTest::addColumn<bool>("encrypted");
@@ -165,7 +198,7 @@ private Q_SLOTS:
         QVERIFY(QDir{}.mkpath(directory));
         const auto stem = encrypted ? QStringLiteral("roundtrip-encrypted") : QStringLiteral("roundtrip-plain");
         const auto path = QDir{directory}.filePath(stem + QStringLiteral(".png")); QVERIFY(!QFileInfo::exists(path));
-        auto image = std::unique_ptr<FileExportOperationModel>{sharing->beginQrExport()}; QTRY_VERIFY(image->choosing());
+        auto image = std::unique_ptr<RequestImageExportOperation>{sharing->beginQrExport()}; QTRY_VERIFY(image->choosing());
         const QImage approved_image = sharing->image(); QVERIFY(!approved_image.isNull());
         QVERIFY(image->choose(QUrl::fromLocalFile(path))); QTRY_VERIFY(image->result().present);
         QVERIFY2(image->result().written, qPrintable(image->errorText()));
@@ -190,8 +223,8 @@ private Q_SLOTS:
         sharing->setActive(true); QTRY_COMPARE(sharing->error(), requestshare::Error::QrEncoding);
         QVERIFY(sharing->canCopyUri()); QVERIFY(!sharing->canExportQr()); QVERIFY(sharing->image().isNull());
         QTemporaryDir directory; QVERIFY(directory.isValid()); const auto path = directory.filePath("oversize.png");
-        auto failed = std::unique_ptr<FileExportOperationModel>{sharing->beginQrExport()}; QTRY_VERIFY(failed->result().present);
-        QCOMPARE(failed->error(), FileExportError::Source); QVERIFY(!failed->result().written);
+        auto failed = std::unique_ptr<RequestImageExportOperation>{sharing->beginQrExport()}; QTRY_VERIFY(failed->result().present);
+        QCOMPARE(failed->error(), RequestImageExportError::Source); QVERIFY(!failed->result().written);
         QVERIFY(!failed->choose(QUrl::fromLocalFile(path))); QVERIFY(!QFileInfo::exists(path));
         const auto blobs = qmltest::Call(m_app, [name = wallet->name()](interfaces::Node* node) {
             for (auto& handle : node->walletLoader().getWallets()) if (handle->getWalletName() == name.toStdString()) return handle->getAddressReceiveRequests();
@@ -203,7 +236,7 @@ private Q_SLOTS:
         receive->editor()->message()->edit("short recovery"); receive->editor()->save();
         QTRY_VERIFY(receive->editor()->saveResult().operationId != first_result && receive->editor()->saveResult().requestSaved);
         QTRY_VERIFY(sharing->canExportQr()); QVERIFY(!sharing->image().isNull());
-        QCOMPARE(failed->error(), FileExportError::Source); QVERIFY(!failed->result().written);
+        QCOMPARE(failed->error(), RequestImageExportError::Source); QVERIFY(!failed->result().written);
     }
     void typedReceiveUnknownImportedTypeDoesNotKeepAnOldReservationArmed()
     {
