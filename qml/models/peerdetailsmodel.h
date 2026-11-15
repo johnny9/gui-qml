@@ -104,7 +104,6 @@ Q_SIGNALS:
 private:
     qint64 m_node_id{-1};
     QPointer<PeerListModel> m_model;
-    PeerStatsHandle m_snapshot_owner; // Cache aliases drop before its Native lease.
     PeerPresentation m_cache;
     PeerConnection m_connection;
     bool m_disconnected{true};

@@ -353,6 +353,32 @@ private Q_SLOTS:
         QVERIFY(original_published_while_successor_pending); QCOMPARE(original->result().nodeIdText,QStringLiteral("7"));
         QCOMPARE(successor->result().nodeIdText,QStringLiteral("8")); QCOMPARE(f.commands->lastResult().operationId,successor->operationId());
     }
+    void retainedDetailsAndCopiedPresentationDoNotHoldNativeDrain()
+    {
+        Fixture f; QVERIFY(f.settle());
+        auto& raw = std::get<0>(f.peers.front());
+        raw.m_addr_name.assign(4096, 'a'); raw.addrLocal.assign(4096, 'b');
+        raw.cleanSubVer.assign(4096, 'c');
+        f.source->refresh(); QVERIFY(f.settle());
+        auto* detail = f.details(7); QVERIFY(detail);
+        const auto address = detail->address(), local = detail->addressLocal(), agent = detail->userAgent();
+        QCOMPARE(address, QString(512, QLatin1Char{'a'}));
+        QCOMPARE(local, QString(512, QLatin1Char{'b'}));
+        QCOMPARE(agent, QString(512, QLatin1Char{'c'}));
+        auto loan = f.source->data(f.source->index(f.source->rowForId(7)), PeerListModel::StatsRole).value<PeerStatsHandle>();
+        const std::weak_ptr<const CNodeCombinedStats> native{loan}; loan.reset();
+        const auto reads = f.node.calls.getNodesStats.load();
+        f.commands->closeAdmission(); f.proxy->closeAdmission(); f.source->closeAdmission();
+        // Keep GUI delivery held: physical Native retirement cannot require
+        // releasing a still-live view or presenting a queued notification.
+        f.execution.drain(); QVERIFY(f.execution.quiescent()); QVERIFY(native.expired());
+        // The model-owned detail and copied values remain readable after all
+        // Native resources retire. Neither can prolong physical shutdown.
+        QCOMPARE(detail->address(), address); QCOMPARE(detail->addressLocal(), local); QCOMPARE(detail->userAgent(), agent);
+        QCOMPARE(detail->nodeIdText(), QStringLiteral("7")); QVERIFY(!detail->connected());
+        QVERIFY(!detail->prepareDisconnect()); QVERIFY(!detail->prepareBan(PeerCommandOperation::BanDuration::Day));
+        QCOMPARE(f.node.calls.getNodesStats.load(), reads); QCOMPARE(f.disconnects, 0); QCOMPARE(f.ban_writes, 0);
+    }
 };
 BITCOINQML_REGISTER_QT_TEST(PeerCommandTests)
 #include <test_peercommands.moc>

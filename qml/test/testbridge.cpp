@@ -239,6 +239,7 @@ std::optional<KeyStroke> ToKeyStroke(const QChar ch)
     case u'.': return KeyStroke{Qt::Key_Period, Qt::NoModifier};
     case u'-': return KeyStroke{Qt::Key_Minus, Qt::NoModifier};
     case u'_': return KeyStroke{Qt::Key_Minus, Qt::ShiftModifier};
+    case u'#': return KeyStroke{Qt::Key_3, Qt::ShiftModifier};
     case u'/': return KeyStroke{Qt::Key_Slash, Qt::NoModifier};
     case u'\\': return KeyStroke{Qt::Key_Backslash, Qt::NoModifier};
     case u':': return KeyStroke{Qt::Key_Semicolon, Qt::ShiftModifier};

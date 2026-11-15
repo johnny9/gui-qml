@@ -162,10 +162,11 @@ TestCase {
     function peerConfirmationButton(popup, list, ban, cancel) {
         const name = (list ? "peerList" : "") + (list ? ban ? "Ban" : "Disconnect" : ban ? "ban" : "disconnect")
             + (cancel ? "CancelButton" : "ConfirmButton")
-        return waitForChild(popup, name)
+        return waitForChild(popup.contentItem, name)
     }
     function physicallyClick(button) {
         verify(button !== null)
+        tryVerify(function() { return button.visible && button.width > 0 && button.height > 0 })
         mouseClick(button, button.width / 2, button.height / 2)
     }
 

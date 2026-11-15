@@ -12,7 +12,6 @@ PeerDetailsModel::PeerDetailsModel(PeerStatsHandle stats, PeerListModel* model) 
     if (!row) { m_disconnected = true; return; }
     const auto* record = static_cast<const PeerRecord*>(row->payload.get());
     if (!SamePeerConnection(stats->nodeStats, record->raw.nodeStats)) return;
-    m_snapshot_owner = PeerStatsHandle{row, &record->raw};
     m_cache = record->presentation; m_connection = record->connection; m_disconnected = false;
     model->watchDetails(m_node_id, this);
     connect(model, &PeerListModel::commandsChanged, this, &PeerDetailsModel::dataChanged);
@@ -22,11 +21,10 @@ void PeerDetailsModel::update(const PeerPresentation& value, bool available) {
     const auto row = m_model ? m_model->rowForKey(QString::number(m_node_id)) : NativeRowHandle{};
     const auto* record = row ? static_cast<const PeerRecord*>(row->payload.get()) : nullptr;
     if (!record || !SamePeerConnection(m_connection, record->connection)) { markDisconnected(); return; }
-    // All values were prepared off GUI. Retain their original Native owner
-    // until the old cache aliases have been replaced, including unavailable
-    // optional node-state statistics; that is not a disconnected connection.
+    // These bounded Qt presentation values own their text independently of
+    // the Native row. A retained view cannot hold the Native cleanup lease.
+    // Unavailable optional node-state statistics are not a disconnection.
     m_cache = value;
-    m_snapshot_owner = PeerStatsHandle{row, &record->raw};
     if (m_connection.session.isEmpty()) m_connection.session = record->connection.session;
     Q_UNUSED(available);
     Q_EMIT dataChanged();

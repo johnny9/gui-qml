@@ -11,18 +11,22 @@
 #include <algorithm>
 #include <stdexcept>
 namespace {
+QString PresentText(const std::string& value, qsizetype limit = 512)
+{
+    return QString::fromUtf8(value.data(), qsizetype(std::min(value.size(), size_t(limit) * 4))).left(limit);
+}
 PeerPresentation Present(const CNodeCombinedStats& stats, NodeClock::time_point now)
 {
     PeerPresentation result;
     result.rawAddress = [&]() -> QString { return QString::fromStdString(stats.nodeStats.addr.ToStringAddr()); }();
-    result.address = [&]() -> QString { return QString::fromStdString(stats.nodeStats.m_addr_name); }();
-    result.addressLocal = [&]() -> QString { return QString::fromStdString(stats.nodeStats.addrLocal); }();
+    result.address = PresentText(stats.nodeStats.m_addr_name);
+    result.addressLocal = PresentText(stats.nodeStats.addrLocal);
     result.type = [&]() -> QString { return PeerStatsUtil::ConnectionTypeToQString(stats.nodeStats.m_conn_type, /*prepend_direction=*/true); }();
     result.network = [&]() -> QString { return PeerStatsUtil::NetworkToQString(stats.nodeStats.m_network); }();
     result.transport = [&]() -> QString { return PeerStatsUtil::TransportToQString(stats.nodeStats.m_transport_type); }();
-    result.sessionId = [&]() -> QString { return QString::fromStdString(stats.nodeStats.m_session_id); }();
+    result.sessionId = PresentText(stats.nodeStats.m_session_id, 128);
     result.version = [&]() -> QString { return QString::number(stats.nodeStats.nVersion); }();
-    result.userAgent = [&]() -> QString { return QString::fromStdString(stats.nodeStats.cleanSubVer); }();
+    result.userAgent = PresentText(stats.nodeStats.cleanSubVer);
     result.services = [&]() -> QString { return PeerStatsUtil::FormatServicesStr(stats.nodeStateStats.their_services); }();
     result.transactionRelay = [&]() -> bool { return stats.nodeStateStats.m_relay_txs; }();
     result.addressRelay = [&]() -> bool { return stats.nodeStateStats.m_addr_relay_enabled; }();
