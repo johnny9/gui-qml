@@ -1,12 +1,14 @@
 # Implementation progress
 
-Current correctness follow-up (2026-11-15): the R24 contributed-signature audit
-reproduced the same unfinished-signature installation gap in local SignOnly and
-standalone PSBT Sign. The R21/R22 signing-result components are reopened while
-shared typed validity/quarantine handling is propagated. Their previously
-qualified export/admission behavior retains its evidence; whole-order completion
-must not be inferred from those earlier receipts. See
+Current progress (2026-11-15): R21/R22/R24 focused acceptance is restored after
+the shared contributed-signature repair and composed 229-body gate. The original
+failures and exact source qualifications remain in
 [the follow-up record](SIGNATURE_CONTRIBUTION_FOLLOWUP_20261115.md).
+R37 code is integrated with its worker qualification; R38 composition and R40
+startup/process acceptance remain active. The R40 review found ordinary-queue
+exhaustion gaps in presentation release and shutdown. The desktop owner repairs
+pass 38 focused bodies; the related Source-owner repair and application wiring
+are being qualified independently. These component results do not accept R40.
 
 The [approved cadence](QT6_VALIDATION_CADENCE_20261114.md) separates implementation
 progress from final qualification. The copied CSV registers in `tracking/`
@@ -76,7 +78,8 @@ receipt at ce039. The [R18 upstream note](R18_UPSTREAM_NOTES.md) records the
 actual Core lock-persistence defect and the public-interface guard's limits.
 [R24 handoff requirements](R24_SIGNER_HANDOFF_REQUIREMENTS.md) require compatible
 and incompatible replacement tests against the exact reviewed keys/transaction,
-not a matching fingerprint alone. Creation swaps pass; signing acceptance is pending.
+not a matching fingerprint alone. Creation and contributed-signature app-side
+checks pass within the recorded R09 interface/device limits; R42 remains open.
 
 The [R19 checkpoint](R19_PREPARATION_CHECKPOINT.md) records background-owned
 preparation and exact scope dispositions. The [signer repair](R24_SIGNER_GUARD_CHECKPOINT.md)
@@ -85,9 +88,9 @@ records key compatibility without physical-device identity assumptions. The
 upstream deferral; it does not authorize Core changes or automatic rebroadcast.
 
 The [device-switch review](execution/R24-device-switch.md) records the required
-held admission/process/Domain/GUI schedules and the remaining partial-result
-qualification. R21 verifies finalized inputs; it does not establish every R24
-partial-signature or physical-device lifecycle guarantee.
+held admission/process/Domain/GUI schedules. The later contribution-verification
+and shared composition receipts qualify the app-side partial-result repair;
+they do not establish stronger physical-device guarantees than R09 permits.
 
 The [R20/R30 API decision](API_DEFERRALS_20261115.md) records the user-approved
 upstream remainders and the required truthful app behavior. These narrow
