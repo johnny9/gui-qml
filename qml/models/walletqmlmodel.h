@@ -392,8 +392,6 @@ public:
     Q_INVOKABLE void discardCurrentTransaction();
     PsbtQmlModel* importedPsbt() const { return m_imported_psbt_model; }
     interfaces::Wallet* wallet() const { return m_wallet.get(); }
-    // Background readers retain the interface until their current read finishes.
-    std::shared_ptr<interfaces::Wallet> walletHandle() const { return m_wallet; }
     interfaces::Node* node() const { return m_node; }
     std::shared_ptr<BackendExecutor> backendExecutor() const { return m_backend_executor; }
     // False once the wallet is unloading or closing. Set from the unload
