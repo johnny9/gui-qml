@@ -12,6 +12,7 @@
 #include <qml/backendexecutor.h>
 #include <qml/guipresentation.h>
 #include <test/mocks/manualexecutionenvironment.h>
+#include <test/mocks/admissionhookscheduler.h>
 #include <QPersistentModelIndex>
 #include <atomic>
 #include <thread>
@@ -289,6 +290,7 @@ private Q_SLOTS:
     void groupedAddressSearchPreservesOrdinaryNoteWhitespace();
     void clearDateLeavesSearchTypesAndAmountsUntouched();
     void terminalExportReceiptSurvivesReentrantObserverDeletionAndSuccessorAdmission();
+    void csvConstructorReservationCanRetireItsOriginalProxy();
     void chooserCaptureKeepsTheOriginalSnapshotAndUnitAcrossLiveChanges();
     void oldChooserCompletionCannotRetargetANewSourceOrCancelItsSuccessor();
     void chooserCaptureDoesNotKeepActionAdmissionOpenAfterRootClosure();
@@ -456,6 +458,23 @@ void ActivityFilterProxyModelTests::terminalExportReceiptSurvivesReentrantObserv
     env.drain(); env.publishAll(); QCOMPARE(terminal.size(), size_t{2}); QCOMPARE(terminal.back().first, successor); QCOMPARE(terminal.back().second, QStringLiteral("successor.csv"));
     QCOMPARE(effects, 2); QCOMPARE(outcomes, 2); QCOMPARE(proxy.exportResult().finalPath, QStringLiteral("successor.csv"));
     proxy.closeAdmission(); env.drain(); env.publishAll();
+}
+
+void ActivityFilterProxyModelTests::csvConstructorReservationCanRetireItsOriginalProxy()
+{
+    ManualExecutionEnvironment env; auto hooks = std::make_shared<AdmissionHookScheduler>(env.scheduler);
+    TestActivityModel source; source.setRows({MakeRow("Original", Transaction::RecvWithAddress, 1, "original")});
+    int effects{0}; activityexport::Files files;
+    files.inspect = [&](const QString& path) { ++effects; return backup::Proposal{path.toStdString(), {}, false, false, backup::Error::None}; };
+    files.install = [&](const auto&, bool, const auto&) { ++effects; return backup::WriteResult{}; }; source.controlFiles(std::move(files));
+    ActivityFilterProxyModel::Services services; services.execution = {hooks, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
+    auto proxy = std::make_unique<ActivityFilterProxyModel>(services); proxy->setSourceModel(&source);
+    QCoreApplication::processEvents(); env.drain(); env.publishAll(); QCoreApplication::processEvents(); env.drain(); env.publishAll(); QVERIFY(!proxy->busy());
+    const QPointer<ActivityFilterProxyModel> original{proxy.get()};
+    const auto trigger = hooks->armCleanup(1, [&] { proxy.reset(); });
+    QCOMPARE(original->requestExportCsv(QStringLiteral("retired-constructor.csv")), quint64{0});
+    QVERIFY(!original); QVERIFY(!proxy); QCOMPARE(trigger->calls.load(), size_t{1});
+    env.drain(); env.publishAll(); QCOMPARE(effects, 0); QCOMPARE(env.scheduler->pending(), size_t{0});
 }
 
 void ActivityFilterProxyModelTests::chooserCaptureKeepsTheOriginalSnapshotAndUnitAcrossLiveChanges()
