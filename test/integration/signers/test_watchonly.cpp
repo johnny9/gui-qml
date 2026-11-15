@@ -244,7 +244,10 @@ private Q_SLOTS:
         discovery->editPath(fixture.command()); QVERIFY(discovery->apply()); QTRY_VERIFY(!discovery->pending());
         QVERIFY(discovery->fresh()); QVERIFY(discovery->uniqueSignerId().endsWith(QLatin1Char(':') + family_a.fingerprint));
         if (scenario == 0) { fixture.receive = family_b.receive; fixture.internal = family_b.internal; fixture.set(false, family_b.fingerprint, {}); }
-        auto* editor = controller->newCreation(); QVERIFY(editor); editor->chooseKind(WalletCreationModel::ExternalSigner); editor->name()->edit("bound-operation");
+        // This native caller owns the factory result. No JavaScript wrapper
+        // exists here to collect a JavaScript-owned editor after the flow.
+        const std::unique_ptr<WalletCreationModel> editor{controller->newCreation()};
+        QVERIFY(editor); editor->chooseKind(WalletCreationModel::ExternalSigner); editor->name()->edit("bound-operation");
         QTRY_VERIFY(editor->canCreate()); auto* operation = editor->create({}, {}); QVERIFY(operation); QVERIFY(operation->acceptedForDelivery());
         if (scenario == 1 || scenario == 2) {
             QTRY_VERIFY(QFileInfo::exists(fixture.entered));
