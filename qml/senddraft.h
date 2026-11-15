@@ -10,6 +10,7 @@
 #include <QtGlobal>
 #include <algorithm>
 #include <map>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -35,6 +36,12 @@ struct Recipient {
     CTxDestination destination;
     bool valid{false}, address_valid{false}, input_acceptable{true}, payment_request{false}, validation_pending{true}, amount_set{false};
 };
+struct AppliedImport {
+    quint64 owner{0}, child{0}, source{0}, expected_intent{0}, applied_intent{0};
+    Recipient recipient;
+    QString formatted_address;
+    bool amount_changed{false}, private_note_changed{false};
+};
 struct Snapshot {
     std::vector<Recipient> recipients;
     std::map<quint64, size_t> positions;
@@ -44,6 +51,7 @@ struct Snapshot {
     QString total_text, error;
     int invalid_count{0}, pending_count{0};
     bool all_valid{false}, duplicate_destinations{false}, amount_total_valid{true};
+    std::shared_ptr<const AppliedImport> applied_import;
 };
 
 // Confined to the Domain lane. GUI editors submit values and explicit mode

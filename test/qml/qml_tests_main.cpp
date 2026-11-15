@@ -904,6 +904,7 @@ class MockRecipientsModel : public QAbstractListModel
 {
     Q_OBJECT
     Q_PROPERTY(QString revision READ revision NOTIFY revisionChanged)
+    Q_PROPERTY(bool importPending MEMBER m_import_pending NOTIFY validationChanged)
     Q_PROPERTY(bool canAddRecipient READ canAddRecipient NOTIFY countChanged)
     Q_PROPERTY(QString budgetError READ budgetError CONSTANT)
     Q_PROPERTY(bool validationPending READ validationPending CONSTANT)
@@ -915,6 +916,7 @@ class MockRecipientsModel : public QAbstractListModel
     Q_PROPERTY(QString validationError READ validationError WRITE setValidationError NOTIFY validationChanged)
 
 public:
+    bool m_import_pending{false};
     QString revision() const { return QString::number(m_revision); }
     void editRevision() { ++m_revision; Q_EMIT revisionChanged(); }
     bool canAddRecipient() const { return count() < 25; }

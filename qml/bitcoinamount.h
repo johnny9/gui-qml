@@ -53,6 +53,7 @@ public:
     explicit BitcoinAmount(QObject *parent = nullptr);
     static void setDefaultAdmissionGate(std::shared_ptr<std::atomic_bool> gate);
     void setOwnerAdmissionGate(std::shared_ptr<std::atomic_bool> gate) { m_owner_gate = std::move(gate); }
+    void setInputAdmissionGate(std::shared_ptr<std::atomic_bool> gate) { m_edit_gate = std::move(gate); }
 
     Unit unit() const;
     void setUnit(Unit unit);
@@ -115,6 +116,8 @@ Q_SIGNALS:
 
 private:
     bool admissionClosed() const { return m_input_closed || (m_app_gate && m_app_gate->load()) || (m_owner_gate && m_owner_gate->load()); }
+    bool inputAdmissionClosed() const { return admissionClosed() || (m_edit_gate && m_edit_gate->load()); }
+    std::shared_ptr<std::atomic_bool> m_edit_gate;
     std::shared_ptr<std::atomic_bool> m_app_gate, m_owner_gate;
     void assignCanonical(qint64 value, bool is_set, bool reset_input = false);
     QString formattedInput() const;
