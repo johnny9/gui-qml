@@ -321,6 +321,9 @@ struct Coordinator::State {
         notify();
     }
     void prepareAsync(AsyncPreparation preparation, const std::shared_ptr<execution::Scheduler>& action) {
+        // A duplicate command cannot cancel or overwrite the original
+        // preparation, including its known terminal outcome.
+        if (flow.preparationAdmitted()) { notify(); return; }
         if (!flow.beginPreparation()) {
             preparation_finished=true;
             preparation_disposition=flow.result().uncertain
@@ -453,6 +456,7 @@ bool Coordinator::finishAndPrepareAsync(uint64_t revision,QmlOnboardingSettings:
 {
     const auto state=m_state.lock();const auto action=m_services.scheduler->openActionScope();
     return state&&action&&state->post(action,[revision,request=std::move(request),ports=std::move(ports),preparation=std::move(preparation),action](State& state)mutable{
+        if(state.retired||!state.flow.canFinish()||revision!=state.flow.revision()){state.notify();return;}
         state.after_write_async=std::move(preparation);
         state.finish(revision,std::move(request),std::move(ports),action);
         if(!state.flow.pending()&&state.after_write_async){auto pending=std::exchange(state.after_write_async,{});state.requestPreparationClose(*pending);state.preparation_disposition=startup::preparation::Disposition::Failed;state.preparation_finished=true;state.notify();}
