@@ -411,6 +411,8 @@ private Q_SLOTS:
         QTest::newRow("discard-before-gui-adoption") << 1;
         QTest::newRow("source-close-after-receipt-before-adoption") << 2;
         QTest::newRow("target-close-before-native-read") << 3;
+        QTest::newRow("source-close-domain-held-after-receipt") << 4;
+        QTest::newRow("source-close-domain-held-before-receipt") << 5;
     }
     void realTypedConsumerUsesPublicReviewFactoryAndOriginalView() {
         QFETCH(int, boundary);
@@ -440,11 +442,14 @@ private Q_SLOTS:
         if (boundary == 3) model.closeAdmission();
         commands.drain();
         QVERIFY(!model.currentTransaction()); // The Native factory is separate from GUI adoption.
-        sources.drain(); publish(source_gui);
-        QCOMPARE(operation->state(), boundary == 3 ? PaymentImportOperation::State::Inspecting : PaymentImportOperation::State::ReviewOpened);
-        if (boundary == 3) { QVERIFY(!operation->canReview()); QVERIFY(!operation->error().isEmpty()); }
+        if (boundary != 5) {
+            sources.drain(); publish(source_gui);
+            QCOMPARE(operation->state(), boundary == 3 ? PaymentImportOperation::State::Inspecting : PaymentImportOperation::State::ReviewOpened);
+            if (boundary == 3) { QVERIFY(!operation->canReview()); QVERIFY(!operation->error().isEmpty()); }
+        }
         if (boundary == 1) model.discardCurrentTransaction();
         if (boundary == 2) { operation->cancel(); sources.drain(); }
+        if (boundary == 4 || boundary == 5) operation->cancel(); // Hold Source close/receipt; GUI cancellation already happened.
         publish(target_gui);
         if (boundary == 0) {
             QVERIFY(model.currentTransaction()); QVERIFY(model.currentTransactionIsImportedPsbt());
@@ -453,8 +458,13 @@ private Q_SLOTS:
             QCOMPARE(psbtwork::SerializeRaw(*model.currentTransaction()->assessedPsbt()), bytes);
             QVERIFY(!model.currentTransactionCanSend()); // Mock owns no inputs; import carries no send intent.
         } else QVERIFY(!model.currentTransaction());
-        QVERIFY(operation->canExport() || boundary == 2);
+        QVERIFY(operation->canExport() || boundary == 2 || boundary == 4 || boundary == 5);
         operation->cancel(); for (int turn{0}; turn < 10; ++turn) pump();
+        if (boundary != 3) {
+            QCOMPARE(operation->state(), PaymentImportOperation::State::Closed);
+            QCOMPARE(operation->outcome(), PaymentImportOperation::Outcome::ReviewOpenedOutcome);
+            QVERIFY(!operation->resultToken().isEmpty()); // Cancellation retires presentation, never erases the created child's outcome.
+        }
     }
     void actualDraftReceiptSurvivesSourceDismissalAndQuietTargetClose() {
         ManualRoutedExecution commands, sources; std::deque<std::function<void()>> target_gui, source_gui;

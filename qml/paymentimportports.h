@@ -23,6 +23,9 @@ struct Inspection {
     SourceField field{SourceField::WholeRequest};
     std::shared_ptr<const psbtwork::Snapshot> psbt;
     QString error, source_identity;
+    // Source view lifetime only. Revocation never changes an admitted child
+    // effect or its retained outcome.
+    std::shared_ptr<std::atomic_bool> presentation_allowed{};
 };
 struct ChildReply {
     Receipt receipt;

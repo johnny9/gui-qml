@@ -95,6 +95,9 @@ private:
     const Notify m_notify;
     const Retired m_retired;
     const std::shared_ptr<State> m_state;
+    // close() revokes this before queuing the Domain lifecycle decision. A
+    // queued target GUI handoff must not outlive its Source view.
+    const std::shared_ptr<std::atomic_bool> m_presentation_allowed{std::make_shared<std::atomic_bool>(true)};
 };
 } // namespace paymentimport
 #endif // BITCOIN_QML_PAYMENTIMPORT_H
