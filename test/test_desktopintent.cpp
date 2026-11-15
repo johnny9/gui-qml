@@ -66,6 +66,29 @@ private Q_SLOTS:
         QVERIFY(owner->stop()); transport.drain(); owner.reset(); transport.drain();
         QVERIFY(transport.quiescent());
     }
+    void stopUsesReservedCleanupWhenOrdinaryAdmissionIsFull()
+    {
+        auto limits = execution::Limits::Bounded(); limits.ordinary.tasks = 1;
+        ManualRoutedExecution commands{limits};
+        desktopintent::Services services; services.scheduler = commands.scheduler;
+        desktopintent::Snapshot latest;
+        auto owner = desktopintent::Owner::Create(std::move(services), [&](auto snapshot) { latest = snapshot; });
+        QVERIFY(owner);
+        int retired{0};
+        auto sink = std::make_shared<desktopintent::Sink>(); sink->identity = 1;
+        sink->inspect = [](auto, auto done) { done({desktopintent::Knowledge::Accepted, 99}); return execution::Admission{}; };
+        sink->query = [](auto, auto done) { done({desktopintent::Knowledge::Accepted, 99}); return execution::Admission{}; };
+        sink->retire = [&](auto) { ++retired; };
+        QVERIFY(owner->registerReceiver(sink)); commands.drain();
+        QVERIFY(owner->readiness(1, true)); commands.drain();
+        QVERIFY(owner->admit({Input(1), Input(2)}, {})); commands.drain();
+        QCOMPARE(latest.pending, size_t{1});
+        QVERIFY(execution::Submit(*commands.scheduler, [] {}, [] {}, {}, {execution::Lane::Domain, 0, {}}));
+        QVERIFY(owner->stop()); commands.drain();
+        QVERIFY(latest.phase == desktopintent::Phase::Stopped); QCOMPARE(latest.pending, size_t{0});
+        QCOMPARE(retired, 1);
+        owner.reset(); commands.drain(); QVERIFY(commands.quiescent());
+    }
     void actualQtFileOpenQueuesBeforeReadinessAndFencesLateEvents()
     {
         ManualRoutedExecution commands;
@@ -274,7 +297,8 @@ private Q_SLOTS:
     }
     void presentationReleaseSurvivesOrdinaryDomainRejection()
     {
-        ManualRoutedExecution commands;
+        auto limits = execution::Limits::Bounded(); limits.ordinary.tasks = 1;
+        ManualRoutedExecution commands{limits};
         std::deque<std::function<void()>> gui;
         const auto post = [&](auto turn) { gui.push_back(std::move(turn)); };
         const auto drain = [&] {
@@ -285,11 +309,12 @@ private Q_SLOTS:
         };
         BitcoinUriModel factory; factory.setServices({commands.scheduler, post});
         DesktopIntentModel model{{commands.scheduler, post}, true}; model.setFactory(&factory);
-        QVERIFY(model.owner()->admit({Input(1), Input(2)}, {})); model.setReady(true); drain();
+        drain(); model.setReady(true); drain();
+        QVERIFY(model.owner()->admit({Input(1), Input(2)}, {})); drain();
         QVERIFY(model.inspection()); QCOMPARE(model.inspection()->requestId(), quint64{1});
         QCOMPARE(model.pendingCount(), 1);
         QObject original_recipient;
-        commands.rejectLane(execution::Lane::Domain);
+        QVERIFY(execution::Submit(*commands.scheduler, [] {}, [] {}, {}, {execution::Lane::Domain, 0, {}}));
         auto* original = model.takeInspection(&original_recipient);
         QVERIFY(original); QCOMPARE(original->requestId(), quint64{1});
         drain();
