@@ -30,10 +30,13 @@ struct QmlInitExecutor::WorkerState {
     std::atomic_bool stopping{false};
     bool initialization_threw{false};
     StartupOutcomePort outcome;
+    ShutdownOutcomePort shutdown_outcome;
     std::shared_ptr<std::atomic_bool> loss;
     void record(StartupOutcome value)noexcept{try{if(outcome)outcome(value);}catch(...){if(loss)*loss=true;}}
 
-    explicit WorkerState(SubscriptionFactory subscribe,StartupOutcomePort complete,std::shared_ptr<std::atomic_bool> diagnostic_loss) : pending_subscription_factory(std::move(subscribe)),outcome(std::move(complete)),loss(std::move(diagnostic_loss)) {}
+    void recordExit(int status)noexcept{try{if(shutdown_outcome)shutdown_outcome(status);}catch(...){if(loss)*loss=true;}}
+
+    explicit WorkerState(SubscriptionFactory subscribe,StartupOutcomePort complete,ShutdownOutcomePort stopped,std::shared_ptr<std::atomic_bool> diagnostic_loss) : pending_subscription_factory(std::move(subscribe)),outcome(std::move(complete)),shutdown_outcome(std::move(stopped)),loss(std::move(diagnostic_loss)) {}
     void retireSubscription()
     {
         subscription.reset();
@@ -41,8 +44,8 @@ struct QmlInitExecutor::WorkerState {
     }
 };
 
-QmlInitExecutor::QmlInitExecutor(interfaces::Node& node, SubscriptionFactory subscribe, std::shared_ptr<std::atomic_bool> diagnostic_loss,StartupOutcomePort outcome)
-    : QObject(), m_node(node), m_worker_state(std::make_shared<WorkerState>(std::move(subscribe),std::move(outcome),diagnostic_loss)), m_diagnostic_loss(std::move(diagnostic_loss))
+QmlInitExecutor::QmlInitExecutor(interfaces::Node& node, SubscriptionFactory subscribe, std::shared_ptr<std::atomic_bool> diagnostic_loss,StartupOutcomePort outcome,ShutdownOutcomePort shutdown_outcome)
+    : QObject(), m_node(node), m_worker_state(std::make_shared<WorkerState>(std::move(subscribe),std::move(outcome),std::move(shutdown_outcome),diagnostic_loss)), m_diagnostic_loss(std::move(diagnostic_loss))
 {
     m_init_and_shutdown_executor.setObjectName(QStringLiteral("node-init-shutdown"));
     m_interrupt_executor.setObjectName(QStringLiteral("node-interrupt"));
@@ -209,6 +212,8 @@ void QmlInitExecutor::shutdown()
 #endif
             state->retireSubscription();
             node->appShutdown();
+            // Keep Core's actual status independently of GUI completion.
+            state->recordExit(node->getExitStatus());
             return 1;
         } catch (...) { PrepareRunawayException(*diagnostic, loss); return -1; }
     }, [this, diagnostic, diagnostic_scope](int completed) {

@@ -531,9 +531,12 @@ void Reader::readChanges(Work work)
     // recheck (128) limits, including when a full scan has just completed.
     const auto admission = m_opening->read([work = std::move(work)](interfaces::Wallet& wallet) {
         std::vector<Receipt> receipts;
+        // A coalesced notification is a reconciliation hint, not a current
+        // state receipt. In particular a delayed deletion can precede a later
+        // reappearance in the same original wallet opening.
         for (const auto& [id, change] : work.changes) {
-            if (change == CT_DELETED) receipts.push_back({id, {}, false, false});
-            else receipts.push_back(Read(wallet, id));
+            Q_UNUSED(change);
+            receipts.push_back(Read(wallet, id));
         }
         for (const auto& id : work.statuses) if (!work.changes.contains(id)) receipts.push_back(Read(wallet, id));
         return receipts;
@@ -575,7 +578,7 @@ void Reader::complete(std::vector<Receipt> receipts, std::map<Txid, ChangeType> 
     // the intermediate ledger may contain both. Keep the last reconciled
     // presentation instead of exposing that temporary double count.
     std::shared_ptr<const Snapshot> snapshot;
-    if (!rechecking) snapshot = std::make_shared<Snapshot>(Snapshot{m_opening->identity(), m_ledger.totals(), m_ledger.observed(), native_revision});
+    if (!rechecking) snapshot = std::make_shared<Snapshot>(Snapshot{m_opening->identity(), m_ledger.totals(), m_ledger.observed(), native_revision, addresses});
     std::shared_ptr<const Snapshot> previous;
     bool pending;
     {

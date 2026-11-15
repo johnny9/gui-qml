@@ -23,6 +23,7 @@ TestCase {
     FontLoader { source: testSetup.supportsApplicationFonts ? "qrc:/fonts/robotomono/regular" : "" }
 
     Component { id: pageComponent; ActivityList { width: 1180; height: 950; wallet: testWalletModel } }
+    Component { id: receiveFixtureComponent; ControlledReceiveFixture {} }
 
     Component {
         id: iconImageComponent
@@ -97,6 +98,7 @@ TestCase {
     }
     function init() {
         testSetup.failOnWarnings()
+        testWalletModel.setReceive(null)
         Theme.dark = true
         tryCompare(Theme, "dark", true)
         walletController.reset()
@@ -112,6 +114,7 @@ TestCase {
         testWalletModel.receiveRequestReconciliationPending = false
         testWalletModel.setRecipientLabelsErrorForTest("")
     }
+    function cleanup() { testWalletModel.setReceive(null) }
     function test_outgoing_note_error_is_bound_to_the_original_wallet() {
         const page = createPage()
         const banner = findChild(page, "outgoingNoteStatus")
@@ -211,6 +214,48 @@ TestCase {
         compare(page.depth, 1)
     }
 
+    function test_typed_request_copy_owns_its_receipt_and_final_use_guard_data() {
+        return [{tag: "exact-original-delivery", payment: false}, {tag: "payment-during-preparation", payment: true}]
+    }
+    function test_typed_request_copy_owns_its_receipt_and_final_use_guard(data) {
+        const fixture = createTemporaryObject(receiveFixtureComponent, this)
+        verify(fixture !== null)
+        testWalletModel.setReceive(fixture.receive)
+        fixture.settle()
+        testTransactionActivityModel.setRows([row({activityId: "request:17", txid: "", requestId: "17",
+            address: "bcrt1q-original", isPendingRequest: true, isPending: true, statusKnown: false})])
+        const page = createPage()
+        const item = findChild(page, "activityRequest_17")
+        verify(item !== null)
+        mouseClick(item, item.width / 2, item.height / 2, Qt.RightButton)
+        const menu = findChild(page, "activityRowContextMenu")
+        tryCompare(menu, "opened", true)
+        fixture.settle()
+        const copy = findChild(menu.contentItem, "activityCopyPaymentRequest")
+        tryCompare(copy, "enabled", true)
+        mouseClick(copy, copy.width / 2, copy.height / 2)
+        fixture.backend()
+        const original = menu.requestSharing.lastOperation
+        verify(original !== null)
+        compare(original.result.requestId, "17")
+        compare(original.result.admitted, false)
+        compare(fixture.clipboardWrites, 0)
+        if (data.payment) fixture.markSavedUsed()
+        fixture.settle()
+        compare(original.result.performed, !data.payment)
+        compare(fixture.clipboardWrites, data.payment ? 0 : 1)
+        compare(fixture.writes, 0)
+        compare(original.result.requestId, "17")
+        if (data.payment) {
+            verify(!copy.enabled)
+            compare(menu.opened, true)
+            menu.close()
+        } else {
+            compare(fixture.copiedText, "bitcoin:bcrt1q-original?amount=0.000001&message=original%20message")
+            tryCompare(menu, "opened", false)
+        }
+        testWalletModel.setReceive(null)
+    }
     function test_request_copy_waits_for_payment_scan() {
         testWalletModel.receiveRequestReconciliationPending = true
         const page = createPage()

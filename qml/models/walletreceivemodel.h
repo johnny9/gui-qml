@@ -23,6 +23,7 @@ public:
         PaymentRequestEditorModel::Ports editor;
         ReceiveReservationModel::Ports reservation;
         requestshare::Services sharing;
+        QPointer<ReceiptReconciliationModel> receipts{};
     };
     WalletReceiveModel(uint64_t view, Ports ports, QObject* parent = nullptr);
     ~WalletReceiveModel() override;
@@ -43,6 +44,7 @@ public:
     Q_INVOKABLE void cancelOpenRequest(const QString& token);
     Q_INVOKABLE PaymentRequestEditorModel* deleteRequest(const QString& id);
     Q_INVOKABLE RequestSharingModel* sharing(PaymentRequestEditorModel* editor, QObject* view = nullptr);
+    Q_INVOKABLE RequestSharingModel* sharingRequest(const QString& id, QObject* view);
     Q_INVOKABLE void cancelReplacement();
     void refresh();
     void retire();

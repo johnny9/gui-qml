@@ -327,8 +327,6 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
     , m_fee_read_services(std::move(fee_services))
 {
     m_receive_requests = new ReceiveRequestHistoryModel(this);
-    m_receive_payment_poll_timer.setInterval(1000);
-    connect(&m_receive_payment_poll_timer, &QTimer::timeout, this, &WalletQmlModel::pollUnconfirmedReceiveRequestPayments);
     m_address_list_model = new AddressListModel(this);
     m_bump_transaction_model = new BumpTransactionModel(m_wallet.get(), this);
     m_bump_transaction_model->setSecurityStateChangedFn([this]() { refreshSecurityState(); });
@@ -371,6 +369,37 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
                 }, Qt::QueuedConnection);
             });
         const auto weak_reader = std::weak_ptr<walletreceipts::Reader>{m_receipts};
+        // These bounded GUI ports never transfer native ownership. This
+        // facade retains Reader/Session until the projection is closed below.
+        const auto weak_opening = std::weak_ptr<walletopening::Session>{m_opening};
+        ReceiptReconciliationModel::Ports receipt_ports;
+        receipt_ports.opening = m_opening->identity();
+        receipt_ports.take = [weak_reader] { const auto reader = weak_reader.lock(); return reader ? reader->take() : std::optional<walletreceipts::Publication>{}; };
+        receipt_ports.retire = [weak_reader](auto snapshot) { if (const auto reader = weak_reader.lock()) reader->retire(std::move(snapshot)); };
+        receipt_ports.current = [weak_reader] { const auto reader = weak_reader.lock(); return reader && reader->settled(); };
+        receipt_ports.nativeRevision = [weak_opening] { const auto opening = weak_opening.lock(); return opening ? opening->transactionRevision() : uint64_t{0}; };
+        receipt_ports.poll = [weak_reader] { if (const auto reader = weak_reader.lock()) reader->poll(); };
+        receipt_ports.retry = [weak_reader] { if (const auto reader = weak_reader.lock()) reader->retry(); };
+        receipt_ports.acknowledge = [weak_opening] { if (const auto opening = weak_opening.lock()) opening->acknowledgeTransactions(); };
+        receipt_ports.transactions = [receipt_observer](const auto& changes) {
+            for (const auto& [id, change] : changes) {
+                if (!receipt_observer || !receipt_observer->observationsAllowed()) return;
+                Q_EMIT receipt_observer->transactionChanged(QString::fromStdString(id.ToString()), int(change));
+            }
+        };
+        m_receipt_projection = new ReceiptReconciliationModel(std::move(receipt_ports), this);
+        connect(m_receipt_projection, &ReceiptReconciliationModel::changed, this, [this] {
+            if (!observationsAllowed()) return;
+            const QPointer<WalletQmlModel> guard{this};
+            if (m_receiving_address && m_receipt_projection->observed(m_receiving_address->address())) {
+                m_receiving_address->setPaymentReceived(true); if (!guard || m_stopping) return;
+            }
+            updateReceivedPaymentRequestAmounts(); if (!guard || m_stopping) return;
+        });
+        connect(m_receipt_projection, &ReceiptReconciliationModel::committed, this, &WalletQmlModel::receiveRequestReconciliationPendingChanged);
+        connect(m_receipt_projection, &ReceiptReconciliationModel::rescanRequested, this, [this] {
+            if (observationsAllowed() && m_transaction_activity_model) m_transaction_activity_model->reload();
+        });
         m_request_store = std::make_shared<walletrequests::Store>(m_opening,
             [bridge = m_notification_bridge, receipt_observer] {
                 QMetaObject::invokeMethod(bridge.get(), [receipt_observer] {
@@ -389,8 +418,10 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
             if (const auto owner = weak.lock()) owner->notice(revision, std::move(changes), rescan);
         });
         if (!m_backup_services.coordinator) m_backup_services.coordinator = std::make_shared<backup::InstallCoordinator>();
-        m_receive = new WalletReceiveModel(2, MakeReceivePorts(m_opening, m_request_store,
-            {m_opening->scheduler(), m_fee_read_services.post}, m_backup_services.coordinator), this);
+        auto receive_ports = MakeReceivePorts(m_opening, m_request_store,
+            {m_opening->scheduler(), m_fee_read_services.post}, m_backup_services.coordinator);
+        receive_ports.receipts = m_receipt_projection;
+        m_receive = new WalletReceiveModel(2, std::move(receive_ports), this);
         connect(m_receive->reservation(), &ReceiveReservationModel::changed, this, [this] {
             if (!m_receive->reservation()->generationPersisted()) return;
             const auto type = m_receive->reservation()->lastGeneratedAddressType();
@@ -646,8 +677,8 @@ void WalletQmlModel::publishOpening()
         m_receipts->notice(update->transaction_revision, std::move(update->transactions), update->rescan);
         // Ready can reach GUI before this Session mailbox. Acknowledge the
         // current revision after taking it, without waiting for another poll.
-        m_receive_reconciliation_pending = !m_receipts->settled();
-        if (!m_receive_reconciliation_pending) m_opening->acknowledgeTransactions();
+        if (m_receipt_projection) m_receipt_projection->invalidate();
+        if (!guard || m_stopping) return;
         Q_EMIT receiveRequestReconciliationPendingChanged(); if (!guard || m_stopping) return;
     }
     if (update->status || transactions_changed) {
@@ -749,7 +780,7 @@ void WalletQmlModel::closeAdmission()
     if (m_fees) m_fees->close();
     if (m_fee_reader) m_fee_reader->close();
     m_balance_timer.stop();
-    m_receive_payment_poll_timer.stop();
+    if (m_receipt_projection) m_receipt_projection->close();
     if (m_fee_read_services.timer) m_fee_read_services.timer->stop();
     if (m_opening) m_opening->closeAdmission();
     if (m_address_list_model) m_address_list_model->closeAdmission();
@@ -773,7 +804,7 @@ void WalletQmlModel::beginShutdown(bool remove_wallet)
     const bool was_available{std::exchange(m_available_published, false)};
     m_unload_requested->store(true);
     m_balance_timer.stop();
-    m_receive_payment_poll_timer.stop();
+    if (m_receipt_projection) m_receipt_projection->close();
     if (m_fee_read_services.timer) m_fee_read_services.timer->stop();
     if (m_backup_operation) m_backup_operation->retire();
     if (m_balance_reader) m_balance_reader->close();
@@ -794,7 +825,6 @@ void WalletQmlModel::beginShutdown(bool remove_wallet)
     }
     if (m_receipts) {
         m_receipts->close();
-        m_receipts->retire(std::move(m_receipt_snapshot));
     }
     if (m_opening) m_opening->retire(remove_wallet);
     if (m_bump_transaction_model) m_bump_transaction_model->detachWallet();
@@ -1749,7 +1779,6 @@ ReceiveRequestOperation* WalletQmlModel::submitRequest(walletrequests::Command c
         if (intent && !intent->create) {
             observer->m_receiving_address_pending = false;
             observer->m_receiving_address_ready = ready && apply;
-            observer->m_receive_reconciliation_pending = observer->m_receipts && !observer->m_receipts->settled();
             if (ready && result.address) observer->setDefaultReceiveAddressType(result.address->address_type);
             if (!observer || observer->m_stopping) return;
             Q_EMIT observer->receivingAddressStateChanged();
@@ -1769,7 +1798,6 @@ ReceiveRequestOperation* WalletQmlModel::submitRequest(walletrequests::Command c
     if (intent && !intent->create) {
         m_receiving_intent = intent;
         m_receiving_address_ready = false; m_receiving_address_pending = operation->pending();
-        m_receive_reconciliation_pending = true;
         Q_EMIT receivingAddressStateChanged();
         if (observer && observer->observationsAllowed()) Q_EMIT receiveRequestReconciliationPendingChanged();
     }
@@ -1826,9 +1854,8 @@ void WalletQmlModel::reloadReceiveRequests()
     walletrequests::Command command; command.kind = walletrequests::Kind::Reload;
     const auto admission = m_request_store->submit(std::move(command));
     m_request_storage_busy = bool(admission);
-    m_receive_reconciliation_pending = bool(admission);
     m_request_storage_error = admission ? QString{} : tr("Payment requests could not be loaded. Try again.");
-    if (m_receipts && !m_receive_reconciliation_error.isEmpty()) m_receipts->retry();
+    if (m_receipt_projection && !m_receipt_projection->errorText().isEmpty()) m_receipt_projection->retry();
     const QPointer<WalletQmlModel> observer{this};
     Q_EMIT receiveRequestReconciliationPendingChanged();
     if (!observer || m_stopping) return;
@@ -1893,7 +1920,7 @@ bool WalletQmlModel::applyRequest(PaymentRequest* target, walletrequests::Prepar
 bool WalletQmlModel::receiveRequestReconciliationPending() const
 {
     const auto snapshot = m_receive_requests ? m_receive_requests->snapshot() : nullptr;
-    return m_receive_reconciliation_pending || m_receive_reconciliation_applying ||
+    return m_request_storage_busy || m_receiving_address_pending || (m_receipt_projection && (m_receipt_projection->pending() || m_receipt_projection->applying())) ||
         (m_opening && m_opening->notificationsPending()) || (m_receipts && !m_receipts->settled()) ||
         (m_request_store && (!m_request_store->presentationCurrent() || !snapshot || snapshot->revision != m_request_store->revision()));
 }
@@ -1997,51 +2024,17 @@ void WalletQmlModel::refreshReceiveRequestPayments()
 
 void WalletQmlModel::publishReceipts()
 {
-    if (!observationsAllowed()) return;
-    if (m_admission_closed) return;
-    if (!available()) return;
-    if (m_receive_reconciliation_applying) { m_receipt_projection_again = true; return; }
-    auto update = m_receipts->take();
-    if (!update) return;
-    const QPointer<WalletQmlModel> guard{this};
-    m_receive_reconciliation_pending = update->status != walletreceipts::Status::Ready;
-    m_receipt_needs_poll = update->needs_poll;
-    m_receive_reconciliation_error = update->status == walletreceipts::Status::Failed || update->status == walletreceipts::Status::Rejected
-        ? tr("Payments could not be checked. Try again.") : QString{};
-    if (update->snapshot && update->snapshot->opening == m_opening->identity()) {
-        m_receipts->retire(std::exchange(m_receipt_snapshot, std::move(update->snapshot)));
-        m_receive_reconciliation_applying = true;
-        if (m_receiving_address && m_receipt_snapshot->observed.contains(m_receiving_address->address())) {
-            m_receiving_address->setPaymentReceived(true); if (!guard || m_stopping) return;
-        }
-        updateReceivedPaymentRequestAmounts(); if (!guard || m_stopping) return;
-        m_receive_reconciliation_applying = false;
-    }
-    if (std::exchange(m_receipt_projection_again, false)) {
-        QTimer::singleShot(0, this, [guard] { if (guard && guard->observationsAllowed()) guard->publishReceipts(); });
-    }
-    if (!m_receive_reconciliation_pending) m_opening->acknowledgeTransactions();
-    for (const auto& [id, change] : update->transactions) {
-        Q_EMIT transactionChanged(QString::fromStdString(id.ToString()), change); if (!guard || m_stopping) return;
-    }
-    if (update->rescan && m_transaction_activity_model) {
-        m_transaction_activity_model->reload(); if (!guard || m_stopping) return;
-    }
-    if (m_receipt_needs_poll) m_receive_payment_poll_timer.start();
-    else m_receive_payment_poll_timer.stop();
-    Q_EMIT receiveRequestReconciliationPendingChanged();
+    if (observationsAllowed() && !m_admission_closed && available() && m_receipt_projection) m_receipt_projection->consume();
 }
 
 void WalletQmlModel::pollUnconfirmedReceiveRequestPayments()
 {
-    if (observationsAllowed() && m_receipts) m_receipts->poll();
+    if (observationsAllowed() && m_receipt_projection) m_receipt_projection->poll();
 }
 
 CAmount WalletQmlModel::receivedPaymentRequestAmount(const QString& address) const
 {
-    if (!m_receipt_snapshot) return 0;
-    const auto it = m_receipt_snapshot->totals.find(address);
-    return it == m_receipt_snapshot->totals.end() ? 0 : it->second;
+    return m_receipt_projection ? m_receipt_projection->amount(address) : 0;
 }
 
 void WalletQmlModel::updateReceivedPaymentRequestAmounts()

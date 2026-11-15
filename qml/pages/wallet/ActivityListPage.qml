@@ -30,6 +30,7 @@ Page {
     background: Rectangle { color: Theme.color.neutral0 }
     padding: 0
     Component.onCompleted: ready = true
+    onVisibleChanged: if (!visible) activityRowMenu.close()
     onWalletChanged: if (ready) {
         activityRowMenu.close()
         clearFilters()
@@ -531,6 +532,8 @@ Page {
         property bool isRequest: false
         property string deleteError: ""
         property double contextToken: 0
+        readonly property RequestSharingModel requestSharing: root.wallet && root.wallet.receive && isRequest ? root.wallet.receive.sharingRequest(requestId, activityRowMenu) : null
+        Binding { target: activityRowMenu.requestSharing; property: "active"; value: root.visible && activityRowMenu.opened; when: activityRowMenu.requestSharing !== null }
         onClosed: activityFilterProxy.releaseRowContext(contextToken)
         onAboutToShow: deleteError = ""
         ContextMenuButton {
@@ -552,11 +555,28 @@ Page {
         ContextMenuButton {
             objectName: "activityCopyPaymentRequest"
             visible: activityRowMenu.isRequest
-            enabled: !!root.wallet && !root.wallet.receiveRequestReconciliationPending
+            enabled: activityRowMenu.requestSharing ? activityRowMenu.requestSharing.canCopyUri && (!activityRowMenu.requestSharing.lastOperation || !activityRowMenu.requestSharing.lastOperation.busy)
+                : !!root.wallet && !root.wallet.receiveRequestReconciliationPending
             text: qsTr("Copy payment request")
+            autoClose: false
             onTriggered: {
+                if (activityRowMenu.requestSharing) { activityRowMenu.requestSharing.copyUri(); return }
                 const uri = root.wallet ? root.wallet.transactionActivityModel.paymentRequestUri(activityRowMenu.requestId) : ""
                 if (uri.length > 0) Clipboard.setText(uri)
+                activityRowMenu.close()
+            }
+        }
+        CoreText {
+            width: parent ? parent.width : implicitWidth
+            text: activityRowMenu.requestSharing && activityRowMenu.requestSharing.lastOperation ? activityRowMenu.requestSharing.lastOperation.errorText : ""
+            visible: text.length > 0
+            color: Theme.color.red
+        }
+        Connections {
+            target: activityRowMenu.requestSharing ? activityRowMenu.requestSharing.lastOperation : null
+            function onChanged() {
+                const operation = activityRowMenu.requestSharing ? activityRowMenu.requestSharing.lastOperation : null
+                if (operation && operation.result.present && operation.result.performed) activityRowMenu.close()
             }
         }
         ContextMenuDivider {

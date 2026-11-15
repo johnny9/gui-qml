@@ -4,10 +4,14 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Sign, browse addresses, receive a payment and reopen its receipt after restart."""
 
+import json
+import os
 from pathlib import Path
+from qml_process_checks import check_gui_exit
 from qml_scenarios import run_scenarios
 from qml_smoke_lib import (
     create_request,
+    create_wallet,
     open_receive,
     open_wallet_settings,
     request_qr_payload,
@@ -122,7 +126,114 @@ def receive_smoke(harness, checkpoint):
     gui.wait_for_property("requestPaymentNoteRow", "value", "Private lunch note")
     checkpoint("receipt reopened from Activity after restart")
 
+def typed_receipt_restart(harness, checkpoint):
+    """Keep current credit and durable address-use distinct across real restart."""
+    def checked_stop(phase):
+        process = harness.gui_process
+        harness.stop_gui()
+        assert process is not None
+        stdout, stderr = process.communicate()
+        if os.getenv("QML_TEST_ARTIFACTS"):
+            output = Path(os.environ["QML_TEST_ARTIFACTS"]) / "typed-current-receipt-reorg-restart" / "processes"
+            output.mkdir(parents=True, exist_ok=True)
+            (output / f"{phase}.stdout").write_bytes(stdout)
+            (output / f"{phase}.stderr").write_bytes(stderr)
+            (output / f"{phase}.json").write_text(json.dumps({
+                "pid": process.pid, "command": process.args,
+                "exit": process.returncode, "socket_path": harness.socket_path,
+            }, indent=2) + "\n", encoding="utf-8")
+        check_gui_exit(process.returncode, stderr.decode("utf-8", errors="replace"), socket_path=harness.socket_path)
+
+    harness.start_gui()
+    create_wallet(harness, "receipt-restart", "receipt password")
+    gui = harness.driver
+    gui.click("receiveTabButton")
+    gui.wait_for_property("receiveAmountInput", "visible", True, timeout_ms=30000)
+    gui.set_text("receiveAmountInput", "1.0")
+    gui.invoke("receiveAmountInput", "editingFinished")
+    gui.set_text("receiveMessageInput", "Original public invoice")
+    gui.set_text("receivePrivateNoteInput", "Original private receipt note")
+    gui.wait_for_property("receiveSaveRequestButton", "enabled", True)
+    gui.click("receiveSaveRequestButton")
+    gui.wait_for_property("paymentRequestModal", "opened", True, timeout_ms=30000)
+    request_id = gui.get_property("paymentRequestModal", "openedEditor.requestId")
+    address = gui.get_property("paymentRequestModal", "openedEditor.address")
+    assert request_id and address
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.fresh", True)
+    assert gui.get_property("paymentRequestModal", "openedEditor.receipts.receivedAmountSatoshi") == 0
+    checkpoint("original typed request is awaiting a current receipt")
+
+    block = rpc_call(harness.gui_rpc_port, "generatetoaddress", [1, address])[0]
+    rpc_call(harness.gui_rpc_port, "syncwithvalidationinterfacequeue")
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.receivedAmountSatoshi", 5_000_000_000, timeout_ms=30000)
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.fresh", True)
+    gui.wait_for_property("paymentRequestModal", "openedEditor.historicallyUsed", True)
+    gui.wait_for_property("savedRequestReceiptStatus", "text", "Payment received")
+    gui.wait_for_property("savedRequestCopyUriButton", "enabled", False)
+    rpc_call(harness.gui_rpc_port, "invalidateblock", [block])
+    rpc_call(harness.gui_rpc_port, "syncwithvalidationinterfacequeue")
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.receivedAmountSatoshi", 0, timeout_ms=30000)
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.fresh", True)
+    gui.wait_for_property("savedRequestReceiptStatus", "text", "Awaiting payment")
+    gui.wait_for_property("savedRequestHistoricalUseNotice", "visible", True)
+    gui.wait_for_property("savedRequestCopyUriButton", "enabled", False)
+    checkpoint("reorg removes current credit without rearming the used address")
+
+    # Stop with the original view still open; no dialog dismissal or GUI
+    # destruction is required for native shutdown and persisted receipt facts.
+    checked_stop("before-restart")
+    harness.start_gui()
+    gui = harness.driver
+    open_wallet_selector(gui)
+    gui.click("walletSelectItem_receipt_restart")
+    gui.wait_for_property("walletBadge", "text", "receipt-restart", timeout_ms=30000)
+    gui.click("activityTabButton")
+    gui.wait_for_property(f"activityRequest_{request_id}", "visible", True, timeout_ms=30000)
+    gui.wait_for_property("activityFilterProxyModel", "busy", False)
+    gui.wait_for_property("activityStack", "walletViewActive", True)
+    inventory = gui.get_model_row("activityListView", "model")
+    original_row = gui.get_model_row("activityListView", "model", 0, "requestId",
+                                     model_id=inventory["modelId"], expected_rows=inventory["rowCount"])
+    assert original_row["value"] == request_id, "The original pending request must own the first Activity row"
+    assert gui.get_property(f"activityRequest_{request_id}", "requestId") == request_id
+    if os.getenv("QML_TEST_ARTIFACTS"):
+        output = Path(os.environ["QML_TEST_ARTIFACTS"]) / "typed-current-receipt-reorg-restart"
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "restart-row-intent.json").write_text(json.dumps({
+            "inventory": inventory, "original_row": original_row, "request_id": request_id,
+            "address": address, "target": "activityListView[0].activityRowOpenButton",
+            "row_geometry": {key: gui.get_property(f"activityRequest_{request_id}", key)
+                             for key in ("x", "y", "width", "height", "visible")},
+            "content_y": gui.get_property("activityListView", "contentY"),
+        }, indent=2) + "\n", encoding="utf-8")
+    # Target the actual row's AbstractButton, as the existing Activity restart
+    # journey does. Clicking the passive Item can report a sent mouse event
+    # without an activated signal when its center is clipped or intercepted.
+    gui.click_list_item("activityListView", 0, "activityRowOpenButton")
+    gui.wait_for_property("paymentRequestModal", "opened", True, timeout_ms=30000)
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.fresh", True)
+    assert gui.get_property("paymentRequestModal", "openedEditor.requestId") == request_id
+    assert gui.get_property("paymentRequestModal", "openedEditor.address") == address
+    assert gui.get_property("paymentRequestModal", "openedEditor.receipts.receivedAmountSatoshi") == 0
+    assert gui.get_property("paymentRequestModal", "openedEditor.historicallyUsed") is True
+    assert gui.get_property("paymentRequestModal", "openedEditor.privateNote.text") == "Original private receipt note"
+    gui.wait_for_property("savedRequestReceiptStatus", "text", "Awaiting payment")
+    gui.wait_for_property("savedRequestCopyUriButton", "enabled", False)
+    checkpoint("exact original request and historical use survived process restart")
+
+    rpc_call(harness.gui_rpc_port, "reconsiderblock", [block])
+    rpc_call(harness.gui_rpc_port, "syncwithvalidationinterfacequeue")
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.receivedAmountSatoshi", 5_000_000_000, timeout_ms=30000)
+    gui.wait_for_property("paymentRequestModal", "openedEditor.receipts.fresh", True)
+    gui.wait_for_property("savedRequestReceiptStatus", "text", "Payment received")
+    assert gui.get_property("paymentRequestModal", "openedEditor.requestId") == request_id
+    gui.wait_for_property("savedRequestCopyUriButton", "enabled", False)
+    checkpoint("reconsidered receipt updates the retained original view")
+    checked_stop("after-restart")
+
+
 if __name__ == "__main__":
     raise SystemExit(run_scenarios('Wallet Activity and native export process journey', [
         wallet_scenario("request-receipt-restart-and-dialog", 5, receive_smoke),
+        wallet_scenario("typed-current-receipt-reorg-restart", 5, typed_receipt_restart),
     ]))
