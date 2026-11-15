@@ -8,6 +8,8 @@
 #include <test/mocks/preparationtest.h>
 #include <qml/models/activityfilterproxymodel.h>
 #include <qml/models/activityexportoperation.h>
+#include <qml/models/walletreceivemodel.h>
+#include <qml/models/requestsharingmodel.h>
 #include <qml/walletrequestdata.h>
 #include <test/mocks/manualexecutionenvironment.h>
 #include <QClipboard>
@@ -1290,9 +1292,16 @@ void TransactionActivityModelTests::copiesRawTransactionAndPublicPaymentRequest(
     auto unpaid = Request(2, UnpaidAddress(), "Public label", 10'000);
     unpaid.recipient.message = "Public message"; unpaid.recipient.noteSelf = "Private note";
     f.request(unpaid); Wait(model);
-    const auto uri = model->paymentRequestUri("2");
+    QObject view;
+    auto* sharing = f.wallet->receive()->sharingRequest("2", &view); QVERIFY(sharing);
+    sharing->setActive(true); QTRY_VERIFY(sharing->canCopyUri());
+    const auto uri = sharing->paymentUri();
     QCOMPARE(uri, ReceiveRequestHistoryModel::BuildBitcoinUri(UnpaidAddress(), 10'000, "Public label", "Public message"));
     QVERIFY(!uri.contains("Private"));
+    QGuiApplication::clipboard()->setText(QStringLiteral("before public request copy"));
+    auto* copied = sharing->copyUri(); QVERIFY(copied); QTRY_VERIFY(!copied->busy()); QVERIFY(copied->result().performed);
+    QCOMPARE(QGuiApplication::clipboard()->text(), uri);
+    sharing->retire();
     QVERIFY(model->paymentRequestUri("missing").isEmpty());
 }
 
