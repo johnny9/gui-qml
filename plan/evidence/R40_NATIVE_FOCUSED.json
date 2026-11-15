@@ -1,0 +1,117 @@
+{
+  "component": "R40 Native transport; full R40 acceptance remains root-owned",
+  "tested_app": "2f94b4578bf4e05e9f4e5f994a2a8891f322217b",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "base_API": "756cd79190707cb49b1272c8442ef354bda139e3",
+  "source": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/native-transport-source",
+  "scope": [
+    "qml/desktopintenttransport.h",
+    "qml/desktopintenttransport.cpp",
+    "test/test_desktopintenttransport.cpp",
+    "CMakeLists.txt:Windows advapi32",
+    "test/CMakeLists.txt:existing registry source registration"
+  ],
+  "ordinary": {
+    "artifact": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/native-focused-04",
+    "manifest": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/native-manifest-04.json",
+    "bodies": 10,
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "incomplete": 0,
+    "identities": [
+      "admissionFenceDoesNotDrainAndRetainedFacadeReleasesScope",
+      "missingProfileIsNotCreatedAndPhysicalStopUsesBackgroundDomain",
+      "secondaryForwardsEarlyFileOpenAndArgumentsAndDoesNotStealEmptyEndpoint:early-open-only-empty-argv",
+      "secondaryForwardsEarlyFileOpenAndArgumentsAndDoesNotStealEmptyEndpoint:early-open-and-arguments",
+      "reusedLocalProducerKeyFromAnotherServiceIsASeparateDelivery",
+      "capacityRejectsWholeRemoteBatchWithoutConsumingIdentity",
+      "lostAcknowledgmentQueriesOriginalReceiptWithoutReadmission",
+      "lateOwnerReplyDoesNotHoldPhysicalNativeRetirement",
+      "backwardClockDoesNotAuthorizeReplayOrLateAcknowledgment",
+      "invalidDeadlineConfigurationDoesNotReserveResources"
+    ],
+    "compiled_classes": [
+      "DesktopIntentTransportTests",
+      "StartupProfileTests"
+    ]
+  },
+  "static": {
+    "artifact": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/native-static-02",
+    "pinned": "Clang23.1.6 + unchanged Core449 Bitcoin tidy plugin/checks",
+    "CPP": 2,
+    "fresh_MOC": 7,
+    "passed": 9,
+    "build_exit": 0,
+    "process_cases": 2,
+    "process_normal_exit": 0,
+    "process_injected_fatal_exit": 1,
+    "stderr_inspected": true,
+    "note": "IPC-enabled build; these existing lifecycle cases do not claim completed R40 OS/facade wiring."
+  },
+  "lint": {
+    "artifact": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/native-lint-03",
+    "command": "COMMIT_RANGE=756cd79190707cb49b1272c8442ef354bda139e3..HEAD python3 ci/lint.py --scope app --no-build --image qt6-r17-linter-core449:20261114",
+    "exit": 0
+  },
+  "commands": {
+    "ordinary": "QT6_VALIDATION_BUILD_ROOT=/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r10-continue-20261113 QT6_VALIDATION_BUILD_PROFILE=tidy python3 /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R14/run_red.py /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/native-transport-source /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/native-focused-04 /home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/native-manifest-04.json",
+    "static": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/native-static-02/docker-command.json"
+  },
+  "earlier_nonpasses": [
+    {
+      "artifact": "native-focused-01",
+      "executed_bodies": 0,
+      "cause": "Pinned compile: filesystem exists overload and 2 Qt range-reference warnings."
+    },
+    {
+      "artifact": "native-focused-02",
+      "executed_bodies": 0,
+      "cause": "14 fixture aggregate initializers lacked explicit wake field under pinned warnings."
+    },
+    {
+      "artifact": "native-lint-01",
+      "cause": "Direct filesystem namespace and quoted generated moc include."
+    },
+    {
+      "artifact": "native-static-01",
+      "cause": "One vector-capacity tidy finding; its 2 process cases passed."
+    }
+  ],
+  "earlier_positive": "native-focused-03:8/8; final04 independently replays all final10",
+  "deferred": [
+    "Full R40 OS/FileOpen/main application wiring and independent process forwarding are parent-owned pending gates.",
+    "R42 exhaustive coverage/platform/configuration/sanitizers/native Windows.",
+    "No QML changes introduced by this component; parent owns composed QML gates."
+  ],
+  "no_core_or_qt_changes": true,
+  "ELFs": {
+    "bitcoin-core-app": {
+      "sha256": "ade1039028b4b205b2223750d1f93284060ee311458bfdee34f407ee2b908001",
+      "bytes": 95156432
+    },
+    "bitcoinqml_unit_tests": {
+      "sha256": "31cce52c9ad7f49f61e45ace6529a1739de9614b30bfb858cfbd095260db8d69",
+      "bytes": 96396736
+    },
+    "bitcoinqml_integration_tests": {
+      "sha256": "63b9e872cad3370ddfb588c5a9e53400e3a9cff0d950deff6c2980450b598eaf",
+      "bytes": 111245560
+    },
+    "bitcoinqml_qmltests": {
+      "sha256": "87bb3dd3221ba6039882b3a361b11d1db25d3807a6740a330cbfeb3403d097a3",
+      "bytes": 14431432
+    },
+    "bitcoind": {
+      "sha256": "2c63d5daeb8ef9e71396a3263090fd2e903a8fa60dd884f7b8e7c5f332c701e6",
+      "bytes": 37699968
+    },
+    "bitcoin-cli": {
+      "sha256": "a3958556fd90a6a7d8368d75c7e3009cfea13a4c8f3320ee1b7c4361e3c8fb41",
+      "bytes": 21122312
+    }
+  },
+  "input_receipt_sha256": "bd4f6149964850b9d16923023d7e9c0738b2d9cd5c98bc1183ed29bc115c5c7e",
+  "provided_input_receipt": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r11-r40-20261114/R40/native-focused-04/lease-input-state.json",
+  "ownership": "Retained Service facade holds Flags only after stop; physical retired callback follows Native endpoint/socket/lock destruction. Late foreign reply cells have revoked receivers. Local snapshot and remote receipt identities stay distinct."
+}

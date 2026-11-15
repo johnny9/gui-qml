@@ -1,0 +1,247 @@
+// Copyright (c) 2026 The Bitcoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+#include <qml/backendexecutor.h>
+#include <qml/desktopintenttransport.h>
+#include <test/mocks/manualexecutionenvironment.h>
+#include <test/qt_test_registry.h>
+
+#include <QFileInfo>
+#include <QScopeGuard>
+#include <QTemporaryDir>
+#include <QThread>
+#include <QtTest/QtTest>
+
+#include <atomic>
+#include <chrono>
+#include <future>
+
+namespace {
+using namespace desktopintent;
+using namespace desktopintent::transport;
+using namespace std::chrono_literals;
+std::shared_ptr<Owner> NewOwner(std::shared_ptr<execution::Scheduler> scheduler)
+{
+    Services services; services.scheduler = std::move(scheduler);
+    return Owner::Create(std::move(services), {});
+}
+Input Request(int id, Origin origin = Origin::Arguments)
+{
+    return {QString::number(id), Kind::Text, QStringLiteral("bitcoin:request-%1").arg(id), origin};
+}
+template <typename T> bool Ready(std::future<T>& future)
+{
+    return QTest::qWaitFor([&] { return future.wait_for(0ms) == std::future_status::ready; }, 8000);
+}
+bool Shutdown(BackendExecutor& executor)
+{
+    executor.shutdown();
+    return QTest::qWaitFor([&] { return executor.isDrained(); }, 8000);
+}
+auto Start(const std::shared_ptr<Service>& service, const QString& profile, std::vector<Input> inputs = {})
+{
+    auto promise = std::make_shared<std::promise<StartResult>>();
+    auto future = promise->get_future();
+    if (!service->start(profile, QStringLiteral("regtest"), std::move(inputs), [promise](auto result) { promise->set_value(std::move(result)); }))
+        promise->set_value({StartStatus::Rejected, QStringLiteral("Not admitted"), {}});
+    return future;
+}
+auto Stop(const std::shared_ptr<Service>& service)
+{
+    auto promise = std::make_shared<std::promise<void>>();
+    auto future = promise->get_future();
+    if (!service->stop([promise] { promise->set_value(); })) promise->set_value();
+    return future;
+}
+}
+
+class DesktopIntentTransportTests : public QObject {
+    Q_OBJECT
+private Q_SLOTS:
+    void admissionFenceDoesNotDrainAndRetainedFacadeReleasesScope()
+    {
+        ManualRoutedExecution commands;
+        auto owner = NewOwner(commands.scheduler);
+        auto service = Service::Create(commands.scheduler, owner); QVERIFY(service);
+        const auto pending = commands.scheduler->pending();
+        service->closeAdmission();
+        QCOMPARE(commands.scheduler->pending(), pending); QVERIFY(!service->retired());
+        QVERIFY(!service->start(QStringLiteral("/unused"), QStringLiteral("regtest"), {}, {}));
+        QVERIFY(owner->admit({Request(1)}, {})); commands.drain();
+        auto retired = Stop(service); QVERIFY(!service->retired()); commands.drain();
+        QVERIFY(Ready(retired)); QVERIFY(service->retired());
+        std::optional<Receipt> receipt;
+        QVERIFY(owner->lookup(QStringLiteral("1"), [&](auto value) { receipt = value; })); commands.drain();
+        QVERIFY(receipt); QVERIFY(receipt->disposition == Disposition::DroppedOnStop);
+        owner.reset(); commands.drain();
+        QCOMPARE(commands.scheduler->pending(), size_t{0}); QVERIFY(service);
+    }
+    void missingProfileIsNotCreatedAndPhysicalStopUsesBackgroundDomain()
+    {
+        BackendExecutor executor{execution::Limits::Bounded()};
+        auto owner = NewOwner(executor.scheduler());
+        auto service = Service::Create(executor.scheduler(), owner); QVERIFY(service);
+        const auto cleanup = qScopeGuard([&] { service->stop(); owner.reset(); Shutdown(executor); });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto profile = directory.filePath(QStringLiteral("not-created/profile"));
+        auto promise = std::make_shared<std::promise<std::pair<StartResult, QThread*>>>(); auto result = promise->get_future();
+        QVERIFY(service->start(profile, QStringLiteral("regtest"), {Request(1)}, [promise](auto value) { promise->set_value({std::move(value), QThread::currentThread()}); }));
+        QVERIFY(Ready(result)); const auto started = result.get();
+        QVERIFY(started.first.status == StartStatus::Primary); QCOMPARE(started.first.receipts.size(), size_t{1});
+        QVERIFY(started.second != QThread::currentThread()); QVERIFY(!QFileInfo::exists(profile));
+        auto retired = Stop(service); QVERIFY(Ready(retired)); QVERIFY(service->retired());
+        owner.reset(); QVERIFY(Shutdown(executor)); QVERIFY(service);
+    }
+    void secondaryForwardsEarlyFileOpenAndArgumentsAndDoesNotStealEmptyEndpoint_data()
+    {
+        QTest::addColumn<bool>("arguments");
+        QTest::newRow("early-open-only-empty-argv") << false;
+        QTest::newRow("early-open-and-arguments") << true;
+    }
+    void secondaryForwardsEarlyFileOpenAndArgumentsAndDoesNotStealEmptyEndpoint()
+    {
+        QFETCH(bool, arguments);
+        BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()}, empty_executor{execution::Limits::Bounded()};
+        auto primary_owner = NewOwner(primary_executor.scheduler());
+        auto secondary_owner = NewOwner(secondary_executor.scheduler());
+        auto empty_owner = NewOwner(empty_executor.scheduler());
+        auto primary = Service::Create(primary_executor.scheduler(), primary_owner);
+        auto secondary = Service::Create(secondary_executor.scheduler(), secondary_owner);
+        auto empty = Service::Create(empty_executor.scheduler(), empty_owner);
+        const auto cleanup = qScopeGuard([&] {
+            primary->stop(); secondary->stop(); empty->stop(); primary_owner.reset(); secondary_owner.reset(); empty_owner.reset();
+            Shutdown(primary_executor); Shutdown(secondary_executor); Shutdown(empty_executor);
+        });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        const auto profile = directory.filePath(QStringLiteral("missing/profile"));
+        auto listening = Start(primary, profile); QVERIFY(Ready(listening)); QVERIFY(listening.get().status == StartStatus::Primary);
+        QVERIFY(secondary_owner->admit({Request(1, Origin::FileOpen)}, {}));
+        auto forwarded = Start(secondary, profile, arguments ? std::vector<Input>{Request(2)} : std::vector<Input>{}); QVERIFY(Ready(forwarded));
+        const auto result = forwarded.get(); QVERIFY(result.status == StartStatus::Forwarded);
+        QCOMPARE(result.receipts.size(), arguments ? size_t{2} : size_t{1});
+        QCOMPARE(result.producer_keys, arguments ? (std::vector<QString>{QStringLiteral("1"), QStringLiteral("2")}) : std::vector<QString>{QStringLiteral("1")});
+        QCOMPARE(result.receipts[0].delivery, uint64_t{1}); if (arguments) QCOMPARE(result.receipts[1].delivery, uint64_t{2});
+        QVERIFY(!secondary_owner->admit({Request(3, Origin::FileOpen)}, {}));
+        auto no_request = Start(empty, profile); QVERIFY(Ready(no_request)); QVERIFY(no_request.get().status == StartStatus::Rejected);
+        QVERIFY(!primary->retired()); QVERIFY(!QFileInfo::exists(profile));
+    }
+    void reusedLocalProducerKeyFromAnotherServiceIsASeparateDelivery()
+    {
+        BackendExecutor primary_executor{execution::Limits::Bounded()}, first_executor{execution::Limits::Bounded()}, second_executor{execution::Limits::Bounded()};
+        auto primary_owner = NewOwner(primary_executor.scheduler());
+        auto first_owner = NewOwner(first_executor.scheduler());
+        auto second_owner = NewOwner(second_executor.scheduler());
+        auto primary = Service::Create(primary_executor.scheduler(), primary_owner);
+        auto first = Service::Create(first_executor.scheduler(), first_owner);
+        auto second = Service::Create(second_executor.scheduler(), second_owner);
+        const auto cleanup = qScopeGuard([&] { primary->stop(); first->stop(); second->stop(); primary_owner.reset(); first_owner.reset(); second_owner.reset(); Shutdown(primary_executor); Shutdown(first_executor); Shutdown(second_executor); });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        auto listening = Start(primary, directory.path()); QVERIFY(Ready(listening)); QVERIFY(listening.get().status == StartStatus::Primary);
+        auto original = Start(first, directory.path(), {Request(1)}); QVERIFY(Ready(original));
+        auto reused = Start(second, directory.path(), {Request(1)}); QVERIFY(Ready(reused));
+        const auto before = original.get(), after = reused.get();
+        QVERIFY(before.status == StartStatus::Forwarded); QVERIFY(after.status == StartStatus::Forwarded);
+        QCOMPARE(before.producer_keys, after.producer_keys); QCOMPARE(before.receipts.front().delivery, uint64_t{1}); QCOMPARE(after.receipts.front().delivery, uint64_t{2});
+    }
+    void capacityRejectsWholeRemoteBatchWithoutConsumingIdentity()
+    {
+        BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()};
+        auto primary_owner = NewOwner(primary_executor.scheduler());
+        auto secondary_owner = NewOwner(secondary_executor.scheduler());
+        auto primary = Service::Create(primary_executor.scheduler(), primary_owner);
+        auto secondary = Service::Create(secondary_executor.scheduler(), secondary_owner);
+        const auto cleanup = qScopeGuard([&] { primary->stop(); secondary->stop(); primary_owner.reset(); secondary_owner.reset(); Shutdown(primary_executor); Shutdown(secondary_executor); });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        std::vector<Input> initial; for (int index{1}; index <= 15; ++index) initial.push_back(Request(index));
+        auto listening = Start(primary, directory.path(), std::move(initial)); QVERIFY(Ready(listening)); QVERIFY(listening.get().status == StartStatus::Primary);
+        auto forwarded = Start(secondary, directory.path(), {Request(16), Request(17)}); QVERIFY(Ready(forwarded)); QVERIFY(forwarded.get().status == StartStatus::Rejected);
+        auto promise = std::make_shared<std::promise<desktopintent::Admission>>(); auto admitted = promise->get_future();
+        QVERIFY(primary_owner->admit({Request(18)}, [promise](auto value) { promise->set_value(std::move(value)); }));
+        QVERIFY(Ready(admitted)); const auto last = admitted.get(); QVERIFY(last); QCOMPARE(last.receipts.front().delivery, uint64_t{16});
+    }
+    void lostAcknowledgmentQueriesOriginalReceiptWithoutReadmission()
+    {
+        ManualRoutedExecution original;
+        BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()};
+        auto primary_owner = NewOwner(original.scheduler);
+        auto secondary_owner = NewOwner(secondary_executor.scheduler());
+        auto clock = std::make_shared<std::atomic<int64_t>>(0);
+        auto clock_calls = std::make_shared<std::atomic<size_t>>(0);
+        Limits limits; limits.now = [clock, clock_calls] { ++*clock_calls; return Limits::Time{} + std::chrono::milliseconds{clock->load()}; };
+        auto primary = Service::Create(primary_executor.scheduler(), primary_owner);
+        auto secondary = Service::Create(secondary_executor.scheduler(), secondary_owner, limits);
+        auto release = std::make_shared<std::promise<void>>(); const auto gate = release->get_future().share(); bool released{false};
+        const auto cleanup = qScopeGuard([&] {
+            if (!released) release->set_value(); primary->stop(); secondary->stop(); original.drain(); primary_owner.reset(); secondary_owner.reset(); original.drain();
+            Shutdown(primary_executor); Shutdown(secondary_executor); original.drain();
+        });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        auto listening = Start(primary, directory.path()); QVERIFY(Ready(listening)); QVERIFY(listening.get().status == StartStatus::Primary);
+        auto forwarded = Start(secondary, directory.path(), {Request(1)});
+        QVERIFY(QTest::qWaitFor([&] { return original.queuedCount() > 0; }, 8000));
+        auto entered = std::make_shared<std::atomic_bool>(false);
+        QVERIFY(execution::Submit(*primary_executor.scheduler(), [gate, entered] { *entered = true; gate.wait(); }, [] {}, {}, {execution::Lane::Core, 1024, {}}));
+        QVERIFY(QTest::qWaitFor([&] { return entered->load(); }, 8000));
+        QVERIFY(QTest::qWaitFor([&] { return clock_calls->load() >= 8; }, 8000)); // Sender has entered its ACK deadline loop.
+        original.drain(); // Retain admission receipt; its ACK waits behind gate.
+        QVERIFY(primary_owner->stop()); original.drain(); // Readmission now rejects; original-key lookup remains supported.
+        *clock = 3000; release->set_value(); released = true;
+        QVERIFY(QTest::qWaitFor([&] { original.drain(); return forwarded.wait_for(0ms) == std::future_status::ready; }, 8000));
+        const auto result = forwarded.get(); QVERIFY(result.status == StartStatus::Forwarded);
+        QCOMPARE(result.receipts.size(), size_t{1}); QCOMPARE(result.receipts.front().delivery, uint64_t{1});
+        QVERIFY(result.receipts.front().disposition == Disposition::DroppedOnStop);
+        QCOMPARE(result.producer_keys, std::vector<QString>{QStringLiteral("1")});
+    }
+    void lateOwnerReplyDoesNotHoldPhysicalNativeRetirement()
+    {
+        ManualRoutedExecution original;
+        BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()};
+        auto primary_owner = NewOwner(original.scheduler);
+        auto secondary_owner = NewOwner(secondary_executor.scheduler());
+        auto primary = Service::Create(primary_executor.scheduler(), primary_owner);
+        auto secondary = Service::Create(secondary_executor.scheduler(), secondary_owner);
+        const auto cleanup = qScopeGuard([&] { primary->stop(); secondary->stop(); original.drain(); primary_owner.reset(); secondary_owner.reset(); original.drain(); Shutdown(primary_executor); Shutdown(secondary_executor); original.drain(); });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        auto listening = Start(primary, directory.path()); QVERIFY(Ready(listening)); QVERIFY(listening.get().status == StartStatus::Primary);
+        auto forwarded = Start(secondary, directory.path(), {Request(1)});
+        QVERIFY(QTest::qWaitFor([&] { return original.queuedCount() > 0; }, 8000));
+        auto retired = Stop(primary); QVERIFY(Ready(retired)); QVERIFY(primary->retired());
+        QVERIFY(Ready(forwarded)); QVERIFY(forwarded.get().status == StartStatus::Unknown);
+        // The delayed foreign callback is delivered after Native QObject/socket
+        // destruction. Its reply cell must have revoked that receiver already.
+        original.drain(); primary_owner.reset(); original.drain();
+        QVERIFY(Shutdown(primary_executor)); QVERIFY(primary);
+    }
+    void backwardClockDoesNotAuthorizeReplayOrLateAcknowledgment()
+    {
+        ManualRoutedExecution original;
+        BackendExecutor primary_executor{execution::Limits::Bounded()}, secondary_executor{execution::Limits::Bounded()};
+        auto primary_owner = NewOwner(original.scheduler);
+        auto secondary_owner = NewOwner(secondary_executor.scheduler());
+        auto clock = std::make_shared<std::atomic<int64_t>>(1000);
+        Limits limits; limits.now = [clock] { return Limits::Time{} + std::chrono::milliseconds{clock->load()}; };
+        auto primary = Service::Create(primary_executor.scheduler(), primary_owner);
+        auto secondary = Service::Create(secondary_executor.scheduler(), secondary_owner, limits);
+        const auto cleanup = qScopeGuard([&] { primary->stop(); secondary->stop(); original.drain(); primary_owner.reset(); secondary_owner.reset(); original.drain(); Shutdown(primary_executor); Shutdown(secondary_executor); original.drain(); });
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        auto listening = Start(primary, directory.path()); QVERIFY(Ready(listening)); QVERIFY(listening.get().status == StartStatus::Primary);
+        auto forwarded = Start(secondary, directory.path(), {Request(1)});
+        QVERIFY(QTest::qWaitFor([&] { return original.queuedCount() > 0; }, 8000));
+        const auto original_turns = original.queuedCount(); *clock = 0;
+        QVERIFY(Ready(forwarded)); QVERIFY(forwarded.get().status == StartStatus::Unknown);
+        QCOMPARE(original.queuedCount(), original_turns); // No second admit and no query after global deadline invalidation.
+        original.drain();
+    }
+    void invalidDeadlineConfigurationDoesNotReserveResources()
+    {
+        ManualRoutedExecution commands;
+        auto owner = NewOwner(commands.scheduler);
+        Limits limits; limits.acknowledge = 31s;
+        QVERIFY(!Service::Create(commands.scheduler, owner, limits));
+        limits = {}; limits.now = {};
+        QVERIFY(!Service::Create(commands.scheduler, owner, limits));
+        owner.reset(); commands.drain(); QCOMPARE(commands.scheduler->pending(), size_t{0});
+    }
+};
+BITCOINQML_REGISTER_QT_TEST(DesktopIntentTransportTests)
+#include <test_desktopintenttransport.moc>
