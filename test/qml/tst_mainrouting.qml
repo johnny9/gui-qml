@@ -224,6 +224,86 @@ TestCase {
             "Use an existing wallet backup file.")
     }
 
+    function test_modal_creation_keeps_file_navigation_on_the_original_page() {
+        const window = createMain(true)
+        const actions = findChild(window, "desktopMenuActions")
+        const send = selectedSend(window)
+        const originalView = findChild(window, "desktopWalletsPage").activeView
+        const originalWallet = walletController.selectedWallet
+        const note = findChild(send, "sendNoteInput")
+        note.text = "Original Send context"
+        actions.createWallet.trigger()
+        const modal = findChild(window, "walletCreationModal")
+        tryCompare(modal, "opened", true)
+        findChild(modal, "walletTypeRegular").clicked()
+        tryVerify(function() { return findChild(modal, "createWalletFormPage") !== null })
+        const form = findChild(modal, "createWalletFormPage")
+        const name = findChild(form, "createWalletNameInput")
+        testSetup.replaceText(name, "Unsubmitted modal draft")
+        const creations = walletController.creationCalls
+        const closes = walletController.closeWalletCalls
+
+        // This is the same command a native File-menu item delivers. The
+        // popup blocks pointer input, but a native menu is outside its scene.
+        actions.settings.trigger()
+        compare(findChild(window, "sendTabButton").checked, true)
+        compare(findChild(window, "desktopWalletSettingsTabButton").checked, false)
+        actions.nodeView.trigger()
+        actions.closeWallet.trigger()
+        compare(findChild(window, "sendTabButton").checked, true)
+        compare(findChild(window, "desktopWalletsPage").activeView, originalView)
+        compare(walletController.selectedWallet, originalWallet)
+        compare(walletController.creationCalls, creations)
+        compare(walletController.closeWalletCalls, closes)
+        compare(findChild(modal, "createWalletFormPage"), form)
+        compare(name.text, "Unsubmitted modal draft")
+        compare(note.text, "Original Send context")
+        compare(modal.visible, true)
+        compare(actions.settings.enabled, false)
+        compare(actions.createWallet.enabled, false)
+        compare(actions.exit.enabled, true)
+    }
+
+    function test_modal_creation_rejects_a_delayed_direct_route_then_restores_admission() {
+        const window = createMain(true)
+        const actions = findChild(window, "desktopMenuActions")
+        selectedSend(window)
+        actions.createWallet.trigger()
+        const modal = findChild(window, "walletCreationModal")
+        tryCompare(modal, "opened", true)
+        window.openSettings("display")
+        compare(findChild(window, "sendTabButton").checked, true)
+        compare(findChild(window, "desktopWalletSettingsTabButton").checked, false)
+        const close = findChild(modal, "onboardingCloseButton")
+        verify(close !== null)
+        clickVisible(close)
+        tryCompare(modal, "visible", false)
+        tryCompare(actions.settings, "enabled", true)
+        actions.settings.trigger()
+        compare(findChild(window, "desktopWalletSettingsTabButton").checked, true)
+    }
+
+    function test_owned_runtime_question_blocks_navigation_without_blocking_its_answer() {
+        const window = createMain(true)
+        const actions = findChild(window, "desktopMenuActions")
+        selectedSend(window)
+        try {
+        nodeModel.setRuntimeDialogForTest("Original runtime question", "Continue?", DialogButtonBox.Ok, true)
+        tryCompare(findChild(window, "nodeRuntimeDialog"), "opened", true)
+        actions.settings.trigger()
+        compare(findChild(window, "sendTabButton").checked, true)
+        compare(actions.settings.enabled, false)
+        tryVerify(function() { return findChild(window, "nodeRuntimeDialogButtonOk") !== null })
+        clickVisible(findChild(window, "nodeRuntimeDialogButtonOk"))
+        tryCompare(nodeModel, "runtimeDialogVisible", false)
+        tryCompare(actions.settings, "enabled", true)
+        actions.settings.trigger()
+        compare(findChild(window, "desktopWalletSettingsTabButton").checked, true)
+        } finally {
+            if (nodeModel.runtimeDialogVisible) nodeModel.answerRuntimeDialog(DialogButtonBox.Cancel)
+        }
+    }
+
     function test_add_wallet_completion_returns_to_activity() {
         const window = createMain(true)
         findChild(window, "desktopMenuActions").createWallet.trigger()

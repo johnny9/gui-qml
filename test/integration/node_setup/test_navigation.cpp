@@ -8,6 +8,7 @@
 #include <QMetaEnum>
 #include <QPointer>
 #include <QSignalSpy>
+#include <QScopeGuard>
 
 #include <utility>
 
@@ -80,6 +81,47 @@ private Q_SLOTS:
         QTRY_VERIFY(qmltest::TransitionsFinished(m_app.window()));
         QCOMPARE(qmltest::Find(m_app, "blockClock"), clock.data());
         QCOMPARE(warnings.count(), 0);
+    }
+
+    void nativeFileRouteCannotNavigateBehindTheOwnedWalletModal()
+    {
+        auto* actions = qmltest::Find(m_app, "desktopMenuActions");
+        QVERIFY(actions);
+        auto* create = actions->property("createWallet").value<QObject*>();
+        auto* settings = actions->property("settings").value<QObject*>();
+        QVERIFY(create && settings);
+        if (!m_app.window()->property("desktopWalletMode").toBool()) {
+            // The wallet-disabled configuration exposes no Add-Wallet route.
+            QVERIFY(!create->property("visible").toBool());
+            return;
+        }
+        QVERIFY(create->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(create, "trigger"));
+        QPointer<QObject> modal{qmltest::WaitForVisible(m_app, "walletCreationModal")};
+        QVERIFY(modal);
+        const auto close_modal = qScopeGuard([&] {
+            if (modal) QMetaObject::invokeMethod(modal, "close");
+            QTest::qWaitFor([&] { return !modal || !modal->property("visible").toBool(); });
+        });
+        QVERIFY(qmltest::Click(m_app, "walletTypeRegular"));
+        auto* form = qmltest::WaitForVisible(m_app, "createWalletFormPage");
+        QVERIFY(form);
+        QVERIFY(qmltest::SetText(m_app, "createWalletNameInput", QStringLiteral("Original modal draft")));
+        QPointer<QObject> name{qmltest::Find(m_app, "createWalletNameInput")};
+        QVERIFY(name);
+        auto* node_tab = qmltest::Find(m_app, "blockClockTabButton");
+        auto* settings_tab = qmltest::Find(m_app, "desktopWalletSettingsTabButton");
+        QVERIFY(node_tab && settings_tab);
+        QVERIFY(node_tab->property("checked").toBool());
+        // Deliver the actual MenuCommand used by the native File menu. This
+        // bypasses popup pointer interception, as the native menu does.
+        QVERIFY(QMetaObject::invokeMethod(settings, "trigger"));
+        QVERIFY(node_tab->property("checked").toBool());
+        QVERIFY(!settings_tab->property("checked").toBool());
+        QVERIFY(modal->property("visible").toBool());
+        QCOMPARE(qmltest::Find(m_app, "createWalletFormPage"), form);
+        QCOMPARE(name->property("text").toString(), QStringLiteral("Original modal draft"));
+        QVERIFY(!settings->property("enabled").toBool());
     }
 };
 
