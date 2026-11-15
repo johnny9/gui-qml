@@ -67,6 +67,7 @@ public:
     QString unlockErrorText() const { return m_unlock_error; }
     bool needsUnlock() const { return m_needs_unlock; }
     std::optional<walletbump::Commit> commitResult() const;
+    std::shared_ptr<const execution::OwnedCommand<walletbump::Preparation>> preparationOperation() const { return m_prepare_operation; }
     std::shared_ptr<const execution::OwnedCommand<walletbump::Commit>> commitOperation() const { return m_commit_operation; }
     Q_INVOKABLE quint64 requestPrepareFeeBump(const QString& txid, unsigned int target_blocks);
     Q_INVOKABLE quint64 requestConfirmFeeBump();
