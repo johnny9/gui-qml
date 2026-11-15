@@ -75,6 +75,39 @@ private Q_SLOTS:
         QCOMPARE(psbtwork::SerializeRaw(*facts->document), original);
     }
 
+    void nodePolicyIsIndependentFromVerifiedCompletion_data()
+    {
+        QTest::addColumn<int>("scenario");
+        for (const auto& [name, value] : {std::pair{"unknown", 0}, {"no-known-obstacle", 1},
+                 {"missing-or-spent", 2}, {"immature", 3}, {"nonfinal", 4}, {"below-relay", 5}, {"chain-limits", 6}})
+            QTest::newRow(name) << value;
+    }
+    void nodePolicyIsIndependentFromVerifiedCompletion()
+    {
+        QFETCH(int, scenario);
+        auto snapshot = Analysis();
+        auto document = *snapshot->document;
+        document.inputs[0].final_script_sig = CScript{} << std::vector<unsigned char>{};
+        snapshot->document = std::make_shared<const PartiallySignedTransaction>(document);
+        snapshot->assessment = snapshot->document;
+        snapshot->complete = true;
+        snapshot->node_facts.observed = scenario != 0;
+        snapshot->node_facts.missing_inputs = scenario == 2;
+        snapshot->node_facts.immature_inputs = scenario == 3;
+        snapshot->node_facts.final = scenario != 4;
+        snapshot->node_facts.sufficient_fee = scenario != 5;
+        snapshot->node_facts.chain_limits = scenario != 6;
+        const auto raw = psbtwork::SerializeRaw(document);
+        psbtdocument::Qualify(*snapshot);
+        QVERIFY(snapshot->complete);
+        QCOMPARE(snapshot->signature_state, psbtwork::SignatureState::Verified);
+        QCOMPARE(snapshot->can_broadcast, scenario < 2);
+        QCOMPARE(snapshot->node_state, scenario == 0 ? psbtpolicy::State::Unknown
+            : scenario == 1 ? psbtpolicy::State::NoKnownObstacle : psbtpolicy::State::Blocked);
+        QVERIFY(!snapshot->status.isEmpty());
+        QCOMPARE(psbtwork::SerializeRaw(*snapshot->document), raw);
+    }
+
     void loadFailureClearsOneCoherentTuple()
     {
         psbtdocument::Owner owner{9};

@@ -630,7 +630,7 @@ WalletQmlController::WalletQmlController(interfaces::Node& node, execution::Limi
     };
     host->adoptionUnavailable = [this](bool closed) { adoptionUnavailable(closed); };
     host->createFacade = [this](std::shared_ptr<interfaces::Wallet> wallet, const QString& name, walletopening::NativeEvents events) {
-        return new WalletQmlModel(WalletQmlModel::SharedWallet{std::move(wallet), backgroundScheduler(), name, m_preferences, m_fee_policy, m_shutdown_gate, std::move(events), true}, &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices());
+        return new WalletQmlModel(WalletQmlModel::SharedWallet{std::move(wallet), backgroundScheduler(), name, m_preferences, m_fee_policy, m_shutdown_gate, std::move(events), true}, &m_node, FeeReadServices{}, psbtServices(), backupServices());
     };
     host->information = [this](WalletQmlModel* wallet, WalletRegistry::Information action) {
         switch (action) {
@@ -1539,7 +1539,7 @@ void WalletQmlController::finishInitialization()
                 return;
             }
             if (entry.unload_observation) adoption->unloaded = entry.unload_observation->unloaded;
-            auto* wallet_model = new WalletQmlModel(WalletQmlModel::SharedWallet{entry.wallet, backgroundScheduler(), QString::fromStdString(entry.name), m_preferences, m_fee_policy, m_shutdown_gate, {m_registry->eventClock(), adoption->unloaded, entry.unload_observation}, true}, &m_node, FeeReadServices{}, psbtfee::Services{}, backupServices());
+            auto* wallet_model = new WalletQmlModel(WalletQmlModel::SharedWallet{entry.wallet, backgroundScheduler(), QString::fromStdString(entry.name), m_preferences, m_fee_policy, m_shutdown_gate, {m_registry->eventClock(), adoption->unloaded, entry.unload_observation}, true}, &m_node, FeeReadServices{}, psbtServices(), backupServices());
             if (!registerWalletModel(wallet_model, adoption)) {
                 if (!guard || m_shutting_down) return;
                 retireWallet(wallet_model, false);

@@ -28,6 +28,7 @@ class WalletQmlModelTransaction : public QObject
     Q_PROPERTY(QString amount READ amount NOTIFY amountChanged)
     Q_PROPERTY(QString fee READ fee NOTIFY feeChanged)
     Q_PROPERTY(bool feeKnown READ feeKnown NOTIFY feeChanged)
+    Q_PROPERTY(QString nodePolicyStatus READ nodePolicyStatus NOTIFY nodePolicyChanged)
     Q_PROPERTY(QString total READ total NOTIFY totalChanged)
     Q_PROPERTY(QString label READ label CONSTANT)
     Q_PROPERTY(QString txid READ txid NOTIFY txidChanged)
@@ -66,7 +67,13 @@ public:
     bool reviewUsesFallback() const { return m_review_fee_source == static_cast<int>(feeestimate::Provenance::Fallback); }
     const QMap<QString, QString>& recipientLabels() const { return m_recipient_labels; }
     const QSet<QString>& reviewedAddresses() const { return m_reviewed_addresses; }
+    bool nodePolicyBlocked() const { return m_node_policy_blocked; }
+    QString nodePolicyStatus() const { return m_node_policy_status; }
+    void setNodePolicyStatus(QString status, bool blocked);
     std::shared_ptr<const void> retainedValues() const { return m_review_lifetime; }
+    std::shared_ptr<const PartiallySignedTransaction> assessedPsbt() const { return m_assessed_psbt; }
+    // The producer retains Native cleanup for this immutable analysis value.
+    void setAssessedPsbt(std::shared_ptr<const PartiallySignedTransaction> assessment) { m_assessed_psbt = std::move(assessment); }
 
     CTransactionRef& getWtx();
     void setWtx(const CTransactionRef&);
@@ -88,6 +95,7 @@ Q_SIGNALS:
     void feeChanged();
     void totalChanged();
     void txidChanged();
+    void nodePolicyChanged();
     void reviewedRecipientsChanged();
     void presentationChanged();
 
@@ -105,6 +113,9 @@ private:
 
     // Declared before cached aliases so they release before the cleanup lease.
     std::shared_ptr<const walletreview::Snapshot> m_review_lifetime;
+    std::shared_ptr<const PartiallySignedTransaction> m_assessed_psbt;
+    QString m_node_policy_status;
+    bool m_node_policy_blocked{false};
     std::shared_ptr<const void> m_presentation_lifetime;
     bool m_presentation_pending{false};
     bool m_closed{false};
