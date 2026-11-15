@@ -308,7 +308,7 @@ private Q_SLOTS:
         const auto destination = qmltest::NewAddress(m_app, wallet->name());
         const auto coins = qmltest::Rpc(m_app, "listunspent", {}, wallet->name());
         QVERIFY(!coins.empty());
-        const auto coin = coins[0];
+        const auto& coin = coins[0];
         const auto value = ParseMoney(coin.find_value("amount").getValStr()); QVERIFY(value);
         const auto input = "[{\"txid\":\"" + coin.find_value("txid").get_str() + "\",\"vout\":"
             + coin.find_value("vout").getValStr() + ",\"sequence\":4294967293}]";
