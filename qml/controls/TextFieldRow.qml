@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 import QtQuick 2.15
+import QtQml 2.15
 import QtQuick.Controls 2.15
 import org.bitcoincore.qt 1.0
 
@@ -39,7 +40,11 @@ FormRow {
         implicitHeight: 32
         enabled: root.enabled
         readOnly: root.readOnly
-        text: root.textInput ? root.textInput.text : root.text
+        Binding {
+            target: input
+            property: "text"
+            value: root.textInput ? root.textInput.text : root.text
+        }
         placeholderText: root.placeholderText
         placeholderTextColor: root.placeholderColor
         validator: root.validator
