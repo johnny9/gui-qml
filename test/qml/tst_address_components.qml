@@ -857,6 +857,8 @@ TestCase {
     function editDetails(fixture, value) {
         const field = findObject(fixture.details, "addressDetailsNoteField")
         verify(field !== null)
+        fixture.window.requestActivate()
+        tryCompare(fixture.window, "active", true)
         field.forceActiveFocus()
         tryCompare(field, "activeFocus", true)
         verify(testSetup.replaceText(field, value))

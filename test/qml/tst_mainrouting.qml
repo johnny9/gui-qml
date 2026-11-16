@@ -44,8 +44,12 @@ TestCase {
     function clickVisible(item) {
         verify(item !== null)
         verify(item.visible && item.enabled)
-        windowUnderTest.update()
-        verify(waitForRendering(item))
+        compare(item.Window.window, windowUnderTest)
+        verify(windowUnderTest.visible)
+        // Capture the actual window frame. Qt 6.2's software renderer need
+        // not emit another frameSwapped for an unchanged window.
+        const image = grabImage(windowUnderTest.contentItem)
+        verify(image !== null && image.width > 0 && image.height > 0)
         const point = item.mapToItem(windowUnderTest.contentItem, item.width / 2, item.height / 2)
         const bounds = JSON.stringify({name: item.objectName, x: point.x, y: point.y,
             contentWidth: windowUnderTest.contentItem.width, contentHeight: windowUnderTest.contentItem.height,
