@@ -444,7 +444,7 @@ void QmlInitExecutorApiTests::queuedShutdownAfterInitialization()
     QCOMPARE(node.calls.appShutdown.load(), fatal ? 0 : 1);
     QCOMPARE(node.exit_reads.load(),fatal?0:1);
     QVERIFY(node.status_after_shutdown.load());QVERIFY(node.status_off_gui.load());
-    QCOMPARE(node.status_thread.load(),node.shutdown_thread.load());
+    QVERIFY(SameThreadAddress(node.status_thread.load(), node.shutdown_thread.load()));
 }
 
 void QmlInitExecutorApiTests::initializeReportsShutdownRequest()
@@ -533,7 +533,7 @@ void QmlInitExecutorApiTests::shutdownEmitsResultAndRunsOffMainThread()
     QCOMPARE(node.calls.appShutdown.load(), 1);
     QCOMPARE(node.exit_reads.load(),1);
     QVERIFY(node.status_after_shutdown.load());QVERIFY(node.status_off_gui.load());
-    QCOMPARE(node.status_thread.load(),node.shutdown_thread.load());
+    QVERIFY(SameThreadAddress(node.status_thread.load(), node.shutdown_thread.load()));
 }
 
 void QmlInitExecutorApiTests::shutdownEmitsRunawayExceptionOnFailure()
@@ -927,7 +927,7 @@ void QmlInitExecutorApiTests::subscriptionRetirementDoesNotBlockGuiOrInterruptio
     QVERIFY(shutdown_after_retirement.load());
     QCOMPARE(node.exit_reads.load(),1);
     QVERIFY(node.status_after_shutdown.load());QVERIFY(node.status_off_gui.load());
-    QCOMPARE(node.status_thread.load(),node.shutdown_thread.load());
+    QVERIFY(SameThreadAddress(node.status_thread.load(), node.shutdown_thread.load()));
 }
 
 void QmlInitExecutorApiTests::subscriptionCleanupPrecedesShutdown()
@@ -978,7 +978,7 @@ void QmlInitExecutorApiTests::subscriptionCleanupPrecedesShutdown()
     QTRY_COMPARE_WITH_TIMEOUT(cleanup_count.load(), 1, SIGNAL_TIMEOUT);
     QCOMPARE(node.exit_reads.load(),1);
     QVERIFY(node.status_after_shutdown.load());QVERIFY(node.status_off_gui.load());
-    QCOMPARE(node.status_thread.load(),node.shutdown_thread.load());
+    QVERIFY(SameThreadAddress(node.status_thread.load(), node.shutdown_thread.load()));
 }
 
 void QmlInitExecutorApiTests::subscriptionCleanupPrecedesShutdownFailure()
