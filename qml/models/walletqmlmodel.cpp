@@ -2596,6 +2596,7 @@ void WalletQmlModel::startPreparation(transactionattempt::Result admission,
     std::shared_ptr<walletopening::Session> opening, QString draft_error)
 {
     if (!observationsAllowed()) return;
+    const QPointer<WalletQmlModel> observer{this};
     const auto ticket = admission.snapshot.ticket;
     if (admission.snapshot.id != m_preparation_projection.id || ticket.id != m_preparation_projection.id) {
         m_preparation_projection.phase = admission.admission_error == transactionattempt::AdmissionError::Closed
@@ -2603,10 +2604,9 @@ void WalletQmlModel::startPreparation(transactionattempt::Result admission,
         m_preparation_projection.candidate_current = false;
         if (admission.admission_error == transactionattempt::AdmissionError::StaleIntent)
             setTransactionStatus(tr("The transaction changed while it was being prepared. Prepare it again."));
-        if (observationsAllowed()) Q_EMIT preparationChanged();
+        if (observer && observer->observationsAllowed()) Q_EMIT preparationChanged();
         return;
     }
-    const QPointer<WalletQmlModel> observer{this};
     const auto post = presentation::ReliablePost(m_fee_read_services.post);
     const auto reject = [this, observer, post, ticket](transactionattempt::Phase phase, const QString& error) {
         if (!observer || !observer->observationsAllowed()) return;
@@ -2624,9 +2624,10 @@ void WalletQmlModel::startPreparation(transactionattempt::Result admission,
                 if (observer) observer->publishPreparationProjection(std::move(snapshot));
             });
         });
-        Q_EMIT preparationChanged();
+        if (observer && observer->observationsAllowed()) Q_EMIT preparationChanged();
     };
     publishPreparationProjection(admission.snapshot);
+    if (!observer || !observer->observationsAllowed()) return;
     if (admission.admission_error != transactionattempt::AdmissionError::None) {
         QString error;
         switch (admission.admission_error) {
@@ -2658,8 +2659,8 @@ void WalletQmlModel::startPreparation(transactionattempt::Result admission,
         return;
     }
     if (admission.transition != transactionattempt::Transition::Accepted) return;
-    const auto unchanged = [this, opening, ticket] {
-        return observationsAllowed() && m_opening == opening && opening && opening->available() &&
+    const auto unchanged = [this, observer, opening, ticket] {
+        return observer && observationsAllowed() && m_opening == opening && opening && opening->available() &&
             m_preparation_projection.id == ticket.id && m_preparation_projection.intent_revision == ticket.intent_revision &&
             m_gui_preparation_intent_revision == ticket.intent_revision && m_current_review_identity == ticket.prior_review;
     };
@@ -2694,6 +2695,7 @@ void WalletQmlModel::startPreparation(transactionattempt::Result admission,
         });
     auto native_owner = std::make_shared<std::shared_ptr<execution::OwnedCommand<walletprepare::Result>>>(operation);
     auto hold = opening->holdValues([native_owner] { native_owner->reset(); });
+    if (!unchanged()) return;
     auto output = walletopening::RetainValues<walletprepare::Result>(opening, [] { return std::make_unique<walletprepare::Result>(); });
     if (!unchanged()) return;
     if (!hold || !output) {
@@ -2711,6 +2713,7 @@ void WalletQmlModel::startPreparation(transactionattempt::Result admission,
         reject(transactionattempt::Phase::Failed, tr("The transaction preparation could not be queued."));
         return;
     }
+    if (!unchanged()) return;
     clearTransactionStatus();
     if (unchanged()) Q_EMIT preparationChanged();
 }

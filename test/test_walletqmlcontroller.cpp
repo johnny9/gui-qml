@@ -3912,8 +3912,9 @@ void WalletQmlControllerTests::manualRegistryRemovalPreservesReentrantSelection(
     auto* beta = controller.walletForName("beta"); auto* gamma = controller.walletForName("gamma");
     QVERIFY(alpha); QVERIFY(beta); QVERIFY(gamma);
     bool chose_gamma{false};
+    QObject selection_observer;
     QSignalSpy selected{&controller, &WalletQmlController::selectedWalletChanged};
-    connect(&controller, &WalletQmlController::selectedWalletChanged, this, [&] {
+    connect(&controller, &WalletQmlController::selectedWalletChanged, &selection_observer, [&] {
         if (controller.selectedWallet() != beta || chose_gamma) return;
         QCOMPARE(controller.rowForWallet(alpha), -1);
         QVERIFY(!controller.isWalletOpen("alpha"));
