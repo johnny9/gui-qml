@@ -2,7 +2,7 @@
 
 R41 is focused accepted at `90abf2fdd928bcdf8fc4ce3a831d2a2538d70a24`.
 R42 remains active and **is not accepted**. The combined repair source is
-`894c10e4047448d95794d46836df12d180303805`, with unchanged stock Core
+`fcd37c4f8af31f2dc60237eb9c916945c69024a8`, with unchanged stock Core
 `44901d8f64cb617714707bd025ecd83f108353c2`. Repairs have separate commits;
 qualification does not hide application changes in a documentation commit.
 
@@ -53,15 +53,42 @@ ports. The wallet-disabled configuration now builds all targets, inventories all
 the strict GUI startup/shutdown journey with empty stderr. This is focused
 configuration evidence, not a full wallet-disabled test pass
 (`platform-matrix/wallet-off-qml-11/ACTUAL_RESULTS_REVIEW.json`). The four new
-shipped QML resources remain in the final coverage denominator (264 total).
+shipped QML resources remain in the final coverage denominator (263 after retiring the unused selector).
 
-The later focused ASan run at `1e5d1105303510c7ba8f065fe2ec2bd1ab9005a6`
-builds all targets but still finds three failures: controller fixture callback
-lifetime, reentrant wallet-preparation owner loss, and file-export leaks. These
-are application/fixture repair work, not deferred Qt failures. Seven independent
-selections pass, including all seven typed-send integration rows and both backup
-integration rows. All 20 file-export assertions pass but its process fails LSan;
-do not label that selection sanitizer-clean (`asan-cpp-current/run-01/`).
+The later focused ASan run at `1e5d110` exposed controller fixture lifetime,
+wallet-preparation owner loss and file-export leaks. Their bounded repairs now
+pass: Controller 290 plus WalletQmlModel 466 bodies, and FileExport 22 plus
+BackupPolicyOperation 73 bodies, with zero failures/skips and clean sanitizer
+process exits. Exact source-qualified receipts are `wallet-preparation-guard/`
+and `repairs/file-export-admission/`. Subset controls are not counted twice.
+These focused results do not certify a full final-source sanitizer suite.
+
+The late R41 coin-selector cleanup passes 242 focused model/QML/Core bodies,
+both QML lint variants and 13 pinned tidy entries. It removes the unused page
+and unchecked legacy change aliases. Current selector production files remain
+unchanged; shipped QML inventory is now 263. See
+`coin-selector-qualification/ACCEPTANCE.json` and
+[R41 cleanup notes](R41_LATE_COIN_SELECTOR_RETIREMENT.md).
+
+The Gameboy ordinary O0/g0 run at `9106ca7` passes 89/90 CTest entries,
+including all ten Core integration groups; MainRouting aborts with
+`free(): invalid size`. Its cause is unresolved. All 16 focused cases and
+17 remaining process scenarios pass, and affected pinned tidy passes. The full
+run takes 2045 seconds and does not establish the required optimized Release
+configuration (`gameboy-repair-04/artifacts/`).
+
+Qt 6.2 now builds the complete Release configuration. Its original full run
+passes 73/78 ordinary and 8/10 integration entries. Missing timezone data is
+proved by unchanged-binary controls. Explicit native activation and rendered
+frame checks qualify 75 affected QML bodies, while the bounded declarative
+Receive scrolling workaround passes 55 native Receive and 19 QML bodies.
+Per-component Xvfb preserves parallel targeting. The complete final-source
+matrix and actual tzdata package receipt remain pending.
+
+Manual Maximum retains two real macOS failures despite later passing diagnostic
+runs. The consumer returns before acknowledging a ready SnapshotQuery result
+when selection is pending. A deterministic regression is being checked before
+repair; no Core-interface or product fix is claimed from a later pass.
 
 Core compatibility passes all seven selected cases with zero skips, using eleven
 stock checksum-verified releases and the stock generated functional runner.
