@@ -456,12 +456,32 @@ private Q_SLOTS:
         }
         const QString entered = input->property("text").toString();
         QVERIFY(qmltest::Click(m_app, "sendAddressInput"));
-        QTRY_VERIFY(!setup->wallet->feeEstimatePending());
+        // A producer event is not yet the Domain draft and fee readback.
+        // Await the exact validated snapshot before one physical review action.
+        QTRY_VERIFY(([&] {
+            const auto draft = setup->wallet->sendRecipientList()->draftSnapshot();
+            return draft && setup->wallet->sendRecipientList()->allValid()
+                && !setup->wallet->sendRecipientList()->validationPending()
+                && setup->wallet->sendRecipientList()->totalAmountSatoshi() == CAmount{2'000'000}
+                && !setup->wallet->fees()->policyPending() && !setup->wallet->feeEstimatePending()
+                && setup->wallet->fees()->estimateFresh()
+                && setup->wallet->fees()->estimateDraftRevision() == QString::number(draft->revision)
+                && setup->wallet->fees()->estimatePolicyRevision() == setup->wallet->fees()->revision();
+        }()));
         qInfo() << "Typed Send draft" << text << entered << "canonical sats" << setup->wallet->sendRecipientList()->totalAmountSatoshi()
                 << "available sats" << setup->wallet->availableSendBalanceSatoshi() << "error" << setup->wallet->sendRecipientList()->validationError();
         QTRY_VERIFY_WITH_TIMEOUT(qmltest::Find(m_app, "sendReviewButton")->property("enabled").toBool(), 30'000);
+        auto* review = qmltest::Find(m_app, "sendReviewButton"); QVERIFY(review);
+        QSignalSpy clicked{review, SIGNAL(clicked())}; QVERIFY(clicked.isValid());
+        const auto prior_preparation = setup->wallet->preparationId();
+        const auto original_draft = setup->wallet->sendRecipientList()->revision();
         QVERIFY(qmltest::Click(m_app, "sendReviewButton"));
+        QTRY_COMPARE(clicked.count(), 1);
+        QTRY_COMPARE(setup->wallet->preparationId(), prior_preparation + 1);
+        const auto original_preparation = setup->wallet->preparationId();
         QTRY_VERIFY(!setup->wallet->preparationBusy());
+        QCOMPARE(setup->wallet->preparationId(), original_preparation);
+        QCOMPARE(setup->wallet->sendRecipientList()->revision(), original_draft);
         qInfo() << "Typed Send preparation" << int(setup->wallet->preparationState())
                 << setup->wallet->transactionError() << "draft revision"
                 << setup->wallet->sendRecipientList()->revision();
