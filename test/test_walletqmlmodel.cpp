@@ -4810,6 +4810,107 @@ private Q_SLOTS:
         model.reset(); receipts->drain(); receipts->publishAll(); env->publishAll();
         QVERIFY(model.get_deleter().manual->finish()); QVERIFY(env->quiescent());
     }
+    void maximumWithoutAddressUsesCapturedInputBalance_data()
+    {
+        QTest::addColumn<bool>("manual");
+        QTest::addColumn<bool>("on_publication");
+        QTest::addColumn<int>("facts_during_selection");
+        QTest::newRow("automatic-control") << false << false << 0;
+        QTest::newRow("already-published-manual-selection") << true << false << 0;
+        QTest::newRow("maximum-inside-original-ready-selection-publication") << true << true << 0;
+        QTest::newRow("facts-delivered-while-successor-selection-is-pending") << true << false << 1;
+        QTest::newRow("failed-facts-delivered-while-successor-selection-is-pending") << true << false << 2;
+    }
+    void maximumWithoutAddressUsesCapturedInputBalance()
+    {
+        QFETCH(bool, manual); QFETCH(bool, on_publication); QFETCH(int, facts_during_selection);
+        bool maximum_requested{false}, throw_next_facts_read{false};
+        auto env = std::make_shared<ManualExecutionEnvironment>();
+        const std::set<COutPoint> selected{{Txid::FromUint256(uint256::ONE), 0}, {Txid::FromUint256(uint256::ONE), 1}};
+        std::vector<std::vector<COutPoint>> available_reads;
+        FeeReadServices services{env->scheduler, env, {}, [env](auto publication) { env->post(std::move(publication)); }};
+        auto [wallet, model] = MakeConfiguredWalletModel([&](MockWallet& value) {
+            value.list_coins_fn = [selected] {
+                interfaces::Wallet::CoinsList coins;
+                const auto destination = DecodeDestination(VALID_MAINNET_ADDRESS.toStdString());
+                for (const auto& point : selected) coins[destination].emplace_back(point,
+                    interfaces::WalletTxOut{CTxOut{50 * COIN, GetScriptForDestination(destination)}, 0, 6, false});
+                return coins;
+            };
+            value.get_available_balance_fn = [&](const wallet::CCoinControl& control) {
+                available_reads.push_back(control.ListSelected());
+                if (std::exchange(throw_next_facts_read, false)) throw std::runtime_error("original facts read failed");
+                return control.m_allow_other_inputs || control.ListSelected().size() == selected.size() ? 100 * COIN : CAmount{0};
+            };
+            value.get_balance_fn = [] { return 100 * COIN; };
+            value.get_minimum_fee_fn = [](const wallet::CCoinControl&) { return CAmount{1000}; };
+        }, nullptr, nullptr, std::move(services), false, {}, {}, env->scheduler);
+        const auto cleanup = qScopeGuard([&] {
+            model.reset(); env->drain(); env->publishAll();
+            model.get_deleter().manual->finish();
+        });
+        const auto settle = [&] {
+            for (int turn{0}; turn < 128; ++turn) {
+                env->drain(); env->publishAll(); QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+                if (env->turnsIdle() && env->publicationsIdle()) return true;
+            }
+            return false;
+        };
+        QVERIFY(settle()); QVERIFY(model->available());
+        if (on_publication) connect(model->coinsListModel(), &CoinsListModel::selectionSnapshotChanged, model.get(), [&] {
+            if (!model || maximum_requested || model->coinSelectionPending() ||
+                !model->coinsListModel()->manualInputSelection() || !model->selectedCoins() || *model->selectedCoins() != selected) return;
+            maximum_requested = true;
+            model->useMaximum();
+        });
+        if (manual) {
+            QVERIFY(model->coinsListModel()->setManualInputSelection(true));
+            for (const auto& point : selected) model->selectCoin(point);
+            QVERIFY(settle()); QVERIFY(!model->coinSelectionPending());
+            QVERIFY(model->selectedCoins());
+            QVERIFY(*model->selectedCoins() == selected);
+            QCOMPARE(model->coinsListModel()->totalSelectedSatoshi(), CAmount{100 * COIN});
+        }
+        if (facts_during_selection) {
+            // Complete an ordinary observation but hold its presentation turn.
+            // A newer public selection intent then owns the pending state.
+            const auto reads_before = available_reads.size();
+            throw_next_facts_read = facts_during_selection == 2;
+            model->scheduleFeeEstimates();
+            env->drain();
+            QVERIFY(available_reads.size() > reads_before);
+            QVERIFY(!env->publicationsIdle());
+            const auto original_point = *selected.begin();
+            model->unselectCoin(original_point);
+            QVERIFY(model->coinSelectionPending());
+            env->publishAll();
+            QVERIFY(model->coinSelectionPending()); // Its Domain turn is held.
+            QVERIFY(!model->availableSendBalanceKnown());
+            model->selectCoin(original_point);
+            QVERIFY(settle());
+            QVERIFY(!model->coinSelectionPending());
+            QVERIFY(model->selectedCoins());
+            QVERIFY(*model->selectedCoins() == selected);
+            QCOMPARE(model->coinsListModel()->totalSelectedSatoshi(), CAmount{100 * COIN});
+        }
+        auto* recipient = model->sendRecipientList()->currentRecipient(); QVERIFY(recipient);
+        QVERIFY(recipient->address()->address().isEmpty());
+        if (!on_publication) { maximum_requested = true; model->useMaximum(); }
+        QVERIFY(maximum_requested); QVERIFY(settle());
+        QCOMPARE(model->maximumRecipient(), recipient);
+        QVERIFY(!model->sendRecipientList()->validationPending());
+        QVERIFY(model->availableSendBalanceKnown());
+        qInfo() << "Maximum captured balance" << "manual" << manual << "reads" << available_reads.size()
+                << "amount" << recipient->amount()->satoshi();
+        QCOMPARE(recipient->amount()->satoshi(), CAmount{100 * COIN});
+        if (manual) QVERIFY(std::ranges::any_of(available_reads, [&](const auto& points) {
+            return std::set<COutPoint>(points.begin(), points.end()) == selected;
+        }));
+        QCOMPARE(wallet->calls.createTransaction.load(), 0);
+        model.reset(); env->drain(); env->publishAll();
+        QVERIFY(model.get_deleter().manual->finish()); QVERIFY(env->quiescent());
+    }
+
     void manualMaximumPublication_data() {
         QTest::addColumn<int>("variant");
         QTest::newRow("standard-maximum") << 0;

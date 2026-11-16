@@ -2232,9 +2232,11 @@ void WalletQmlModel::requestSendFacts()
 void WalletQmlModel::publishSendFacts()
 {
     if (!observationsAllowed()) return;
-    if (coinSelectionPending()) return;
+    // A delivery acknowledges the query notice even when a newer selection
+    // makes this result ineligible. Otherwise later reads cannot post a fresh
+    // notice and the new selection's facts remain unpublished indefinitely.
     const auto result = m_send_facts_query->take();
-    if (m_stopping || !available() || !result) return;
+    if (coinSelectionPending() || m_stopping || !available() || !result) return;
     if (!result->snapshot) {
         Q_EMIT customFeeTargetPendingChanged();
         return;
