@@ -5097,8 +5097,8 @@ void WalletQmlModelTests::encryptWalletUpdatesSecurityState()
     QVERIFY(model->encryptWallet("secret"));
     QTRY_COMPARE(model->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
     QCOMPARE(raw_wallet->encrypt_calls, 1);
-    QVERIFY(model->isEncrypted());
-    QVERIFY(model->isLocked());
+    QTRY_VERIFY(model->isEncrypted());
+    QTRY_VERIFY(model->isLocked());
     QVERIFY(model->settingsError().isEmpty());
 }
 

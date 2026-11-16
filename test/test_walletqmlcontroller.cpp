@@ -1123,7 +1123,7 @@ void WalletQmlControllerTests::creationEditorOwnsTheOriginalSubmission()
         wallet->private_keys_disabled = kind >= 2; wallet->external_signer = kind == 3;
         return std::unique_ptr<interfaces::Wallet>{std::move(wallet)};
     };
-    auto* editor = controller.newCreation(); QVERIFY(editor);
+    std::unique_ptr<WalletCreationModel> editor{controller.newCreation()}; QVERIFY(editor);
     editor->chooseKind(kind == 2 ? WalletCreationModel::WatchOnly : kind == 3 ? WalletCreationModel::ExternalSigner : WalletCreationModel::Software);
     editor->setEncryptRequested(kind == 0); editor->name()->edit("original-wallet"); editor->extendedPublicKey()->edit(VALID_XPUB);
     result_state.import_fn = [](auto& requests) { return std::vector<wallet::ImportResult>(requests.size()); };
@@ -1138,11 +1138,11 @@ void WalletQmlControllerTests::creationEditorOwnsTheOriginalSubmission()
     controller.clearWalletCreateStatus(); controller.clearWalletLoadStatus();
     QVERIFY(controller.walletLoadInProgress()); QCOMPARE(controller.creationOperation(), operation);
     QCOMPARE(operation->submittedName(), QStringLiteral("original-wallet")); QCOMPARE(operation->editorRevision(), submitted_revision);
-    auto* other = controller.newCreation(); QVERIFY(other); other->name()->edit("duplicate");
+    std::unique_ptr<WalletCreationModel> other{controller.newCreation()}; QVERIFY(other); other->name()->edit("duplicate");
     auto* refused = other->create({}, {}); QVERIFY(refused); QVERIFY(!refused->acceptedForDelivery()); QCOMPARE(refused->phase(), WalletOperationModel::Rejected);
     QCOMPARE(other->error().code, QStringLiteral("Busy")); QVERIFY(!other->operation());
     QCOMPARE(controller.creationOperation(), operation); controller.setSelectedWallet("another-core-load"); QCOMPARE(loader.load_wallet_calls, 0);
-    if (discard_editor) { editor->discard(); delete editor; }
+    if (discard_editor) { editor->discard(); editor.reset(); }
     QVERIFY(graph.until([&] { return operation->terminal() && !controller.walletLoadInProgress(); }));
     QCOMPARE(loader.create_wallet_calls, 1); QCOMPARE(native_name, std::string{"original-wallet"}); QVERIFY(native_lane);
     QCOMPARE(native_password, kind == 0 ? QString::fromUtf8("original-pässwörd-₿").toUtf8().toStdString() : std::string{});
