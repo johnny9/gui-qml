@@ -26,8 +26,12 @@ QVariantMap Decode(const QVariant& value, const QString& identity)
 {
     if (value.metaType().id() != QMetaType::QVariantMap) throw std::runtime_error("The wallet settings entry is incomplete");
     const auto entry = value.toMap();
-    if (entry.value(QStringLiteral("version")).metaType().id() != QMetaType::Int ||
-        entry.value(QStringLiteral("version")).toInt() != 2 ||
+    const auto version = entry.value(QStringLiteral("version"));
+    const auto version_type = version.metaType().id();
+    // CFPreferences may widen a persisted int. This is still integer version2,
+    // while bool, floating-point and string conversions are not valid versions.
+    if ((version_type != QMetaType::Int && version_type != QMetaType::LongLong) ||
+        version.toLongLong() != 2 ||
         entry.value(QStringLiteral("identity")).metaType().id() != QMetaType::QString ||
         entry.value(QStringLiteral("identity")).toString() != identity ||
         entry.value(QStringLiteral("payload")).metaType().id() != QMetaType::QVariantMap) {

@@ -29,10 +29,25 @@ Reservation ReadReservation(QSettings& settings, const QString& id, const QStrin
     if (const auto value = walletsettings::Read(settings, walletsettings::Area::Reservations, id)) {
         const auto address = value->value(QStringLiteral("address"));
         const auto retired = value->value(QStringLiteral("retired"));
-        if (address.metaType().id() != QMetaType::QString || retired.metaType().id() != QMetaType::QStringList) {
+        if (address.metaType().id() != QMetaType::QString) {
             throw std::runtime_error("The receive reservation entry is incomplete");
         }
-        return {address.toString(), retired.toStringList()};
+        QStringList retired_addresses;
+        if (retired.metaType().id() == QMetaType::QStringList) {
+            retired_addresses = retired.toStringList();
+        } else if (retired.metaType().id() == QMetaType::QVariantList) {
+            // Native property-list dictionaries return arrays as QVariantList.
+            // Check each element so invalid values cannot be coerced to strings.
+            for (const auto& value : retired.toList()) {
+                if (value.metaType().id() != QMetaType::QString) {
+                    throw std::runtime_error("The receive reservation entry is incomplete");
+                }
+                retired_addresses.push_back(value.toString());
+            }
+        } else {
+            throw std::runtime_error("The receive reservation entry is incomplete");
+        }
+        return {address.toString(), std::move(retired_addresses)};
     }
     Reservation value{settings.value(LegacyKey(legacy_name) + QStringLiteral("address")).toString(), {}};
     settings.beginGroup(LegacyKey(legacy_name) + QStringLiteral("retired"));
