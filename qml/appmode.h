@@ -8,6 +8,7 @@
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 
 #include <QObject>
+#include <QtGlobal>
 
 class AppMode : public QObject
 {
@@ -17,6 +18,7 @@ class AppMode : public QObject
     Q_PROPERTY(bool walletCompiled READ walletCompiled CONSTANT)
     Q_PROPERTY(bool walletEnabled READ walletEnabled NOTIFY walletEnabledChanged)
     Q_PROPERTY(QString state READ state NOTIFY modeChanged)
+    Q_PROPERTY(bool animationsEnabled READ animationsEnabled CONSTANT)
 
 public:
     enum Mode {
@@ -27,10 +29,12 @@ public:
     explicit AppMode(Mode mode, bool wallet_enabled)
     : m_mode(mode)
     , m_wallet_enabled(walletCompiled() && wallet_enabled)
+    , m_animations_enabled(!qEnvironmentVariableIsSet("BITCOIN_QML_TEST_NO_ANIMATIONS"))
     {
     }
 
     bool isMobile() { return m_mode == MOBILE; }
+    bool animationsEnabled() const { return m_animations_enabled; }
     bool isDesktop() { return m_mode == DESKTOP; }
     static constexpr bool walletCompiled()
     {
@@ -67,6 +71,7 @@ Q_SIGNALS:
 private:
     const Mode m_mode;
     bool m_wallet_enabled;
+    const bool m_animations_enabled;
 };
 
 #endif // BITCOIN_QML_APPMODE_H

@@ -134,6 +134,10 @@ TestCase {
         nodeModel.setStartupErrorForTest("")
         desktopWindowBehaviorModel.minimizeOnClose = false
         shutdownSpy.clear()
+        // Collect at a controlled point: the suite creates and destroys a full
+        // window per case, and an allocation-triggered full collection inside
+        // a later case has crashed in QtQml's GC state machine.
+        gc()
     }
 
     function createMain(wallet_enabled, preinit_onboarding_ran, no_wallets_found, wallet_dir_loaded, initialized, beforeConstruct) {

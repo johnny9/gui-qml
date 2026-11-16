@@ -376,8 +376,7 @@ QStringList WatchOnlyTestArguments(const QString& selector)
 {
     if (!selector.startsWith(QStringLiteral("commandLineSignerPreservesEffectiveConfiguration"))) return {};
     if (selector.contains(QStringLiteral("explicit-disabled"))) return {QStringLiteral("-signer=")};
-    const auto source = QFileInfo(QString::fromUtf8(__FILE__)).dir();
-    const auto mock = source.filePath(QStringLiteral("../../../bitcoin/test/functional/mocks/signer.py"));
+    const auto mock = QStringLiteral(BITCOINQML_SIGNER_MOCK_SOURCE);
     const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
     if (python.isEmpty() || !QFileInfo::exists(mock)) throw std::runtime_error("Pinned Core signer fixture/Python unavailable");
     return {QStringLiteral("-signer=") + python + QLatin1Char(' ') + QFileInfo(mock).absoluteFilePath()};

@@ -544,14 +544,14 @@ private Q_SLOTS:
         auto* wallet = qmltest::CreateWallet(m_app, QStringLiteral("password_%1").arg(QString::fromLatin1(QTest::currentDataTag())));
         QVERIFY(wallet);
         QVERIFY(wallet->encryptWallet(original));
-        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QTRY_COMPARE_WITH_TIMEOUT(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded, qmltest::kSecurityStateTimeoutMs);
         QTRY_VERIFY(wallet->isLocked());
         QVERIFY(wallet->changeWalletPassphrase("wrong password", replacement));
-        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecurityFailed);
+        QTRY_COMPARE_WITH_TIMEOUT(wallet->securityState(), WalletQmlModel::SecurityState::SecurityFailed, qmltest::kSecurityStateTimeoutMs);
         QVERIFY(!wallet->settingsError().isEmpty());
         QVERIFY(wallet->isLocked());
         QVERIFY(wallet->changeWalletPassphrase(original, replacement));
-        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QTRY_COMPARE_WITH_TIMEOUT(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded, qmltest::kSecurityStateTimeoutMs);
         QVERIFY(wallet->settingsError().isEmpty());
         QVERIFY(wallet->isLocked());
         UniValue unlock{UniValue::VARR};
@@ -575,7 +575,7 @@ private Q_SLOTS:
         QFETCH(bool, relock);
         auto* wallet = qmltest::CreateWallet(m_app, "security_rpc_interleaving");
         QVERIFY(wallet); QVERIFY(wallet->encryptWallet("before"));
-        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QTRY_COMPARE_WITH_TIMEOUT(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded, qmltest::kSecurityStateTimeoutMs);
         QTRY_VERIFY(wallet->isLocked());
         QVERIFY(wallet->changeWalletPassphrase("before", "after"));
         QCOMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecurityPending);
@@ -613,7 +613,7 @@ private Q_SLOTS:
         QVERIFY2(without_gui, "Public Core/RPC could not finish while GUI publication was held");
         QVERIFY2(!failure, "Independent wallet RPC failed");
         QCOMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecurityPending);
-        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QTRY_COMPARE_WITH_TIMEOUT(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded, qmltest::kSecurityStateTimeoutMs);
         QTRY_COMPARE(wallet->isLocked(), relock);
         const auto expected = relock ? WalletSecurityModel::ObservedState::Locked : WalletSecurityModel::ObservedState::Unlocked;
         QCOMPARE(wallet->security()->observedState(), expected);
@@ -646,7 +646,7 @@ private Q_SLOTS:
         auto* wallet = qmltest::CreateWallet(m_app);
         QVERIFY(wallet);
         QVERIFY(wallet->encryptWallet("old password"));
-        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QTRY_COMPARE_WITH_TIMEOUT(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded, qmltest::kSecurityStateTimeoutMs);
         QTRY_VERIFY(wallet->isLocked());
         QVERIFY(qmltest::SelectSettings(m_app, "wallet"));
         QVERIFY(qmltest::Click(m_app, "walletPasswordRow"));
@@ -673,7 +673,7 @@ private Q_SLOTS:
         auto* alpha = qmltest::CreateWallet(m_app, "alpha");
         QVERIFY(alpha);
         QVERIFY(alpha->encryptWallet("alpha password"));
-        QTRY_COMPARE(alpha->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QTRY_COMPARE_WITH_TIMEOUT(alpha->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded, qmltest::kSecurityStateTimeoutMs);
         QVERIFY(qmltest::CreateWallet(m_app, "beta"));
         QVERIFY(selectWallet("alpha"));
         QVERIFY(qmltest::SelectSettings(m_app, "wallet"));
@@ -1263,7 +1263,7 @@ private Q_SLOTS:
         QFile old_file{old_backup}; QVERIFY(old_file.open(QIODevice::ReadOnly));
         const auto old_bytes = old_file.readAll(); old_file.close(); QVERIFY(!old_bytes.isEmpty());
         QVERIFY(live->encryptWallet("recovery password"));
-        QTRY_COMPARE(live->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QTRY_COMPARE_WITH_TIMEOUT(live->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded, qmltest::kSecurityStateTimeoutMs);
         // The command receipt and Session's current-state observation have
         // independent delivery. Wait for that observation before using it.
         QTRY_VERIFY(live->isLocked());
@@ -1327,7 +1327,7 @@ private Q_SLOTS:
         QVERIFY(wallet);
         const auto address = qmltest::NewAddress(m_app, wallet->name(), "legacy");
         QVERIFY(wallet->encryptWallet("backup password"));
-        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QTRY_COMPARE_WITH_TIMEOUT(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded, qmltest::kSecurityStateTimeoutMs);
         QTRY_VERIFY(wallet->isLocked());
         QTemporaryDir directory;
         QVERIFY(directory.isValid());

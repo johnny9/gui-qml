@@ -267,7 +267,7 @@ ColumnLayout {
                     clip: true
 
                     Behavior on Layout.preferredWidth {
-                        enabled: !root.selectionMode
+                        enabled: Theme.animationsEnabled && (!root.selectionMode)
                         NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
                     }
 
@@ -282,8 +282,8 @@ ColumnLayout {
                         enabled: checkboxSlot.shown && coinRow.enabled
                         checked: coinRow.marked
                         Accessible.name: coinRow.Accessible.name
-                        Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                        Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                        Behavior on x { enabled: Theme.animationsEnabled; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                        Behavior on opacity { enabled: Theme.animationsEnabled; NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                         onClicked: {
                             coinRow.suppressNextRowClick = true
                             root.toggleRow(coinRow.index, coinRow.coinId, coinRow.locked, coinRow.marked)

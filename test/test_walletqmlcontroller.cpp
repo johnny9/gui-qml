@@ -2341,7 +2341,10 @@ void WalletQmlControllerTests::manualShutdownFencesInventoryBeforeBoundedRetirem
     controller->setRetirementPostForTesting([&turns](auto callback) { turns.push_back(std::move(callback)); });
     const std::weak_ptr<execution::Scheduler> original_scheduler = controller->backgroundScheduler();
     const auto cleanup = qScopeGuard([&] { DrainControlledController(controller, turns, original_scheduler); });
-    controller->initialize(); QTRY_VERIFY(controller->initialized()); QTRY_COMPARE(controller->openWallets().size(), 33);
+    controller->initialize(); QTRY_VERIFY(controller->initialized());
+    // 33 wallets span two 32-object GUI publication batches; the second batch can
+    // exceed the default five-second budget under full-suite load.
+    QTRY_COMPARE_WITH_TIMEOUT(controller->openWallets().size(), 33, 15000);
     const auto wallets = controller->openWallets();
     std::vector<std::unique_ptr<WalletProvisioningCheck>> forms;forms.reserve(65);
     for (int i = 0; i < 65; ++i) forms.emplace_back(controller->createProvisioningCheck());
@@ -2388,7 +2391,10 @@ void WalletQmlControllerTests::manualShutdownSurvivesOwnerDestructionDuringFirst
     controller->setRetirementPostForTesting([&turns](auto callback) { turns.push_back(std::move(callback)); });
     const std::weak_ptr<execution::Scheduler> original_scheduler = controller->backgroundScheduler();
     const auto cleanup = qScopeGuard([&] { DrainControlledController(controller, turns, original_scheduler); });
-    controller->initialize(); QTRY_VERIFY(controller->initialized()); QTRY_COMPARE(controller->openWallets().size(), 33);
+    controller->initialize(); QTRY_VERIFY(controller->initialized());
+    // 33 wallets span two 32-object GUI publication batches; the second batch can
+    // exceed the default five-second budget under full-suite load.
+    QTRY_COMPARE_WITH_TIMEOUT(controller->openWallets().size(), 33, 15000);
     QObject receiver; bool interrupted{false};
     connect(controller.get(), &WalletQmlController::walletLoadStateChanged, &receiver, [&](const QString&, WalletListModel::LoadState state, const QString&) { if (!interrupted && state == WalletListModel::LoadState::Closed) { interrupted = true; controller.reset(); } });
     controller->beginShutdown(); QVERIFY(!turns.empty());

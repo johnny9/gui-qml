@@ -29,11 +29,13 @@ Popup {
     Overlay.modeless: Rectangle {
         color: Qt.rgba(0, 0, 0, 0.5)
         Behavior on opacity {
+            enabled: Theme.animationsEnabled
             NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
         }
     }
 
     enter: Transition {
+        enabled: Theme.animationsEnabled
         NumberAnimation {
             property: "opacity"
             from: 0
@@ -58,6 +60,7 @@ Popup {
     }
 
     exit: Transition {
+        enabled: Theme.animationsEnabled
         NumberAnimation {
             property: "opacity"
             from: 1

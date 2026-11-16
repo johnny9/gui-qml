@@ -10,6 +10,7 @@ Rectangle {
     color: enabled ? Theme.color.neutral3 : Theme.color.neutral2
 
     Behavior on color {
+        enabled: Theme.animationsEnabled
         ColorAnimation { duration: 150 }
     }
 }

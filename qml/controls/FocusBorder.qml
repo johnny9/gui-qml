@@ -25,10 +25,12 @@ import "../controls"
     color: "transparent"
 
     Behavior on border.color {
+        enabled: Theme.animationsEnabled
         ColorAnimation { duration: 150 }
     }
 
     Behavior on visible {
+        enabled: Theme.animationsEnabled
         NumberAnimation { duration: 150 }
     }
 }

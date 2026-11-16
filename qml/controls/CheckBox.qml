@@ -12,7 +12,7 @@ Controls.CheckBox {
     property color checkedColor: Theme.color.orange
     property color borderColor: Theme.color.neutral4
     property color checkColor: Theme.color.white
-    property bool animationsEnabled: true
+    property bool animationsEnabled: Theme.animationsEnabled
 
     padding: 0
     spacing: 10

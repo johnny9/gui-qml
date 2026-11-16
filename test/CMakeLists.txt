@@ -413,9 +413,9 @@ add_test(NAME bitcoinqml_qmlwarning_tests
     "${qml_test_input_dir}/warning_probe.qml"
 )
 set_tests_properties(bitcoinqml_qmlwarning_tests PROPERTIES TIMEOUT 120 LABELS qml
-  ENVIRONMENT "QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1")
+  ENVIRONMENT "QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1;BITCOIN_QML_TEST_NO_ANIMATIONS=1")
 
-set(gui_test_environment "QT_QPA_PLATFORM=minimal;QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1")
+set(gui_test_environment "QT_QPA_PLATFORM=minimal;QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1;BITCOIN_QML_TEST_NO_ANIMATIONS=1")
 set_tests_properties(bitcoinqml_unit_tests bitcoinqml_bootstrap_tests bitcoinqml_fatal_exception_tests bitcoinqml_test_directory_checks
   bitcoinqml_process_checks bitcoinqml_dev_resources bitcoinqml_focused_runner bitcoinqml_tidy_selection
   bitcoinqml_unit_targeting PROPERTIES LABELS unit)
@@ -423,7 +423,7 @@ set_tests_properties(${qml_test_names} PROPERTIES LABELS qml TIMEOUT 120)
 set_tests_properties(bitcoinqml_unit_tests bitcoinqml_bootstrap_tests ${qml_test_names} PROPERTIES
   ENVIRONMENT "${gui_test_environment}")
 set_property(TEST ${qml_test_names} PROPERTY ENVIRONMENT
-  "QT_QPA_PLATFORM=${qml_test_platform};QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1")
+  "QT_QPA_PLATFORM=${qml_test_platform};QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1;BITCOIN_QML_TEST_NO_ANIMATIONS=1")
 # Include severity and category so the console warning check can distinguish
 # console.warn() from console.log() during QML loading and teardown.
 set_property(TEST ${qml_test_names} APPEND PROPERTY ENVIRONMENT

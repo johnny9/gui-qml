@@ -57,7 +57,7 @@ Item {
         enabled: !root.isCompact || root.compactColumn === NavigationSplitView.Primary
 
         Behavior on x {
-            enabled: root.isCompact
+            enabled: Theme.animationsEnabled && (root.isCompact)
             NumberAnimation {
                 duration: root.transitionDuration
                 easing.type: Easing.InOutCubic
@@ -89,7 +89,7 @@ Item {
         enabled: !root.isCompact || root.compactColumn === NavigationSplitView.Detail
 
         Behavior on x {
-            enabled: root.isCompact
+            enabled: Theme.animationsEnabled && (root.isCompact)
             NumberAnimation {
                 duration: root.transitionDuration
                 easing.type: Easing.InOutCubic

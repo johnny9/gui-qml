@@ -238,7 +238,7 @@ private Q_SLOTS:
 
     void lockedWalletImportsOnlyLocalDraftValues() {
         QVERIFY(m_wallet->encryptWallet(QStringLiteral("local-import-only")));
-        QTRY_COMPARE(m_wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QTRY_COMPARE_WITH_TIMEOUT(m_wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded, qmltest::kSecurityStateTimeoutMs);
         QTRY_VERIFY(m_wallet->isLocked());
         auto* recipient = m_wallet->sendRecipientList()->currentRecipient();
         QVERIFY(recipient->editPrivateNote(QStringLiteral("Private locked note")));

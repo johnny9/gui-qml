@@ -208,6 +208,7 @@ class QmlTestHarness:
 
         env = dict(os.environ)
         env["QT_QPA_PLATFORM"] = qml_qpa_platform()
+        env.setdefault("BITCOIN_QML_TEST_NO_ANIMATIONS", "1")
         settings_args = []
         if self.config_home:
             settings_args = qsettings_sandbox_args(env, self.config_home)

@@ -5,6 +5,7 @@ import QtQuick 2.15
 import QtTest 1.2
 import org.bitcoincore.qt 1.0
 import "../../qml/components"
+import "../../qml/controls"
 import "../../qml/pages/wallet"
 TestCase {
     id: testCase
@@ -34,6 +35,9 @@ TestCase {
         return [{tag: "available", wallet: true, saved: false}, {tag: "saved", wallet: true, saved: true}, {tag: "closed-wallet", wallet: false, saved: false}]
     }
     function test_amount_popup_uses_public_range(data) {
+        // The drag case waits for rendering of animated popup content.
+        const animations = Theme.animationsEnabled
+        Theme.animationsEnabled = true
         const item = browser()
         if (!data.wallet) item.wallet = null
         if (data.saved) { testCoinsListModel.minAmount = 150000; testCoinsListModel.maxAmount = 250000 }
@@ -61,6 +65,7 @@ TestCase {
         }
         popup.close()
         tryCompare(popup, "opened", false)
+        Theme.animationsEnabled = animations
     }
     function test_open_coin_range_stays_bound_to_committed_amounts() {
         const item = browser()

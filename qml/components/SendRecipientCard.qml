@@ -63,7 +63,7 @@ Pane {
                         rotation: recipientCard.expanded ? 90 : 0
                         size: 9
                         color: Theme.color.neutral6
-                        Behavior on rotation { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                        Behavior on rotation { enabled: Theme.animationsEnabled; NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                     }
                 }
             }

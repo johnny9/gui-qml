@@ -284,7 +284,7 @@ private Q_SLOTS:
         if (wallet_enabled) {
             wallet = qmltest::CreateWallet(m_app, "privacy-rpc"); QVERIFY(wallet);
             QVERIFY(wallet->encryptWallet("owned test fixture password"));
-            QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+            QTRY_COMPARE_WITH_TIMEOUT(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded, qmltest::kSecurityStateTimeoutMs);
             QVERIFY(wallet->isLocked());
             loaded_before = qmltest::Rpc(m_app, "listwallets");
             QVERIFY(qmltest::SelectSettings(m_app, "rpc-console"));

@@ -110,6 +110,7 @@ SettingsPage {
                                 : root.signerConnected ? Theme.color.green : Theme.color.red
 
                             Behavior on color {
+                                enabled: Theme.animationsEnabled
                                 ColorAnimation { duration: 150 }
                             }
                         }

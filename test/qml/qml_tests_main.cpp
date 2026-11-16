@@ -82,9 +82,11 @@ class MockAppMode : public QObject
     Q_PROPERTY(bool isDesktop READ isDesktop WRITE setIsDesktop NOTIFY isDesktopChanged)
     Q_PROPERTY(bool walletEnabled READ walletEnabled WRITE setWalletEnabled NOTIFY walletEnabledChanged)
     Q_PROPERTY(QString state READ state WRITE setState NOTIFY stateChanged)
+    Q_PROPERTY(bool animationsEnabled READ animationsEnabled CONSTANT)
 
 public:
     bool isDesktop() const { return m_is_desktop; }
+    bool animationsEnabled() const { return !qEnvironmentVariableIsSet("BITCOIN_QML_TEST_NO_ANIMATIONS"); }
     bool walletEnabled() const { return m_wallet_enabled; }
     QString state() const { return m_state; }
 
@@ -7638,6 +7640,8 @@ private:
 
 int main(int argc, char* argv[])
 {
+    // Transition animations are irrelevant to assertions and make QML runs flaky.
+    qputenv("BITCOIN_QML_TEST_NO_ANIMATIONS", "1");
 #if defined(BITCOINQML_QML_TEST_DEV_MODE) && BITCOINQML_QML_TEST_DEV_MODE
     if (QmlCoverage::requested()) {
         std::cerr << "QML coverage requires QML_TEST_DEV_MODE=OFF (embedded resources)." << '\n';

@@ -879,7 +879,7 @@ private Q_SLOTS:
         QVERIFY(setup);
         auto* wallet = setup->wallet;
         QVERIFY(wallet->encryptWallet("review password"));
-        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QTRY_COMPARE_WITH_TIMEOUT(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded, qmltest::kSecurityStateTimeoutMs);
         QTRY_VERIFY(wallet->isLocked());
         QTRY_COMPARE(wallet->selectedCoins()->size(), 2U);
         QVERIFY(qmltest::SetText(m_app, "sendAddressInput", setup->address));

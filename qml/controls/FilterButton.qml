@@ -102,15 +102,18 @@ AbstractButton {
                 scale: root.active ? root.minimizedIconScale : 1
 
                 Behavior on color {
+                    enabled: Theme.animationsEnabled
                     ColorAnimation { duration: 150 }
                 }
                 Behavior on opacity {
+                    enabled: Theme.animationsEnabled
                     NumberAnimation {
                         duration: root.transitionDuration
                         easing.type: Easing.OutCubic
                     }
                 }
                 Behavior on scale {
+                    enabled: Theme.animationsEnabled
                     NumberAnimation {
                         duration: root.transitionDuration
                         easing.type: Easing.OutCubic
@@ -134,15 +137,18 @@ AbstractButton {
                 scale: root.active ? 1 : root.minimizedIconScale
 
                 Behavior on color {
+                    enabled: Theme.animationsEnabled
                     ColorAnimation { duration: 150 }
                 }
                 Behavior on opacity {
+                    enabled: Theme.animationsEnabled
                     NumberAnimation {
                         duration: root.transitionDuration
                         easing.type: Easing.OutCubic
                     }
                 }
                 Behavior on scale {
+                    enabled: Theme.animationsEnabled
                     NumberAnimation {
                         duration: root.transitionDuration
                         easing.type: Easing.OutCubic

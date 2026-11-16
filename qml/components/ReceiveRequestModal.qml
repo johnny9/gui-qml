@@ -4,6 +4,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import org.bitcoincore.qt 1.0
+import "../controls"
 
 Popup {
     id: root
@@ -53,8 +54,8 @@ Popup {
     // Hiding a view never clears or writes a successor wallet's draft.
     onClosed: { openedEditor = null; openedWallet = null }
     Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.6); Behavior on opacity { NumberAnimation { duration: 180 } } }
-    enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180 } }
-    exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 150 } }
+    enter: Transition { enabled: Theme.animationsEnabled; NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180 } }
+    exit: Transition { enabled: Theme.animationsEnabled; NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 150 } }
     Connections {
         target: root.pendingReceive
         function onRequestViewReady(token, editor) {

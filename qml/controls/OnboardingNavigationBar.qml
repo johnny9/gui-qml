@@ -65,6 +65,7 @@ Item {
         enabled: root.showBackButton
         opacity: root.showBackButton ? 1 : 0
         Behavior on opacity {
+            enabled: Theme.animationsEnabled
             NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
         }
         isOnSurface: root.isOnSurface
@@ -108,6 +109,7 @@ Item {
         enabled: root.showCloseButton
         opacity: root.showCloseButton ? 1 : 0
         Behavior on opacity {
+            enabled: Theme.animationsEnabled
             NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
         }
         buttonSize: root.closeButtonSize

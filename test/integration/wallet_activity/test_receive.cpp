@@ -988,7 +988,7 @@ private Q_SLOTS:
     {
         QFETCH(bool, prior_signature); auto* wallet = qmltest::CreateWallet(m_app, "auth-message"); QVERIFY(wallet);
         const auto address = qmltest::NewAddress(m_app, wallet->name(), "legacy");
-        QVERIFY(wallet->encryptWallet("signing password")); QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QVERIFY(wallet->encryptWallet("signing password")); QTRY_COMPARE_WITH_TIMEOUT(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded, qmltest::kSecurityStateTimeoutMs);
         QVERIFY(openMessages()); QVERIFY(qmltest::SetText(m_app, "signMessageAddressField", address));
         QVERIFY(qmltest::SetText(m_app, "signMessageMessageField", "Exact signing statement"));
         auto* model = wallet->signVerifyMessageModel(); QString earlier;
@@ -1094,7 +1094,7 @@ private Q_SLOTS:
         QVERIFY(wallet);
         const auto address = qmltest::NewAddress(m_app, wallet->name(), "legacy");
         QVERIFY(wallet->encryptWallet("signing password"));
-        QTRY_COMPARE(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
+        QTRY_COMPARE_WITH_TIMEOUT(wallet->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded, qmltest::kSecurityStateTimeoutMs);
         auto* signer = wallet->signVerifyMessageModel();
         QVERIFY(!AwaitMessageSigning(*signer, address, "integration message"));
         QVERIFY(signer->signingNeedsUnlock());

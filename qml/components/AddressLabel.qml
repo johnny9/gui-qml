@@ -132,6 +132,7 @@ AbstractButton {
             opacity: root.showCopiedStatus ? 0 : 1
 
             Behavior on opacity {
+                enabled: Theme.animationsEnabled
                 NumberAnimation { duration: 150 }
             }
         }
@@ -145,10 +146,12 @@ AbstractButton {
             scale: root.showCopiedStatus ? 1 : 0.8
 
             Behavior on opacity {
+                enabled: Theme.animationsEnabled
                 NumberAnimation { duration: 150 }
             }
 
             Behavior on scale {
+                enabled: Theme.animationsEnabled
                 NumberAnimation {
                     duration: 150
                     easing.type: Easing.InOutCubic
@@ -196,6 +199,7 @@ AbstractButton {
         opacity: root.isOnSurface || (root.interactive && (root.hovered || root.down)) ? 1 : 0
 
         Behavior on opacity {
+            enabled: Theme.animationsEnabled
             NumberAnimation { duration: 150 }
         }
     }

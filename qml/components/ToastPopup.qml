@@ -86,10 +86,12 @@ Item {
         onHeightChanged: root.updatePopupPosition()
 
         enter: Transition {
+            enabled: Theme.animationsEnabled
             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
         }
 
         exit: Transition {
+            enabled: Theme.animationsEnabled
             NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 150 }
         }
 

@@ -174,6 +174,7 @@ Item {
                         : "transparent"
 
             Behavior on color {
+                enabled: Theme.animationsEnabled
                 ColorAnimation { duration: 150 }
             }
         }
@@ -193,6 +194,7 @@ Item {
                             : actionButton.iconColor
 
                 Behavior on color {
+                    enabled: Theme.animationsEnabled
                     ColorAnimation { duration: 150 }
                 }
             }
@@ -209,6 +211,7 @@ Item {
                 opacity: actionButton.enabled ? 1 : 0.45
 
                 Behavior on opacity {
+                    enabled: Theme.animationsEnabled
                     NumberAnimation { duration: 150 }
                 }
             }

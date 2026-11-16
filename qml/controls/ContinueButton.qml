@@ -14,6 +14,7 @@ Button {
     scale: enabled && down ? 0.98 : 1.0
 
     Behavior on scale {
+        enabled: Theme.animationsEnabled
         NumberAnimation {
             duration: 100
             easing.type: Easing.OutCubic
@@ -99,6 +100,7 @@ Button {
         ]
 
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
 

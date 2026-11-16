@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <QApplication>
+#include <QTemporaryDir>
 #include <QEventLoop>
 #include <QStringList>
 #include <QStyleFactory>
@@ -35,6 +36,17 @@ int RunStartupProfileProbe(const QString& mode);
 
 int main(int argc, char* argv[])
 {
+    // Transition animations are irrelevant to assertions and make QML runs flaky.
+    qputenv("BITCOIN_QML_TEST_NO_ANIMATIONS", "1");
+    // Keep QSettings and standard paths away from the developer's real
+    // configuration. The legacy-migration fixtures capture and verify
+    // external stores by organization and application name; a real
+    // ~/.config/Bitcoin presence (for example a key serialized as
+    // @Invalid(), where contains() is true but the value is invalid)
+    // can never satisfy that capture contract, and writes would pollute
+    // the machine across runs.
+    QTemporaryDir settings_sandbox;
+    qputenv("XDG_CONFIG_HOME", (settings_sandbox.path() + QStringLiteral("/config")).toUtf8());
     if(qEnvironmentVariableIsSet("BITCOIN_QML_STARTUP_PROFILE_CASE"))return RunStartupProfileProbe(qEnvironmentVariable("BITCOIN_QML_STARTUP_PROFILE_CASE"));
     if (qEnvironmentVariableIsSet("BITCOIN_QML_QTLOG_SINK_CASE")) {
         const bool overflow = qgetenv("BITCOIN_QML_QTLOG_SINK_CASE") == "overflow";

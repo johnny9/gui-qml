@@ -173,6 +173,7 @@ SettingsPage {
         closePolicy: Popup.NoAutoClose
 
         enter: Transition {
+            enabled: Theme.animationsEnabled
             NumberAnimation {
                 property: "opacity"
                 from: 0
@@ -190,6 +191,7 @@ SettingsPage {
         }
 
         exit: Transition {
+            enabled: Theme.animationsEnabled
             NumberAnimation {
                 property: "opacity"
                 from: 1

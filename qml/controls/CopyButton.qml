@@ -54,6 +54,7 @@ AbstractButton {
     }
 
     Behavior on scale {
+        enabled: Theme.animationsEnabled
         NumberAnimation {
             duration: 100
             easing.type: Easing.OutCubic
@@ -91,8 +92,8 @@ AbstractButton {
                     scale: root.copied ? 0.75 : 1
                     hoverEnabled: false
 
-                    Behavior on opacity { NumberAnimation { duration: 150 } }
-                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                    Behavior on opacity { enabled: Theme.animationsEnabled; NumberAnimation { duration: 150 } }
+                    Behavior on scale { enabled: Theme.animationsEnabled; NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                 }
 
                 Icon {
@@ -105,8 +106,8 @@ AbstractButton {
                     scale: root.copied ? 1 : 0.75
                     hoverEnabled: false
 
-                    Behavior on opacity { NumberAnimation { duration: 150 } }
-                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                    Behavior on opacity { enabled: Theme.animationsEnabled; NumberAnimation { duration: 150 } }
+                    Behavior on scale { enabled: Theme.animationsEnabled; NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                 }
             }
 
@@ -129,8 +130,8 @@ AbstractButton {
                     opacity: root.copied ? 0 : 1
                     scale: root.copied ? 0.9 : 1
 
-                    Behavior on opacity { NumberAnimation { duration: 150 } }
-                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                    Behavior on opacity { enabled: Theme.animationsEnabled; NumberAnimation { duration: 150 } }
+                    Behavior on scale { enabled: Theme.animationsEnabled; NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                 }
 
                 CoreText {
@@ -145,8 +146,8 @@ AbstractButton {
                     opacity: root.copied ? 1 : 0
                     scale: root.copied ? 1 : 0.9
 
-                    Behavior on opacity { NumberAnimation { duration: 150 } }
-                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                    Behavior on opacity { enabled: Theme.animationsEnabled; NumberAnimation { duration: 150 } }
+                    Behavior on scale { enabled: Theme.animationsEnabled; NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                 }
             }
         }
@@ -157,6 +158,7 @@ AbstractButton {
         radius: 7
 
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
 

@@ -20,7 +20,7 @@ Item {
     property color backgroundColor: Theme.color.neutral1
     property color borderColor: Theme.color.neutral2
     property bool shown: true
-    property bool motionEnabled: true
+    property bool motionEnabled: Theme.animationsEnabled
     property int horizontalPadding: 12
     property int verticalPadding: 8
     property int windowMargin: 8

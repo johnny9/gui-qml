@@ -33,6 +33,7 @@ Button {
         radius: 2
 
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
     }

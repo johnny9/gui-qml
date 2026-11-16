@@ -44,6 +44,7 @@ ColumnLayout {
             wrapMode: root.wrap ? Text.WordWrap : Text.NoWrap
 
             Behavior on color {
+                enabled: Theme.animationsEnabled
                 ColorAnimation { duration: 150 }
             }
         }
@@ -64,6 +65,7 @@ ColumnLayout {
             wrapMode: root.wrap ? Text.WordWrap : Text.NoWrap
 
             Behavior on color {
+                enabled: Theme.animationsEnabled
                 ColorAnimation { duration: 150 }
             }
         }
@@ -83,6 +85,7 @@ ColumnLayout {
             wrapMode: root.wrap ? Text.WordWrap : Text.NoWrap
 
             Behavior on color {
+                enabled: Theme.animationsEnabled
                 ColorAnimation { duration: 150 }
             }
         }

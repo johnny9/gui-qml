@@ -35,6 +35,7 @@ Button {
         color: root.hovered || root.pressed ? Theme.color.neutral2 : Theme.color.background
 
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
     }
@@ -48,6 +49,7 @@ Button {
         hoverEnabled: false
 
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
     }

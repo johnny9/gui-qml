@@ -56,6 +56,7 @@ AbstractButton {
     Accessible.name: text
 
     Behavior on scale {
+        enabled: Theme.animationsEnabled
         NumberAnimation { duration: 100; easing.type: Easing.OutCubic }
     }
 
@@ -103,12 +104,12 @@ AbstractButton {
             GradientStop {
                 position: 0
                 color: root.showBorder ? root.borderTopColor : root.currentBackgroundColor
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on color { enabled: Theme.animationsEnabled; ColorAnimation { duration: 150 } }
             }
             GradientStop {
                 position: 1
                 color: root.showBorder ? root.borderBottomColor : root.currentBackgroundColor
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on color { enabled: Theme.animationsEnabled; ColorAnimation { duration: 150 } }
             }
         }
 
@@ -118,7 +119,7 @@ AbstractButton {
             anchors.margins: 1
             radius: Math.max(0, parent.radius - 1)
             color: root.currentBackgroundColor
-            Behavior on color { ColorAnimation { duration: 150 } }
+            Behavior on color { enabled: Theme.animationsEnabled; ColorAnimation { duration: 150 } }
         }
 
         Rectangle {

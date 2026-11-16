@@ -16,6 +16,12 @@
 #include <stdexcept>
 
 namespace qmltest {
+
+// Wallet unlock and encryption run through the background security worker;
+// sanitizer builds can exceed QtTest's default five-second QTRY budget by a
+// few hundred milliseconds. The assertion is unchanged; only the wait budget
+// grows, and successful runs still return immediately.
+inline constexpr int kSecurityStateTimeoutMs{15000};
 inline UniValue Rpc(BitcoinQmlApplication& app, const std::string& method,
                     const UniValue& params = UniValue{UniValue::VARR}, const QString& wallet = {})
 {

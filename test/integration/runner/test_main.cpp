@@ -437,6 +437,12 @@ int RunChild(int argc, char* argv[], const RunnerOptions& options)
 
 int main(int argc, char* argv[])
 {
+    // Integration cases drive the complete application before and after this
+    // child re-exec, so they keep production-like motion. Instant visibility
+    // changes during shutdown crash Qt Quick's teardown binding cascade on
+    // 6.4.2/6.10.2; the component QML suites keep motion disabled (ctest env).
+    qunsetenv("BITCOIN_QML_TEST_NO_ANIMATIONS");
+    // Transition animations are irrelevant to assertions and make teardown flaky on Qt 6.2.
     const auto options = ParseOptions(argc, argv);
     if (!options) return EXIT_FAILURE;
     if (options->list_modules) {

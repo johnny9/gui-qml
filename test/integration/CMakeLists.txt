@@ -34,6 +34,13 @@ if(ENABLE_WALLET)
   )
 endif()
 target_link_libraries(bitcoinqml_integration_tests PRIVATE bitcoinqml_test_application Qt6::QuickTest)
+
+# Resolve the pinned Core signer mock independently of the runtime working
+# directory: ctest starts this binary in a build subdirectory, so a __FILE__-
+# relative traversal depends on where the build tree happens to live.
+set_source_files_properties(signers/test_watchonly.cpp PROPERTIES
+  COMPILE_DEFINITIONS BITCOINQML_SIGNER_MOCK_SOURCE="${PROJECT_SOURCE_DIR}/bitcoin/test/functional/mocks/signer.py"
+)
 set(stage 0)
 set(integration_groups foundation node_setup node_tools)
 if(ENABLE_WALLET)

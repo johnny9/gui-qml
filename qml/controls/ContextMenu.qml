@@ -51,9 +51,11 @@ Popup {
     }
 
     enter: Transition {
+        enabled: Theme.animationsEnabled
         NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 120; easing.type: Easing.OutCubic }
     }
     exit: Transition {
+        enabled: Theme.animationsEnabled
         NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 100; easing.type: Easing.InCubic }
     }
 

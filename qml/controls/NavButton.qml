@@ -53,6 +53,7 @@ AbstractButton {
         }
 
         Behavior on color {
+            enabled: Theme.animationsEnabled
             ColorAnimation { duration: 150 }
         }
     }
@@ -78,6 +79,7 @@ AbstractButton {
                background: root.iconBackground
 
                Behavior on icon.color {
+                   enabled: Theme.animationsEnabled
                    ColorAnimation { duration: 150 }
                }
            }

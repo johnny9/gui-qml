@@ -6,6 +6,7 @@
 
 #include <qml/appmode.h>
 #include <QSignalSpy>
+#include <QtGlobal>
 #include <QtTest/QtTest>
 
 class AppModeTests : public QObject
@@ -32,6 +33,13 @@ private Q_SLOTS:
         QCOMPARE(changed.count(), mode.walletCompiled() ? 1 : 0);
         mode.setWalletEnabled(true);
         QCOMPARE(changed.count(), mode.walletCompiled() ? 1 : 0);
+    }
+
+    void animationsFollowTestEnvironment()
+    {
+        AppMode mode{AppMode::DESKTOP, true};
+        // The property exists for QML and mirrors the test switch exactly.
+        QCOMPARE(mode.animationsEnabled(), !qEnvironmentVariableIsSet("BITCOIN_QML_TEST_NO_ANIMATIONS"));
     }
 };
 
