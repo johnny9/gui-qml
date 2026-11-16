@@ -2,7 +2,7 @@
 
 R41 is focused accepted at `90abf2fdd928bcdf8fc4ce3a831d2a2538d70a24`.
 R42 remains active and **is not accepted**. The combined repair source is
-`e2c0c8cd1dac9685fc20fc25ff02091e010191c0`, with unchanged stock Core
+`894c10e4047448d95794d46836df12d180303805`, with unchanged stock Core
 `44901d8f64cb617714707bd025ecd83f108353c2`. Repairs have separate commits;
 qualification does not hide application changes in a documentation commit.
 
@@ -43,16 +43,62 @@ The latest bounded repairs have actual evidence:
   pass. The remaining storage fixture counted independent readiness changes.
   Its corrected original two controls pass (`platform-matrix/linux-repair-08/`).
 
-Final combined ASan, Qt 6.2 Release and native macOS jobs are running. Core
-compatibility uses eleven stock checksum-verified releases and the stock
-generated functional runner. Exact static depends, wallet-disabled builds,
-final ordinary suites and current-source coverage still require results.
+Subsequent repairs preserve the original contracts: reentrant controller owner
+loss, public native-settings type decoding, the common PSBT serialization link
+boundary, original action/readiness receipts, and lazy typed wallet presentation
+ports. The wallet-disabled configuration now builds all targets, inventories all
+78 configured unit classes, passes the original 20 file-export bodies and exits
+the strict GUI startup/shutdown journey with empty stderr. This is focused
+configuration evidence, not a full wallet-disabled test pass
+(`platform-matrix/wallet-off-qml-11/ACTUAL_RESULTS_REVIEW.json`). The four new
+shipped QML resources remain in the final coverage denominator (264 total).
 
-Coverage is a real acceptance gap. Baseline native measurement reaches 88.459%
-of source-accounted lines and 72.971% of true branch counters. QML coverage also
-has uncovered sites and twelve explicitly unmeasured native ListElement
-initializers. These are not 100% coverage or a final repaired-source result;
-see `coverage/REPORT.md` and `coverage/STATUS.json`.
+The later focused ASan run at `1e5d1105303510c7ba8f065fe2ec2bd1ab9005a6`
+builds all targets but still finds three failures: controller fixture callback
+lifetime, reentrant wallet-preparation owner loss, and file-export leaks. These
+are application/fixture repair work, not deferred Qt failures. Seven independent
+selections pass, including all seven typed-send integration rows and both backup
+integration rows. All 20 file-export assertions pass but its process fails LSan;
+do not label that selection sanitizer-clean (`asan-cpp-current/run-01/`).
+
+Core compatibility passes all seven selected cases with zero skips, using eleven
+stock checksum-verified releases and the stock generated functional runner.
+The five USDT cases actually skip for missing Python BCC and remain unqualified;
+the stock runner's exit zero does not convert those skips into passes. Static
+Linux Qt 6.8.4 builds and its semantic SDK audit passes; the app still needs to
+build and run against that exact SDK. The actual macOS SDK attempt first stops
+for missing GNU Make; the documented prerequisite is installed and a separate
+retry retains all nine pinned archive checks. No SDK-only result certifies the
+application. Qt 6.2, final combined ordinary suites and full matrix obligations
+remain pending.
+
+The original macOS 1,600-outpoint oversized-send error and 100-input recovery
+case passes without increasing its 120-second deadline. Native RPC publication
+takes about 65.2 seconds while GUI heartbeats continue (maximum gap 71 ms).
+The one-script setup preserves 1,600 distinct outpoints and exact recovery
+oracles; the result has a narrow deadline margin and does not establish that
+the Native performance cost is fixed (`platform-matrix/macos-07-timing/`).
+
+Coverage is a real acceptance gap. At frozen app `34b87996094e8fd5c3abe103deccc3443d5ad63e`,
+the independently joined six instrumented executables and 799 raw profiles give
+unit-only raw line/branch coverage of 85.429%/70.490%, and combined coverage of
+88.107%/73.034%. There are 5,670 mapped line gaps after separately proved Qt
+metadata, 12,082 nonfolded branch gaps and 54 native files without emitted
+mapping in that Linux configuration. QML has uncovered AST sites, twelve
+unmeasured native ListElement initializer spans and incomplete tool qualification.
+These are not 100% coverage or evidence for a later repaired source. The direct
+unit abort and three failed full-CTest entries remain failures even when their
+retained counters contribute to coverage (`coverage-current/REPORT.md` and
+`coverage-current/STATUS.json`).
+
+Task-private `R42/LIVE_CHECKPOINT.json` identifies active lanes and new results;
+earlier ledgers retain historical source-specific runs. A parent pass carries
+only when the relevant source, configuration and producer are unchanged and
+that equivalence is explicitly audited. New app/fixture repairs reopen their
+responsible implementation slices; R42's qualification order does not hide
+behavior changes in a documentation commit. All 329 original oracles, 36
+schedules, real producer/progress obligations and seven evolution rehearsals
+still require their source-qualified final accounting.
 
 Keep the approved upstream remainders explicit: R09 device locking/cancellation,
 R17 preview change policy (actual review is authoritative), R20 precise commit
