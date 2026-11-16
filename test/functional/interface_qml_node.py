@@ -105,10 +105,18 @@ def node_smoke(harness, checkpoint):
 
     open_settings(gui, "window-behavior")
     gui.wait_for_page("windowBehaviorSettingsPage")
+    gui.wait_for_property("showTrayIconSwitch", "enabled", True)
     gui.click("showTrayIconSwitch")
     gui.wait_for_property("showTrayIconSwitch", "checked", False)
+    # Each preference write temporarily closes admission while its actual
+    # readback is pending. Dispatch the next physical action after it reopens.
+    gui.wait_for_property("windowBehaviorSettingsPage", "windowBehaviorModel.persistencePending", False)
+    gui.wait_for_property("windowBehaviorSettingsPage", "windowBehaviorModel.persistenceError", "")
+    gui.wait_for_property("minimizeOnCloseSwitch", "enabled", True)
     gui.click("minimizeOnCloseSwitch")
     gui.wait_for_property("minimizeOnCloseSwitch", "checked", True)
+    gui.wait_for_property("windowBehaviorSettingsPage", "windowBehaviorModel.persistencePending", False)
+    gui.wait_for_property("windowBehaviorSettingsPage", "windowBehaviorModel.persistenceError", "")
     gui.close_window()
     assert harness.gui_process.poll() is None
     assert rpc_call(harness.gui_rpc_port, "getblockcount") == 0
