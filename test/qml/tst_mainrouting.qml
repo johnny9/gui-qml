@@ -46,10 +46,14 @@ TestCase {
         verify(item.visible && item.enabled)
         compare(item.Window.window, windowUnderTest)
         verify(windowUnderTest.visible)
-        // Capture the actual window frame. Qt 6.2's software renderer need
-        // not emit another frameSwapped for an unchanged window.
+        // Some software backends capture an unchanged frame without another
+        // frameSwapped signal; others expose only the frame notification.
         const image = grabImage(windowUnderTest.contentItem)
-        verify(image !== null && image.width > 0 && image.height > 0)
+        verify(image !== null)
+        if (image.width === 0 || image.height === 0) {
+            windowUnderTest.update()
+            verify(waitForRendering(item))
+        }
         const point = item.mapToItem(windowUnderTest.contentItem, item.width / 2, item.height / 2)
         const bounds = JSON.stringify({name: item.objectName, x: point.x, y: point.y,
             contentWidth: windowUnderTest.contentItem.width, contentHeight: windowUnderTest.contentItem.height,
