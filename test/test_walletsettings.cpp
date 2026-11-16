@@ -167,22 +167,32 @@ private Q_SLOTS:
         settings.sync();
         QVERIFY(settings.status() != QSettings::NoError);
     }
+    void reservationMigrationUsesCapturedCanonicalIdentity_data()
+    {
+        QTest::addColumn<int>("backend_format");
+        QTest::newRow("ini-control") << int(QSettings::IniFormat);
+        QTest::newRow("native-settings") << int(QSettings::NativeFormat);
+    }
     void reservationMigrationUsesCapturedCanonicalIdentity()
     {
+        QFETCH(int, backend_format);
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
         const auto format = QSettings::defaultFormat();
         const auto organization = QCoreApplication::organizationName();
+        const auto domain = QCoreApplication::organizationDomain();
         const auto application = QCoreApplication::applicationName();
         QString file;
         const auto restore = qScopeGuard([&] {
             if (!file.isEmpty()) QFile::remove(file);
             QSettings::setDefaultFormat(format);
             QCoreApplication::setOrganizationName(organization);
+            QCoreApplication::setOrganizationDomain(domain);
             QCoreApplication::setApplicationName(application);
         });
-        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setDefaultFormat(static_cast<QSettings::Format>(backend_format));
         QCoreApplication::setOrganizationName("BitcoinCoreGuiQmlR14");
+        QCoreApplication::setOrganizationDomain("r42-reservations-" + QFileInfo(directory.path()).fileName() + ".invalid");
         QCoreApplication::setApplicationName("migration-" + QFileInfo(directory.path()).fileName());
         struct NamedWallet final : StubWallet { std::string getWalletName() override { return "./Ledger"; } } wallet;
         const auto storage = walletrequests::SettingsReservationStorage(QStringLiteral("Ledger"));
@@ -199,7 +209,16 @@ private Q_SLOTS:
         settings.sync();
         QVERIFY(settings.contains("walletSettings/v2/reservations/w4c6564676572"));
         QCOMPARE(settings.value("receiveAddressTypes/./Ledger/address").toString(), QStringLiteral("new-address"));
-        QVERIFY(storage.read(wallet, "paid-address").retired);
+        const auto persisted = settings.value("walletSettings/v2/reservations/w4c6564676572").toMap();
+        const auto persisted_version = persisted.value("version");
+        const auto persisted_retired = persisted.value("payload").toMap().value("retired");
+        const QString native_types = QStringLiteral("format=%1 version=%2 retired=%3")
+            .arg(backend_format).arg(QString::fromLatin1(persisted_version.metaType().name()))
+            .arg(QString::fromLatin1(persisted_retired.metaType().name()));
+        qInfo().noquote() << native_types;
+        const auto paid_after_write = storage.read(wallet, "paid-address");
+        QVERIFY2(paid_after_write.ok, qPrintable(native_types));
+        QVERIFY(paid_after_write.retired);
         settings.setValue("receiveAddressTypes/./Ledger/address", "stale-old-writer");
         settings.sync();
         QCOMPARE(storage.read(wallet, {}).address, QStringLiteral("new-address"));
