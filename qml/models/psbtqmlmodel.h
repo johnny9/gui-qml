@@ -120,6 +120,7 @@ private:
     void releaseSnapshot();
     void releaseQuarantine();
     void retireDocumentOwner();
+    void retireSummaryQuery();
     void ensureServices();
     void prepareSummaryPaging();
     void ensureSummaryQuery();

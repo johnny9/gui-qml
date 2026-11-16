@@ -111,6 +111,9 @@ void PsbtQmlModel::setNode(interfaces::Node* node)
     m_services.policy = {}; // A replacement Node needs a newly composed read port.
     retireDocumentOwner();
     ++m_generation; // Late results from the old public Node context cannot publish.
+    // Keep the immutable summary, but replace the query whose notifier owns
+    // the retired generation before admitting another page request.
+    retireSummaryQuery();
     if (!busy() && m_snapshot && !m_closed) refreshState();
 }
 void PsbtQmlModel::closeAdmission()
@@ -131,17 +134,21 @@ void PsbtQmlModel::detachWallet()
     ++m_generation;
     Q_EMIT changed();
 }
-void PsbtQmlModel::releaseSnapshot()
+void PsbtQmlModel::retireSummaryQuery()
 {
     ++m_summary_epoch;
     if (m_summary_query) m_summary_query->close();
     m_summary_query.reset();
     m_summary_request_state.reset();
+    m_summary_pending = false;
+}
+void PsbtQmlModel::releaseSnapshot()
+{
+    retireSummaryQuery();
     m_snapshot.reset();
     m_summary_window.clear();
     m_summary_offset = 0;
     m_summary_size = 128;
-    m_summary_pending = false;
     m_summary_request_id = 0;
     m_summary_error.clear();
     m_snapshot_lease.reset();
