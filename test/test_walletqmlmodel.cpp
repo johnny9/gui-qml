@@ -5828,11 +5828,12 @@ void WalletQmlModelTests::customFeeRateRespectsRelayMinimum_data()
     QTest::addColumn<qlonglong>("relay_minimum");
     QTest::addColumn<QString>("rate");
     QTest::addColumn<bool>("valid");
-    QTest::newRow("below-wallet-minimum") << qlonglong{100} << QStringLiteral("0.1") << true;
-    QTest::newRow("below-relay-minimum") << qlonglong{1000} << QStringLiteral("0.1") << false;
-    QTest::newRow("just-below-relay-minimum") << qlonglong{1000} << QStringLiteral("0.999") << false;
-    QTest::newRow("at-relay-minimum") << qlonglong{1000} << QStringLiteral("1") << true;
-    QTest::newRow("above-relay-minimum") << qlonglong{1000} << QStringLiteral("1.001") << true;
+    QTest::addColumn<qlonglong>("expected_custom_per_kvb");
+    QTest::newRow("below-wallet-minimum") << qlonglong{100} << QStringLiteral("0.1") << true << qlonglong{100};
+    QTest::newRow("below-relay-minimum") << qlonglong{1000} << QStringLiteral("0.1") << false << qlonglong{100};
+    QTest::newRow("just-below-relay-minimum") << qlonglong{1000} << QStringLiteral("0.999") << false << qlonglong{999};
+    QTest::newRow("at-relay-minimum") << qlonglong{1000} << QStringLiteral("1") << true << qlonglong{1000};
+    QTest::newRow("above-relay-minimum") << qlonglong{1000} << QStringLiteral("1.001") << true << qlonglong{1001};
 }
 
 void WalletQmlModelTests::customFeeRateRespectsRelayMinimum()
@@ -5840,6 +5841,7 @@ void WalletQmlModelTests::customFeeRateRespectsRelayMinimum()
     QFETCH(qlonglong, relay_minimum);
     QFETCH(QString, rate);
     QFETCH(bool, valid);
+    QFETCH(qlonglong, expected_custom_per_kvb);
     ChainSelectionGuard chain_guard{ChainType::REGTEST};
     node::NodeContext node_context;
     bilingual_str error;
@@ -5854,8 +5856,8 @@ void WalletQmlModelTests::customFeeRateRespectsRelayMinimum()
     FeeReadServices services;
     services.timer = clock;
     auto [wallet, model] = MakeConfiguredWalletModel([calls](MockWallet& value) {
-        // Automatic target quotes share this fixture's1000 sat/kvB wallet
-        // floor. Returning0 for every target except the selected regtest rate
+        // Automatic target quotes share this fixture's 1000 sat/kvB wallet
+        // floor. Returning 0 for every target except the selected regtest rate
         // invents successive observation policies while the timer is running.
         value.get_minimum_fee_fn = [](const wallet::CCoinControl&) { return CAmount{1000}; };
         value.create_transaction_fn = [calls](const std::vector<wallet::CRecipient>& recipients,
@@ -5908,8 +5910,23 @@ void WalletQmlModelTests::customFeeRateRespectsRelayMinimum()
         .arg(model->customFeeRate()).arg(model->fees()->errorText()).arg(effects.join(QStringLiteral("; ")));
     QVERIFY2(estimate_complete, qPrintable(observation));
     QCOMPARE(!model->estimatedFee().isEmpty(), valid);
+    if (valid) {
+        const auto previews = calls->Snapshot();
+        QCOMPARE(previews.size(), size_t{4});
+        for (size_t i{0}; i < 3; ++i) {
+            QVERIFY(previews[i].fee_rate);
+            QCOMPARE(*previews[i].fee_rate, CAmount{1000});
+        }
+        QVERIFY(previews.back().fee_rate);
+        QCOMPARE(*previews.back().fee_rate, static_cast<CAmount>(expected_custom_per_kvb));
+    }
     QCOMPARE(AwaitPreparation(*model), valid);
     QCOMPARE(calls->Size(), valid ? 5U : 0U);
+    if (valid) {
+        const auto prepared = calls->Snapshot();
+        QVERIFY(prepared.back().fee_rate);
+        QCOMPARE(*prepared.back().fee_rate, static_cast<CAmount>(expected_custom_per_kvb));
+    }
     for (const auto& call : calls->Snapshot()) {
         if (call.fee_rate) QVERIFY(*call.fee_rate >= relay_minimum);
     }
