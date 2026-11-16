@@ -1264,7 +1264,10 @@ private Q_SLOTS:
         const auto old_bytes = old_file.readAll(); old_file.close(); QVERIFY(!old_bytes.isEmpty());
         QVERIFY(live->encryptWallet("recovery password"));
         QTRY_COMPARE(live->securityState(), WalletQmlModel::SecurityState::SecuritySucceeded);
-        QVERIFY(live->isLocked());
+        // The command receipt and Session's current-state observation have
+        // independent delivery. Wait for that observation before using it.
+        QTRY_VERIFY(live->isLocked());
+        QCOMPARE(qmltest::Rpc(m_app, "getwalletinfo", {}, live->name()).find_value("unlocked_until").getInt<int64_t>(), 0);
         const auto later_address = qmltest::NewAddress(m_app, live->name());
         QString actual_change;
         if (spend) {
