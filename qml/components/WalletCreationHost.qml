@@ -3,7 +3,6 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 import QtQuick 2.15
-import org.bitcoincore.qt 1.0
 
 // The Loader owns an Item so the popup has the containing window immediately.
 WalletCreationPort {

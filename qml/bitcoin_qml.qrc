@@ -149,6 +149,7 @@
         <file>controls/PageHeading.qml</file>
         <file>controls/PageStack.qml</file>
         <file>controls/WalletShellPage.qml</file>
+        <file>controls/WalletSettingsPort.qml</file>
         <file>controls/PasswordTextField.qml</file>
         <file>controls/PopupPicker.qml</file>
         <file>controls/ProgressIndicator.qml</file>
@@ -241,6 +242,7 @@
         <file>pages/wallet/WalletImportErrorPage.qml</file>
         <file>pages/wallet/WalletImportCompletePage.qml</file>
         <file>pages/wallet/DesktopWallets.qml</file>
+        <file>pages/wallet/WalletSettingsHost.qml</file>
         <file>pages/wallet/WalletSettingsStack.qml</file>
         <file>pages/wallet/WalletView.qml</file>
         <file>pages/wallet/ReceivePage.qml</file>

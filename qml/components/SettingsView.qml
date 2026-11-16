@@ -10,7 +10,6 @@ import org.bitcoincore.qt 1.0
 
 import "../controls"
 import "../pages/settings" as SettingsPages
-import "../pages/wallet" as WalletPages
 
 Page {
     id: root
@@ -337,26 +336,20 @@ Page {
 
             Component.onCompleted: internal.walletSettingsHost = walletSettingsHost
 
-            SettingsPages.WalletSectionPage {
-                anchors.fill: parent
-                visible: !root.walletSettingsProvided && !ownWalletSettings.active
-                onSelectWalletRequested: root.selectWalletRequested()
-            }
-
             Loader {
                 id: ownWalletSettings
                 anchors.fill: parent
-                active: !root.walletSettingsProvided && root.wallet !== null
-                source: active ? "../pages/wallet/WalletSettingsStack.qml" : ""
+                active: AppMode.walletEnabled && !root.walletSettingsProvided
+                source: active ? "../pages/wallet/WalletSettingsHost.qml" : ""
+                readonly property WalletSettingsPort port: item as WalletSettingsPort
                 Binding {
-                    target: ownWalletSettings.item
+                    target: ownWalletSettings.port
                     property: "wallet"
                     value: root.wallet
                     when: ownWalletSettings.status === Loader.Ready
                 }
                 Connections {
-                    target: ownWalletSettings.item
-                    function onWalletChanged() { (ownWalletSettings.item as WalletPages.WalletSettingsStack).resetToRoot() }
+                    target: ownWalletSettings.port
                     function onSelectWalletRequested() { root.selectWalletRequested() }
                 }
             }
@@ -364,7 +357,7 @@ Page {
             Connections {
                 target: root
                 function onWalletSettingsResetRequested() {
-                    if (ownWalletSettings.item) (ownWalletSettings.item as WalletPages.WalletSettingsStack).resetToRoot()
+                    if (ownWalletSettings.port) ownWalletSettings.port.resetRequested()
                 }
             }
         }
