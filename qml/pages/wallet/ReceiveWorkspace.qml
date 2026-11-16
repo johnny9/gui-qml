@@ -24,14 +24,15 @@ Page {
     } else password.close()
     Component.onCompleted: if (visible && receive) receive.ensureAddress()
     ScrollView {
+        id: scroll
         anchors.fill: parent
         clip: true
         contentWidth: availableWidth
-        contentHeight: column.implicitHeight + 48
+        contentHeight: column.height + 48
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ColumnLayout {
             id: column
-            width: parent.width
+            width: scroll.availableWidth
             spacing: 20
             CoreText { Layout.fillWidth: true; Layout.topMargin: 24; text: qsTr("Receive bitcoin"); font: Theme.text.headline.font }
             RowLayout {
