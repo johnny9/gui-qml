@@ -278,34 +278,37 @@ private Q_SLOTS:
     }
     void oversizedMaximumPreservesCoreCauseAndRecoversWithFewerCoins()
     {
+        QElapsedTimer setup_time; setup_time.start();
+        const auto milestone = [&](const char* phase) { qInfo() << "Oversized setup" << phase << "elapsed ms" << setup_time.elapsed(); };
         auto* source = qmltest::LoadFundedWallet(m_app, "sender"); QVERIFY(source);
+        milestone("source-wallet-ready");
         const auto mining = qmltest::NewAddress(m_app, source->name());
         auto* wallet = qmltest::CreateWallet(m_app, "many-coins"); QVERIFY(wallet);
-        QElapsedTimer setup_time; setup_time.start();
+        milestone("receiving-wallet-ready");
         QVERIFY(!qmltest::Rpc(m_app, "getwalletinfo", {}, wallet->name()).find_value("avoid_reuse").get_bool());
-        // Keep 1600 distinct outpoints, using 100 real receiving scripts in
-        // one ordinary funding transaction. Per-block rescans of 16 separate
-        // funding batches are setup work, not part of the oversize oracle.
-        std::vector<CScript> scripts;
-        scripts.reserve(100);
-        for (int address{0}; address < 100; ++address) {
-            const auto destination = DecodeDestination(qmltest::NewAddress(m_app, wallet->name()).toStdString());
-            QVERIFY(IsValidDestination(destination));
-            scripts.push_back(GetScriptForDestination(destination));
-        }
+        // The input-weight oracle requires 1600 distinct outpoints, not 1600
+        // scripts. One real receiving script keeps setup bounded and stresses
+        // exact vout identity for many coins belonging to the same address.
+        const auto destination = DecodeDestination(qmltest::NewAddress(m_app, wallet->name()).toStdString());
+        QVERIFY(IsValidDestination(destination));
+        const auto script = GetScriptForDestination(destination);
+        milestone("receiving-script-ready");
         CMutableTransaction funding;
-        for (size_t coin{0}; coin < 1600; ++coin) funding.vout.emplace_back(100'000, scripts[coin % scripts.size()]);
+        for (size_t coin{0}; coin < 1600; ++coin) funding.vout.emplace_back(100'000, script);
         UniValue fund{UniValue::VOBJ}, options{UniValue::VOBJ};
         fund.pushKV("hexstring", EncodeHexTx(CTransaction{funding}));
         options.pushKV("fee_rate", 2); fund.pushKV("options", options);
         const auto funded = qmltest::Rpc(m_app, "fundrawtransaction", fund, source->name());
+        milestone("transaction-funded");
         UniValue sign{UniValue::VOBJ}; sign.pushKV("hexstring", funded.find_value("hex"));
         const auto signed_funding = qmltest::Rpc(m_app, "signrawtransactionwithwallet", sign, source->name());
         QVERIFY(signed_funding.find_value("complete").get_bool());
+        milestone("transaction-signed");
         UniValue send{UniValue::VARR}; send.push_back(signed_funding.find_value("hex"));
         const auto funding_id = qmltest::Rpc(m_app, "sendrawtransaction", send).get_str();
+        milestone("transaction-published");
         qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + mining.toStdString() + "\"]"));
-        qInfo() << "Oversized maximum funded 1600 outpoints elapsed ms" << setup_time.elapsed();
+        milestone("funding-mined");
         const auto coins = qmltest::Rpc(m_app, "listunspent", {}, wallet->name()); QCOMPARE(coins.size(), size_t{1600});
         std::set<int> output_indices;
         for (size_t coin{0}; coin < coins.size(); ++coin) {
