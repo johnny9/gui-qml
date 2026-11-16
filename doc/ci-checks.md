@@ -128,8 +128,12 @@ interface directly. Audit every compile entry. Retain full `ctest -V` logs,
 raw GUI stderr and exact exit codes. Compile-time wallet OFF and runtime
 `-disablewallet` are separate configurations. IPC is compiled for lifecycle
 checks; pinned `MakeGuiInit` is not a GUI IPC listener. The independent Core IPC
-scope remains separate. Qt 6.2 uses `QML_TEST_RENDERING_PLATFORM=xcb` under Xvfb
-for component image tests; newer configurations use minimal/software rendering.
+scope remains separate. Qt 6.2 uses `QML_TEST_RENDERING_PLATFORM=xcb` and
+`QML_TEST_USE_XVFB=ON` for component image tests. Each component and warning test
+gets its own `xvfb-run -a` display, so parallel tests do not compete for native
+window focus. CTest selection and parallelism remain available. Newer
+configurations use minimal/software rendering. The Linux test dependencies
+include `tzdata` for historical civil-date tests.
 
 TSan/MSan with instrumented dependencies, the current pinned static Qt 6.8.4
 recipe (Qt 6.8.3 at the original R00 baseline), native Windows and macOS producers, QML/JS coverage and the ten baseline Core compatibility/USDT

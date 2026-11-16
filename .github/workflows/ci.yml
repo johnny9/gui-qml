@@ -172,8 +172,7 @@ jobs:
             svg_package: 'libqt6svg6-dev'
             cmake_env: 'cmake -E env CXXFLAGS="-Werror -Wno-error=free-nonheap-object -Wno-error=redundant-move -Wno-error=restrict -Wno-error=stringop-overread -Wno-error=maybe-uninitialized"'
             # Qt 6.2's offscreen plugin cannot capture software-rendered images.
-            cmake_options: '-DCMAKE_CXX_COMPILER=g++-12 -DQML_TEST_RENDERING_PLATFORM=xcb'
-            test_wrapper: 'xvfb-run -a'
+            cmake_options: '-DCMAKE_CXX_COMPILER=g++-12 -DQML_TEST_RENDERING_PLATFORM=xcb -DQML_TEST_USE_XVFB=ON'
           - job_name: 'Ubuntu 24.04, Qt 6.4'
             image: ubuntu-24.04
             effects_package: ''
@@ -201,6 +200,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
+            tzdata \
             cmake \
             ninja-build \
             pkg-config \
@@ -250,7 +250,7 @@ jobs:
         if: env.BUILD_APP_TESTS == 'ON'
         run: |
           mkdir -p build/test-reports
-          ${{ matrix.test_wrapper }} ctest --test-dir build --parallel 4 --output-on-failure -LE '^integration$' \
+          ctest --test-dir build --parallel 4 --output-on-failure -LE '^integration$' \
             --output-junit "${PWD}/build/test-reports/ctest.xml"
 
       - name: Run integration tests
@@ -259,7 +259,7 @@ jobs:
           mkdir -p build/test-reports
           test_jobs="$(nproc)"
           if (( test_jobs > 4 )); then test_jobs=4; fi
-          ${{ matrix.test_wrapper }} ctest --test-dir build --output-on-failure -L '^integration$' \
+          ctest --test-dir build --output-on-failure -L '^integration$' \
             --parallel "${test_jobs}" --output-junit "${PWD}/build/test-reports/ctest-integration.xml"
 
       - name: Upload test reports and failed profiles

@@ -368,6 +368,12 @@ target_include_directories(bitcoinqml_qmltests
 
 set(QML_TEST_RENDERING_PLATFORM "minimal" CACHE STRING "Platform used by the QML component and warning tests")
 set(qml_test_platform "${QML_TEST_RENDERING_PLATFORM}")
+option(QML_TEST_USE_XVFB "Run each QML component and warning test on its own Xvfb display" OFF)
+set(qml_test_launcher)
+if(QML_TEST_USE_XVFB)
+  find_program(QML_TEST_XVFB_RUN NAMES xvfb-run REQUIRED)
+  set(qml_test_launcher ${QML_TEST_XVFB_RUN} -a)
+endif()
 # Use the resource manifest as the authoritative list in both modes. Each file
 # gets its own process, so CTest can select and schedule tests independently.
 file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/qml/bitcoin_qmltests.qrc qml_test_entries
@@ -380,7 +386,7 @@ foreach(entry IN LISTS qml_test_entries)
   if(test_name IN_LIST qml_test_names)
     message(FATAL_ERROR "Duplicate QML component CTest name: ${test_name}")
   endif()
-  add_test(NAME ${test_name} COMMAND bitcoinqml_qmltests -platform ${qml_test_platform}
+  add_test(NAME ${test_name} COMMAND ${qml_test_launcher} $<TARGET_FILE:bitcoinqml_qmltests> -platform ${qml_test_platform}
     -input "${qml_test_input_dir}/${filename}")
   list(APPEND qml_test_names ${test_name})
 endforeach()
@@ -402,7 +408,7 @@ if(Qt6_VERSION VERSION_GREATER_EQUAL 6.3)
 endif()
 
 add_test(NAME bitcoinqml_qmlwarning_tests
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qml/test_warnings.py
+  COMMAND ${qml_test_launcher} ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qml/test_warnings.py
     $<TARGET_FILE:bitcoinqml_qmltests> ${Qt6_VERSION} ${qml_test_platform} ${PROJECT_BINARY_DIR}
     "${qml_test_input_dir}/warning_probe.qml"
 )
