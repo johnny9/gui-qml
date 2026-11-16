@@ -12,6 +12,8 @@ artifacts remain available. Its build and six executable manifests passed;
 runtime qualification is incomplete and is not a Windows pass. The task's
 stopped jobs were collected and the VM is suspended (`shut off`, managed save).
 Linux, macOS, coverage and sanitizer obligations remain in scope.
+The [environment limits](R42_ENVIRONMENT_LIMITS.md) retain the actual static
+macOS, tracing, MSan and native-producer qualification gaps.
 
 Evidence lives under workspace
 `.validation/qt6-r41-r42-20261115/R42/`. Exact commands, image identities,
