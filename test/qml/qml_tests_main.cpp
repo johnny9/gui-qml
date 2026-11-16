@@ -7323,6 +7323,13 @@ public Q_SLOTS:
         UiPreferencesNamespace identity; identity.file = fixture->directory.filePath(QStringLiteral("preferences.ini"));
         auto* state = fixture.get();
         fixture->store = new UiPreferencesStore{{fixture->transport.scheduler, [state](auto turn) { state->gui.push_back(std::move(turn)); }}, identity, engine};
+        QObject::connect(fixture->store, &UiPreferencesStore::stateChanged, fixture->store, [state] {
+            const auto receipt = state->store->lastWriteReceipt();
+            if (receipt && receipt != state->last_write) {
+                state->last_write = receipt;
+                ++state->write_count;
+            }
+        });
         engine->rootContext()->setContextProperty(QStringLiteral("uiPreferencesStore"), fixture->store.data());
         if (refuse_read) fixture->transport.rejectLane(execution::Lane::Core);
         m_controlled_preferences = std::move(fixture); m_controlled_preferences->store->start();
@@ -7346,6 +7353,9 @@ public Q_SLOTS:
     }
     Q_INVOKABLE quint64 controlledPreferenceOperationId() const {
         return m_controlled_preferences && m_controlled_preferences->store ? m_controlled_preferences->store->operationId() : 0;
+    }
+    Q_INVOKABLE quint64 controlledPreferenceWriteCount() const {
+        return m_controlled_preferences ? m_controlled_preferences->write_count : 0;
     }
     Q_INVOKABLE bool settleControlledPreferences() {
         if (!m_controlled_preferences) return false;
@@ -7628,6 +7638,8 @@ private:
         QTemporaryDir directory;
         QPointer<QQmlEngine> engine;
         QPointer<UiPreferencesStore> original, store;
+        std::shared_ptr<const std::atomic<UiPreferencesStore::Outcome>> last_write;
+        quint64 write_count{0};
     };
     std::unique_ptr<ControlledPreferences> m_controlled_preferences;
     std::vector<QPointer<UiPreferencesStore>> m_preferences_stores;

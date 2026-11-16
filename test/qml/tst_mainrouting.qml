@@ -862,6 +862,32 @@ TestCase {
         compare(note.text, "Retained while minimized")
     }
 
+    function test_controlled_preferences_count_every_write_without_counting_reads() {
+        verify(typeof Controls.Theme.dark === "boolean")
+        verify(testSetup.beginControlledPreferences(testCase, false) !== null)
+        geometryPreferences = createTemporaryObject(preferencesComponent, testCase)
+        verify(geometryPreferences !== null)
+        verify(testSetup.settleControlledPreferences())
+        compare(testSetup.controlledPreferenceWriteCount(), 0)
+        const beforeRead = testSetup.controlledPreferenceOperationId()
+        geometryPreferences.refresh()
+        verify(testSetup.controlledPreferenceOperationId() > beforeRead)
+        compare(testSetup.controlledPreferenceWriteCount(), 0)
+        verify(geometryPreferences.requestGeometry(10, 20, 800, 665) > 0)
+        compare(testSetup.controlledPreferenceWriteCount(), 1)
+        verify(geometryPreferences.requestGeometry(30, 40, 1000, 700) > 0)
+        compare(testSetup.controlledPreferenceWriteCount(), 2)
+        compare(geometryPreferences.windowX, 0)
+        compare(geometryPreferences.windowY, 0)
+        verify(testSetup.settleControlledPreferences())
+        compare(testSetup.controlledPreferenceWriteCount(), 2)
+        compare(geometryPreferences.windowX, 30)
+        compare(geometryPreferences.windowY, 40)
+        compare(geometryPreferences.windowWidth, 1000)
+        compare(geometryPreferences.windowHeight, 700)
+        compare(geometryPreferences.error, "")
+    }
+
     function test_window_move_publishes_complete_geometry_after_gui_delivery() {
         if (Qt.platform.pluginName === "minimal") {
             skip("The minimal QPA backend does not emit native position-change signals; this case requires xcb")
@@ -885,16 +911,18 @@ TestCase {
         compare(window.width, 800)
         compare(window.height, 665)
         verify(testSetup.settleControlledPreferences())
-        const ticket = testSetup.controlledPreferenceOperationId()
+        // Native watcher/activation refreshes are reads. Count every distinct
+        // public write receipt while retaining the exact two-write oracle.
+        const ticket = testSetup.controlledPreferenceWriteCount()
         verify(window.preferenceGeometryRestored)
         compare(geometryPreferences.ready, true)
         const moves = gapSpy(windowXSpy, window)
         window.x = 57
         tryCompare(moves, "count", 1)
-        tryVerify(function() { return testSetup.controlledPreferenceOperationId() > ticket })
-        compare(testSetup.controlledPreferenceOperationId(), ticket + 1)
+        tryVerify(function() { return testSetup.controlledPreferenceWriteCount() > ticket })
+        compare(testSetup.controlledPreferenceWriteCount(), ticket + 1)
         window.y = 69
-        tryVerify(function() { return testSetup.controlledPreferenceOperationId() === ticket + 2 })
+        tryVerify(function() { return testSetup.controlledPreferenceWriteCount() === ticket + 2 })
         compare(geometryPreferences.windowX, 40)
         compare(geometryPreferences.windowY, 50)
         verify(testSetup.runControlledPreferenceWork())
