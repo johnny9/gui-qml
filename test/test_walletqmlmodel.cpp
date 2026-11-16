@@ -1254,7 +1254,7 @@ private Q_SLOTS:
             };
         }, nullptr, {}, {}, clock);
         Q_UNUSED(wallet);
-        QTRY_VERIFY(!model->coinSelectionPending() && !model->sendRecipientList()->validationPending());
+        QTRY_VERIFY(!model->coinSelectionPending() && !model->sendRecipientList()->validationPending() && !model->customFeeTargetPending());
         const QPointer<WalletQmlModel> original{model.get()};
         const auto backend = original->backendExecutor();
         bool handled{false};
@@ -1301,10 +1301,10 @@ private Q_SLOTS:
             };
         }, nullptr, {}, {}, clock);
         Q_UNUSED(wallet);
-        QTRY_VERIFY(!model->coinSelectionPending() && !model->sendRecipientList()->validationPending());
+        QTRY_VERIFY(!model->coinSelectionPending() && !model->sendRecipientList()->validationPending() && !model->customFeeTargetPending());
         QVERIFY(!AwaitPreparation(*model)); // Seed an actual previous failure status.
         SetPasswordRecipient(*model, 1'000);
-        QTRY_VERIFY(!model->coinSelectionPending() && !model->sendRecipientList()->validationPending());
+        QTRY_VERIFY(!model->coinSelectionPending() && !model->sendRecipientList()->validationPending() && !model->customFeeTargetPending());
         bool edited{false};
         quint64 duplicate{1};
         const auto connection = connect(model.get(), &WalletQmlModel::transactionErrorChanged, this, [&] {
@@ -1619,7 +1619,7 @@ private Q_SLOTS:
             transport.drain();
             QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
             return model->availableSendBalanceKnown() && !model->coinSelectionPending() &&
-                model->sendRecipientList()->allValid() && transport.transportIdle();
+                !model->customFeeTargetPending() && model->sendRecipientList()->allValid() && transport.transportIdle();
         }, 5000));
         const QPointer<WalletQmlModel> original{model.get()};
         QSignalSpy changed{model.get(), &WalletQmlModel::preparationChanged};
@@ -2544,7 +2544,7 @@ private Q_SLOTS:
         auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services));
         SetValidRecipient(*model);
         QVERIFY(model->coinsListModel()->setManualInputSelection(true));
-        QTRY_VERIFY(model->coinsListModel()->manualInputSelection() && !model->coinSelectionPending());
+        QTRY_VERIFY(model->coinsListModel()->manualInputSelection() && !model->coinSelectionPending() && !model->customFeeTargetPending());
         const auto constructions = wallet->calls.createTransaction.load();
 
         const auto ticket = model->requestPrepareTransaction();
@@ -2577,7 +2577,7 @@ private Q_SLOTS:
         QVERIFY(model->coinsListModel()->setManualInputSelection(true));
         QTRY_VERIFY(model->coinsListModel()->manualInputSelection());
         model->selectCoin(selected);
-        QTRY_VERIFY(!model->coinSelectionPending() && model->isSelectedCoin(selected));
+        QTRY_VERIFY(!model->coinSelectionPending() && model->isSelectedCoin(selected) && !model->customFeeTargetPending());
         QVERIFY(!model->coinSelectionBlocked());
 
         present->store(false);
@@ -4704,6 +4704,7 @@ private Q_SLOTS:
         }, nullptr, nullptr, std::move(services), false, {}, {}, env->scheduler); Q_UNUSED(wallet);
         const auto cleanup = qScopeGuard([&] { model.reset(); receipts->drain(); receipts->publishAll(); env->publishAll(); });
         SetValidRecipient(*model, VALID_MAINNET_ADDRESS, env);
+        QVERIFY(SettleManualFeeInputs(*model, env, receipts));
         const auto original = model->sendRecipientList()->draftSnapshot(); QVERIFY(original);
         auto* recipient = model->sendRecipientList()->currentRecipient(); recipient->amount()->editInput("1.");
         QVERIFY(!model->sendRecipientList()->draftSnapshot()); QVERIFY(model->requestPrepareTransaction() != 0);
