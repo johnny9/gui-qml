@@ -916,6 +916,7 @@ private Q_SLOTS:
         request->setLabel("Public invoice"); request->setMessage("Public message"); request->amount()->setSatoshi(1000);
         UniValue rename{UniValue::VARR}; rename.push_back(address.toStdString()); rename.push_back(current.toStdString());
         qmltest::Rpc(m_app, "setlabel", rename, wallet->name());
+        QTRY_VERIFY(!wallet->receiveRequestReconciliationPending());
         QVERIFY(AwaitReceiveRequest(wallet->commitPaymentRequest()));
         const auto expected = edit == 1 ? QStringLiteral("Explicit private note") : current;
         QCOMPARE(addressNote(wallet->name(), address), expected);
