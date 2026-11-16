@@ -184,6 +184,10 @@ private Q_SLOTS:
         const auto application = QCoreApplication::applicationName();
         QString file;
         const auto restore = qScopeGuard([&] {
+            if (backend_format == int(QSettings::NativeFormat)) {
+                QSettings cleanup;
+                cleanup.clear(); cleanup.sync();
+            }
             if (!file.isEmpty()) QFile::remove(file);
             QSettings::setDefaultFormat(format);
             QCoreApplication::setOrganizationName(organization);
