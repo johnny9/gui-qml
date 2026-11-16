@@ -6,6 +6,7 @@
 #define BITCOIN_QML_PSBTWORK_H
 
 #include <common/messages.h>
+#include <qml/psbtserialization.h>
 #include <qml/psbtworktypes.h>
 #include <qml/models/psbtfeeservices.h>
 #include <qml/walletreview.h>
@@ -80,7 +81,6 @@ public:
 };
 QString ReadFile(FileReader& reader, PartiallySignedTransaction& document);
 QString LoadFile(const QString& path, PartiallySignedTransaction& document);
-QByteArray SerializeRaw(const PartiallySignedTransaction& document);
 QString ErrorText(common::PSBTError error);
 class FileWriter
 {

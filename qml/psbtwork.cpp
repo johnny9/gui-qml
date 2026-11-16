@@ -162,14 +162,6 @@ QString psbtwork::LoadFile(const QString& path, PartiallySignedTransaction& psbt
     return psbtwork::ReadFile(reader, psbt);
 }
 
-QByteArray psbtwork::SerializeRaw(const PartiallySignedTransaction& psbt)
-{
-    DataStream stream{};
-    stream << psbt;
-    const std::string raw{stream.str()};
-    return QByteArray(raw.data(), static_cast<qsizetype>(raw.size()));
-}
-
 QString psbtwork::ErrorText(common::PSBTError error)
 {
     return QString::fromStdString(common::PSBTErrorString(error).translated);

@@ -4,7 +4,7 @@
 
 #include <qml/models/fileexportoperation.h>
 
-#include <qml/psbtwork.h>
+#include <qml/psbtserialization.h>
 #include <qml/retainedvalue.h>
 
 #include <QFile>
