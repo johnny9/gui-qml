@@ -21,6 +21,7 @@
 #include <QClipboard>
 #include <QFile>
 #include <QGuiApplication>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QThread>
 
@@ -475,6 +476,59 @@ private Q_SLOTS:
         QCOMPARE(model.summary(), original.mid(2, 1));
         QVERIFY(!model.summaryPending());
         model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    }
+    void busyNodeReplacementKeepsSummaryPagingLive_data()
+    {
+        QTest::addColumn<bool>("page_notice_held");
+        QTest::newRow("original-page-notice-already-acknowledged") << false;
+        QTest::newRow("original-page-notice-delivered-after-node-replacement") << true;
+    }
+    void busyNodeReplacementKeepsSummaryPagingLive()
+    {
+        QFETCH(bool, page_notice_held);
+        ManualRoutedExecution transport;
+        std::deque<std::function<void()>> publications;
+        MockNode first_node, replacement_node;
+        QTemporaryDir directory; QVERIFY(directory.isValid());
+        PsbtQmlModel model{nullptr, &first_node};
+        model.setFeeServices({transport.scheduler, {}, [&](auto callback) { publications.push_back(std::move(callback)); }});
+        const auto publish_all = [&] {
+            while (!publications.empty()) { auto callback = std::move(publications.front()); publications.pop_front(); callback(); }
+        };
+        const auto cleanup = qScopeGuard([&] { model.closeAdmission(); transport.drain(); publish_all(); });
+        const auto path = directory.filePath("summary-node-context.psbt");
+        QCOMPARE(PsbtQmlModel::SavePsbtToFile(MakeCompletePsbt(), path), QString{});
+        QVERIFY(model.requestLoadFromFile(path)); transport.drain(); publish_all();
+        const auto original = model.summary(); QVERIFY(original.size() > 2);
+        const auto original_generation = model.documentGeneration();
+
+        model.requestSummaryWindow(0, 1); transport.drain();
+        QCOMPARE(publications.size(), size_t{1});
+        if (!page_notice_held) { publish_all(); QVERIFY(!model.summaryPending()); }
+        model.refreshState(QStringLiteral("original Node inspection"));
+        QVERIFY(model.busy());
+        const auto original_inspection = model.operationId();
+        model.setNode(&replacement_node);
+        QVERIFY(model.documentGeneration() != original_generation);
+        const auto replacement_generation = model.documentGeneration();
+        transport.drain();
+        QCOMPARE(publications.size(), page_notice_held ? size_t{2} : size_t{1});
+        auto inspection = std::move(publications.back()); publications.pop_back(); inspection();
+        QVERIFY(!model.busy());
+        QCOMPARE(model.phase(), PsbtQmlModel::Phase::Stale);
+        QCOMPARE(model.operationId(), original_inspection);
+        publish_all(); // The old page may not publish into the replacement context.
+        QCOMPARE(model.documentGeneration(), replacement_generation);
+
+        model.requestSummaryWindow(1, 1);
+        QVERIFY(model.summaryPending()); transport.drain(); publish_all();
+        QVERIFY2(!model.summaryPending(), "A supported new page cannot retain a retired Node generation's notification");
+        QCOMPARE(model.summaryOffset(), 1);
+        QCOMPARE(model.summary(), original.mid(1, 1));
+        QVERIFY(model.summaryError().isEmpty());
+        QCOMPARE(model.documentGeneration(), replacement_generation);
+        model.closeAdmission(); transport.drain(); publish_all();
+        QVERIFY(transport.quiescent());
     }
     void sameGenerationRefreshRejectsRetiredSummaryPage()
     {
