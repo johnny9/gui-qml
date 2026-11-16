@@ -1,0 +1,11 @@
+{
+  "revisions": {
+    "app": "c2e8f0edb6a936f344d4332b2eaba20a47c9846f",
+    "Core": "44901d8f64cb617714707bd025ecd83f108353c2"
+  },
+  "image": "sha256:054f219c6186246203f66870b1002e9af5e3915b1f8e5877f91b749ee191bc55",
+  "exit": 0,
+  "source_unchanged": true,
+  "seconds": 1869.5771481359843,
+  "spec_sha256": "1bb390822dc0cb7a0ecca1c3513a75969d4d077c7c4d7fe9ad1821ff5806bd27"
+}

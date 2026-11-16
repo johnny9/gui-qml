@@ -1,0 +1,108 @@
+From acc77923919e5ed5b2a28660a3d2a57ce2fa73a0 Mon Sep 17 00:00:00 2001
+From: johnny9 <johnny9dev@pm.me>
+Date: Mon, 16 Nov 2026 05:37:45 +0000
+Subject: [PATCH] test: characterize encoded explorer template and launch
+ outcome
+
+---
+ test/test_options_model.cpp | 70 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 70 insertions(+)
+
+diff --git a/test/test_options_model.cpp b/test/test_options_model.cpp
+index df85f0b4504..5d4d3a224cc 100644
+--- a/test/test_options_model.cpp
++++ b/test/test_options_model.cpp
+@@ -29,6 +29,7 @@
+ #include <qml/models/options_model.h>
+ #include <qml/models/settings_keys.h>
+ #include <qml/onboarding_settings.h>
++#include <qml/urlopener.h>
+ #include <init.h>
+ #include <net_processing.h>
+ #include <common/args.h>
+@@ -393,6 +394,8 @@ private Q_SLOTS:
+     void onboardingStorageCheckDoesNotPublishStalePath();
+     void onboardingStorageProjectionCoalescesPublicPruneChoice();
+     void thirdPartyTransactionLinksParseValidUrls();
++    void thirdPartyTransactionLinksPreserveEncodedInputAndOpenerOutcome_data();
++    void thirdPartyTransactionLinksPreserveEncodedInputAndOpenerOutcome();
+     void moneyFontChoicePersists();
+     void rejectedDisplayRefreshDoesNotReenterItsFailure();
+     void databaseCacheMatchesCoreDefaultAndRange();
+@@ -3151,6 +3154,73 @@ void OptionsModelTests::thirdPartyTransactionLinksParseValidUrls()
+     }
+ }
+ 
++void OptionsModelTests::thirdPartyTransactionLinksPreserveEncodedInputAndOpenerOutcome_data()
++{
++    QTest::addColumn<bool>("encoded_nul");
++    QTest::addColumn<bool>("handler_accepts");
++    QTest::newRow("valid-handler-starts") << false << true;
++    QTest::newRow("valid-handler-refuses") << false << false;
++    QTest::newRow("encoded-nul-handler-starts") << true << true;
++    QTest::newRow("encoded-nul-handler-refuses") << true << false;
++}
++void OptionsModelTests::thirdPartyTransactionLinksPreserveEncodedInputAndOpenerOutcome()
++{
++    QFETCH(bool, encoded_nul);
++    QFETCH(bool, handler_accepts);
++    QSettings settings;
++    const bool present = settings.contains(SettingsKeys::THIRD_PARTY_TRANSACTION_URLS);
++    const auto previous = settings.value(SettingsKeys::THIRD_PARTY_TRANSACTION_URLS);
++    const auto restore = qScopeGuard([&] {
++        if (present) settings.setValue(SettingsKeys::THIRD_PARTY_TRANSACTION_URLS, previous);
++        else settings.remove(SettingsKeys::THIRD_PARTY_TRANSACTION_URLS);
++        settings.sync();
++    });
++    MockNode node;
++    ArgsManager args;
++    QTemporaryDir directory; QVERIFY(directory.isValid());
++    PrepareRuntimePersistence(node, args, directory);
++    ManualSnapshotGraph graph;
++    {
++        OptionsQmlModel model{node, args, graph.services()};
++        const auto cleanup = qScopeGuard([&] { model.beginShutdown(); graph.drainLive(); });
++        QVERIFY(graph.drainLive()); QVERIFY(model.settingsReady()); QVERIFY(!model.settingsPending());
++        const QString input = encoded_nul ? QStringLiteral("https://example.invalid/tx/%00%s")
++                                          : QStringLiteral("https://example.invalid/tx/%s");
++        const QString txid(64, QLatin1Char{'a'});
++        QString expected = input;
++        expected.replace(QStringLiteral("%s"), txid);
++        const QByteArray expected_bytes = expected.toUtf8();
++        model.setThirdPartyTransactionUrls(input);
++        QVERIFY(graph.drainLive()); QVERIFY(!model.settingsPending());
++        settings.sync();
++        const QString persisted = settings.value(SettingsKeys::THIRD_PARTY_TRANSACTION_URLS).toString();
++        QCOMPARE(persisted.toUtf8(), input.toUtf8());
++        QCOMPARE(model.thirdPartyTransactionUrls(), input);
++        std::unique_ptr<OptionsTransactionLinks> links{model.createTransactionLinks()};
++        QVERIFY(links); links->setTxid(txid); QVERIFY(graph.drainLive()); QVERIFY(!links->pending());
++        QCOMPARE(links->rowCount(), 1);
++        QCOMPARE(links->data(links->index(0), OptionsTransactionLinks::HostRole).toString(), QStringLiteral("example.invalid"));
++        const QString url = links->data(links->index(0), OptionsTransactionLinks::UrlRole).toString();
++        QCOMPARE(url.toUtf8(), expected_bytes);
++        int handoffs{0};
++        QByteArray handed_off;
++        UrlOpener opener;
++        opener.setOpenUrlFnForTesting([&](const QUrl& value) {
++            ++handoffs;
++            handed_off = value.toEncoded(QUrl::FullyEncoded);
++            return handler_accepts;
++        });
++        QCOMPARE(opener.openUrl(url), handler_accepts);
++        QCOMPARE(handoffs, 1);
++        QCOMPARE(handed_off, expected_bytes);
++        QVERIFY(!opener.openUrl(QStringLiteral("file:///tmp/unapproved")));
++        QCOMPARE(handoffs, 1);
++        // This characterizes the app handoff only. A platform/browser that
++        // starts and later rejects a URL is outside this synchronous receipt.
++    }
++    QVERIFY(graph.drainLive()); QVERIFY(graph.transport.quiescent());
++}
++
+ void OptionsModelTests::moneyFontChoicePersists()
+ {
+ 
+-- 
+2.53.0
+

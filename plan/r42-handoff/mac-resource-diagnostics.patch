@@ -1,0 +1,86 @@
+From f6fcfb568063376e85ed0f392d5b9906d905d37a Mon Sep 17 00:00:00 2001
+From: johnny9 <johnny9dev@pm.me>
+Date: Mon, 16 Nov 2026 05:11:43 +0000
+Subject: [PATCH] test: record native retirement descriptor demand and drain
+
+---
+ test/test_walletqmlcontroller.cpp | 35 ++++++++++++++++++++++++++++++-
+ 1 file changed, 34 insertions(+), 1 deletion(-)
+
+diff --git a/test/test_walletqmlcontroller.cpp b/test/test_walletqmlcontroller.cpp
+index d82c1981239..ea98439b1b4 100644
+--- a/test/test_walletqmlcontroller.cpp
++++ b/test/test_walletqmlcontroller.cpp
+@@ -31,6 +31,8 @@
+ #include <QDir>
+ #include <QFile>
+ #include <QFileInfo>
++#include <QJsonDocument>
++#include <QJsonObject>
+ #include <QScopeGuard>
+ #include <QSemaphore>
+ #include <QSettings>
+@@ -47,12 +49,36 @@
+ #include <thread>
+ #include <utility>
+ 
++#ifdef Q_OS_MACOS
++#include <fcntl.h>
++#include <sys/resource.h>
++#endif
++
+ #ifndef BITCOINQML_NO_TEST_MAIN
+ const TranslateFn G_TRANSLATION_FUN{nullptr};
+ #endif
+ 
+ namespace {
+ 
++void RecordRetirementResources(const QString& stage)
++{
++#ifdef Q_OS_MACOS
++    rlimit limit{};
++    const int status = getrlimit(RLIMIT_NOFILE, &limit);
++    int descriptors{0};
++    const int scanned = status == 0 ? static_cast<int>(std::min<rlim_t>(limit.rlim_cur, 4096)) : 0;
++    for (int fd{0}; fd < scanned; ++fd) if (fcntl(fd, F_GETFD) != -1) ++descriptors;
++    const QJsonObject values{{"stage", stage}, {"limit_read_exit", status},
++        {"soft", QString::number(qulonglong(limit.rlim_cur))},
++        {"hard", QString::number(qulonglong(limit.rlim_max))},
++        {"descriptor_slots_scanned", scanned}, {"open_descriptors", descriptors},
++        {"scan_capped", status == 0 && limit.rlim_cur > 4096}};
++    qInfo().noquote() << "R42_RETIREMENT_RESOURCES" << QJsonDocument{values}.toJson(QJsonDocument::Compact);
++#else
++    Q_UNUSED(stage);
++#endif
++}
++
+ class DrainingWalletController : public WalletQmlController
+ {
+ public:
+@@ -2334,15 +2360,22 @@ void WalletQmlControllerTests::migrationErrorReceiptPreparesBoundedMessageAndFro
+ 
+ void WalletQmlControllerTests::manualShutdownFencesInventoryBeforeBoundedRetirement()
+ {
++    RecordRetirementResources(QStringLiteral("before-controller"));
+     StrictMockNode node; [[maybe_unused]] auto verify_node = node.VerifyOnExit();
+     FakeWalletLoader loader; ConfigureExpectedControllerInitialization(node, loader);
+     loader.get_wallets_fn = [] { std::vector<std::unique_ptr<interfaces::Wallet>> result; result.reserve(33); for (int i = 0; i < 33; ++i) result.push_back(std::make_unique<FakeWallet>("batch-" + util::ToString(i), nullptr)); return result; };
+     std::deque<std::function<void()>> turns;
+     auto controller = std::make_unique<WalletQmlController>(node);
++    RecordRetirementResources(QStringLiteral("after-controller"));
++    QObject::connect(controller.get(), &WalletQmlController::walletLoadStateChanged, controller.get(),
++        [](const QString&, WalletListModel::LoadState state, const QString&) {
++            if (state == WalletListModel::LoadState::Open) RecordRetirementResources(QStringLiteral("wallet-adopted"));
++        });
+     controller->setRetirementPostForTesting([&turns](auto callback) { turns.push_back(std::move(callback)); });
+     const std::weak_ptr<execution::Scheduler> original_scheduler = controller->backgroundScheduler();
+-    const auto cleanup = qScopeGuard([&] { DrainControlledController(controller, turns, original_scheduler); });
++    const auto cleanup = qScopeGuard([&] { DrainControlledController(controller, turns, original_scheduler); RecordRetirementResources(QStringLiteral("after-physical-drain")); });
+     controller->initialize(); QTRY_VERIFY(controller->initialized()); QTRY_COMPARE(controller->openWallets().size(), 33);
++    RecordRetirementResources(QStringLiteral("33-wallets-initialized"));
+     const auto wallets = controller->openWallets();
+     std::vector<std::unique_ptr<WalletProvisioningCheck>> forms;forms.reserve(65);
+     for (int i = 0; i < 65; ++i) forms.emplace_back(controller->createProvisioningCheck());
+-- 
+2.53.0
+

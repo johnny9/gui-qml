@@ -1,0 +1,20 @@
+{
+  "ASan": {
+    "stdout": "final-asan-07/native-default-unfiltered.stdout",
+    "classes_started": 122,
+    "classes_finished": 122,
+    "body_PASS": 5355,
+    "body_FAIL": 0,
+    "body_SKIP": 12,
+    "note": "Skipped delegated fatal cases remain skips here; driver receipts are accounted independently. No full CTest/process/coverage acceptance inferred."
+  },
+  "coverage": {
+    "stdout": "coverage-final/native-01/native-unit-unfiltered.stdout",
+    "classes_started": 122,
+    "classes_finished": 122,
+    "body_PASS": 5355,
+    "body_FAIL": 0,
+    "body_SKIP": 12,
+    "note": "Skipped delegated fatal cases remain skips here; driver receipts are accounted independently. No full CTest/process/coverage acceptance inferred."
+  }
+}

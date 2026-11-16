@@ -1,0 +1,17 @@
+{
+  "command": [
+    "python3",
+    "ci/lint.py",
+    "--no-build",
+    "--image",
+    "qt6-r17-linter-core449:20261114"
+  ],
+  "cwd": "/home/codex/workspaces/bitcoin-core-app/.validation/qt6-r41-r42-20261115/R41/lint-source",
+  "COMMIT_RANGE": "000e49c81e60ccf6560ccdd1a93e811a5a44c475..HEAD",
+  "exit": 0,
+  "seconds": 15.465111947036348,
+  "app_after": "c2e8f0edb6a936f344d4332b2eaba20a47c9846f",
+  "branch_after": "",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "status_after": ""
+}

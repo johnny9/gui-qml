@@ -1,0 +1,305 @@
+{
+  "source": "c2e8f0edb6a936f344d4332b2eaba20a47c9846f",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "cells": {
+    "on": {
+      "groups": {
+        "ordinary": {
+          "ctest": 80,
+          "exit": 0,
+          "bodies": {
+            "qml": {
+              "PASS": 1238,
+              "SKIP": 1
+            },
+            "bootstrap": {
+              "PASS": 8
+            },
+            "native": {
+              "PASS": 5355,
+              "SKIP": 12
+            }
+          },
+          "stderr_bytes": 0,
+          "skips": [
+            {
+              "ctest_index": 44,
+              "state": "SKIP",
+              "kind": "qml",
+              "identity_and_message": "bitcoinqml_qmltests::MainRouting::test_window_move_publishes_complete_geometry_after_gui_delivery() The minimal QPA backend does not emit native position-change signals; this case requires xcb"
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(initialize-dialog) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(initialize-quit) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(interrupt-dialog) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(interrupt-quit) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(shutdown-dialog) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(shutdown-quit) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(unknown-dialog) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(unknown-quit) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(empty-dialog) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(empty-quit) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(pending-poll-dialog) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(pending-poll-quit) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            }
+          ],
+          "raw_stdout_sha256": "d041455195e4bc039ece486ceca67b836b8338f206cfac652fbf7b8f4a4f8f5d"
+        },
+        "integration": {
+          "ctest": 10,
+          "exit": 0,
+          "bodies": {
+            "integration": {
+              "PASS": 333,
+              "SKIP": 1
+            }
+          },
+          "stderr_bytes": 0,
+          "skips": [
+            {
+              "ctest_index": 81,
+              "state": "SKIP",
+              "kind": "integration",
+              "identity_and_message": "IntegrationTests::run(console.disabled.defaultWalletRpcContextIsExplicitWithMultipleWallets) This integration case requires wallet support"
+            }
+          ],
+          "raw_stdout_sha256": "6c67124024321019aeb0c9243a35318242b07ad67fc745255165a52098090faf"
+        }
+      },
+      "class_count": 122,
+      "default_complete_registry": true,
+      "generated_wallet_enabled": true,
+      "wallet_Core_compile_entries": 34,
+      "wallet_controller_compile_entries": 1,
+      "compile_entries": 711,
+      "optimization_counts": {
+        "-O3": 711
+      },
+      "Core_target_command_count": 338,
+      "Core_target_commands_unchanged_during_configure": true,
+      "GCC_actual": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "GXX_actual": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "Qt_actual": "6.4.2",
+      "binary_SHA256_receipt": ".validation/qt6-r41-r42-20261115/R42/platform-matrix/linux-final-on-13/artifacts/qt64-release-wallet-on/BINARIES.sha256",
+      "bridge": {
+        "exit": 0,
+        "outer_stderr_bytes": 0,
+        "strict_harness_pass": true
+      },
+      "cell_full_CTest_pass": true,
+      "global_R42_pass": false
+    },
+    "off": {
+      "groups": {
+        "ordinary": {
+          "ctest": 78,
+          "exit": 0,
+          "bodies": {
+            "native": {
+              "PASS": 2735,
+              "SKIP": 12
+            },
+            "qml": {
+              "PASS": 1238,
+              "SKIP": 1
+            },
+            "bootstrap": {
+              "PASS": 8
+            }
+          },
+          "stderr_bytes": 0,
+          "skips": [
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(initialize-dialog) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(initialize-quit) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(interrupt-dialog) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(interrupt-quit) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(shutdown-dialog) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(shutdown-quit) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(unknown-dialog) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(unknown-quit) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(empty-dialog) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(empty-quit) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(pending-poll-dialog) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 9,
+              "state": "SKIP",
+              "kind": "native",
+              "identity_and_message": "NodeModelTests::fatalExceptionExitsWithoutDraining(pending-poll-quit) Executed by bitcoinqml_fatal_exception_tests in child processes."
+            },
+            {
+              "ctest_index": 44,
+              "state": "SKIP",
+              "kind": "qml",
+              "identity_and_message": "bitcoinqml_qmltests::MainRouting::test_window_move_publishes_complete_geometry_after_gui_delivery() The minimal QPA backend does not emit native position-change signals; this case requires xcb"
+            }
+          ],
+          "raw_stdout_sha256": "580c5425e0cf1257ddd2873232e0e8f9b07d233429a70188bd5ed6edbf45c585"
+        },
+        "integration": {
+          "ctest": 3,
+          "exit": 0,
+          "bodies": {
+            "integration": {
+              "PASS": 47,
+              "SKIP": 1
+            }
+          },
+          "stderr_bytes": 0,
+          "skips": [
+            {
+              "ctest_index": 81,
+              "state": "SKIP",
+              "kind": "integration",
+              "identity_and_message": "IntegrationTests::run(console.disabled.defaultWalletRpcContextIsExplicitWithMultipleWallets) Wallet support is not compiled in"
+            }
+          ],
+          "raw_stdout_sha256": "4616fe789d14d43db9d9a855ffe3f5ab49d70db95bf5c02f2f0393a2c4b6bb57"
+        }
+      },
+      "class_count": 78,
+      "default_complete_registry": true,
+      "generated_wallet_enabled": false,
+      "wallet_Core_compile_entries": 0,
+      "wallet_controller_compile_entries": 0,
+      "compile_entries": 529,
+      "optimization_counts": {
+        "-O3": 529
+      },
+      "Core_target_command_count": 275,
+      "Core_target_commands_unchanged_during_configure": true,
+      "GCC_actual": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "GXX_actual": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+      "Qt_actual": "6.4.2",
+      "binary_SHA256_receipt": ".validation/qt6-r41-r42-20261115/R42/platform-matrix/linux-final-off-13/artifacts/qt64-release-wallet-off/BINARIES.sha256",
+      "bridge": {
+        "exit": 0,
+        "outer_stderr_bytes": 0,
+        "strict_harness_pass": true
+      },
+      "cell_full_CTest_pass": true,
+      "global_R42_pass": false
+    }
+  },
+  "full_R42_qualification": false,
+  "audit_notes": [
+    "The inherited scope prose said GCC13.2; actual preserved gcc/g++ version receipts report Ubuntu13.3.0. This audit uses actual receipts.",
+    "Qt6.4.2 Release/O3, walletON/OFF, full registry, automation/CLI/daemonON and IPCoff are explicit configurations. No stockautomationOFF/IPC/nativeMac/installedOSassociation/upstreamCore-tests claim.",
+    "12 delegated fatal rows per native class run remain skips there. Separate passing fatal Python wrapper dynamically enumerates and verifies every fatal child exits1+ackmarker; not added to ordinary pass counts.",
+    "One minimalQPA geometry row remains skipped each; separate xcb/native qualifier needed.",
+    "Integration disabledWallet console row is a feature skip in both groups, not a failure or pass."
+  ],
+  "both_cells_passed_with_explicit_skips": true
+}

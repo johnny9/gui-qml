@@ -1,0 +1,224 @@
+From 1e09ea6aa548544c9ccdaca3933500b9446ef79c Mon Sep 17 00:00:00 2001
+From: johnny9 <johnny9dev@pm.me>
+Date: Mon, 16 Nov 2026 05:22:28 +0000
+Subject: [PATCH] refactor: retire unused Core settings compatibility entry
+ points
+
+---
+ qml/core_settings.cpp | 132 ------------------------------------------
+ qml/core_settings.h   |  13 -----
+ 2 files changed, 145 deletions(-)
+
+diff --git a/qml/core_settings.cpp b/qml/core_settings.cpp
+index 230d77a8d79..b0e80a26232 100644
+--- a/qml/core_settings.cpp
++++ b/qml/core_settings.cpp
+@@ -515,22 +515,6 @@ common::SettingsValue DisplaySettingValue(interfaces::Node& node, ArgsManager& a
+     return node.getPersistentSetting(name.toStdString());
+ }
+ 
+-common::SettingsValue ConfigCoreSettingValue(ArgsManager& args, const QString& name)
+-{
+-    common::SettingsValue value;
+-    const std::string key = name.toStdString();
+-    const std::string chain = args.GetChainTypeString();
+-    args.LockSettings([&](common::Settings& settings) {
+-        common::Settings config_only;
+-        config_only.ro_config = settings.ro_config;
+-        value = common::GetSetting(config_only, chain, key,
+-            /*ignore_default_section_config=*/false,
+-            /*ignore_nonpersistent=*/false,
+-            /*get_chain_type=*/false);
+-    });
+-    return value;
+-}
+-
+ bool CoreSettingValuesEqual(const QString& name, const common::SettingsValue& left, const common::SettingsValue& right)
+ {
+     if (left.isNull() && right.isNull()) return true;
+@@ -661,11 +645,6 @@ void SetRwSetting(ArgsManager& args, const QString& name, const common::Settings
+     });
+ }
+ 
+-void UpdateRwSetting(interfaces::Node& node, const QString& name, const common::SettingsValue& value)
+-{
+-    node.updateRwSetting(name.toStdString(), LegacyCompatibleRwSettingValue(name, value));
+-}
+-
+ bool WriteCoreSettingOverride(ArgsManager& args, const QString& name, const common::SettingsValue& value)
+ {
+     if (!CanEditCoreSetting(args, name)) return false;
+@@ -673,21 +652,6 @@ bool WriteCoreSettingOverride(ArgsManager& args, const QString& name, const comm
+     return true;
+ }
+ 
+-bool WritePruneSetting(ArgsManager& args, bool enabled, int prune_size_gb)
+-{
+-    const QString key{QStringLiteral("prune")};
+-    if (!CanEditCoreSetting(args, key)) return false;
+-
+-    if (enabled) {
+-        if (!WriteCoreSettingOverride(args, key, PruneSetting(true, prune_size_gb))) return false;
+-        SetRwSetting(args, QStringLiteral("prune-prev"), {});
+-    } else {
+-        SetRwSetting(args, QStringLiteral("prune-prev"), PruneSetting(true, prune_size_gb));
+-        if (!WriteCoreSettingOverride(args, key, PruneSetting(false, prune_size_gb))) return false;
+-    }
+-    return true;
+-}
+-
+ bool WriteProxySetting(ArgsManager& args, const QString& key, bool enabled, const QString& address)
+ {
+     if (!CanEditCoreSetting(args, key)) return false;
+@@ -959,51 +923,6 @@ bool Session::setListen(bool listen)
+     return ValuesChanged(changeListen(listen));
+ }
+ 
+-bool Session::setNatpmp(bool natpmp)
+-{
+-    return ValuesChanged(changeNatpmp(natpmp));
+-}
+-
+-bool Session::setServer(bool server)
+-{
+-    return ValuesChanged(changeServer(server));
+-}
+-
+-bool Session::setPrune(bool prune)
+-{
+-    return ValuesChanged(changePrune(prune));
+-}
+-
+-bool Session::setPruneSizeGB(int prune_size_gb)
+-{
+-    return ValuesChanged(changePruneSizeGB(prune_size_gb));
+-}
+-
+-bool Session::setProxyEnabled(bool enabled)
+-{
+-    return ValuesChanged(changeProxyEnabled(enabled));
+-}
+-
+-bool Session::setTorEnabled(bool enabled)
+-{
+-    return ValuesChanged(changeTorEnabled(enabled));
+-}
+-
+-bool Session::commitProxyLocation(const QString& location)
+-{
+-    return changeProxyLocation(location).accepted;
+-}
+-
+-bool Session::commitTorLocation(const QString& location)
+-{
+-    return changeTorLocation(location).accepted;
+-}
+-
+-void Session::setPruneRecommendation(bool prune, int prune_size_gb, bool mark_touched)
+-{
+-    changePruneRecommendation(prune, prune_size_gb, mark_touched);
+-}
+-
+ PersistenceResult PersistTransaction(ArgsManager& args, const QStringList& keys,
+                      const std::function<bool()>& mutation, const std::function<void()>& after_save, bool skip_unchanged)
+ {
+@@ -1121,55 +1040,4 @@ bool Session::writeTouchedToArgs(ArgsManager& args) const
+     return ok;
+ }
+ 
+-bool Session::writeToNode(interfaces::Node& node, ArgsManager& args, const QString& name) const
+-{
+-    if (!IsSessionSetting(name) || !CanEditCoreSetting(args, name)) return false;
+-
+-    if (name == QStringLiteral("proxy") || name == QStringLiteral("onion")) {
+-        const bool enabled = name == QStringLiteral("proxy") ? m_values.proxy_enabled : m_values.tor_enabled;
+-        const QString address = name == QStringLiteral("proxy") ? m_values.proxy_address : m_values.tor_address;
+-        const QString trimmed = address.trimmed();
+-        if (enabled && !ProxyValidationError(trimmed).isEmpty()) return false;
+-
+-        const QString prev_key{name + QStringLiteral("-prev")};
+-        if (enabled) {
+-            UpdateRwSetting(node, name, GuiOverrideValue(args, name, ProxySetting(true, trimmed)));
+-            UpdateRwSetting(node, prev_key, common::SettingsValue{});
+-        } else {
+-            if (!trimmed.isEmpty()) {
+-                UpdateRwSetting(node, prev_key, common::SettingsValue{trimmed.toStdString()});
+-            }
+-            UpdateRwSetting(node, name, GuiOverrideValue(args, name, ProxySetting(false, trimmed)));
+-        }
+-        return true;
+-    }
+-
+-    if (name == QStringLiteral("prune")) {
+-        if (m_values.prune) {
+-            UpdateRwSetting(node, name, GuiOverrideValue(args, name, PruneSetting(m_values)));
+-            UpdateRwSetting(node, QStringLiteral("prune-prev"), common::SettingsValue{});
+-        } else {
+-            Values enabled = m_values;
+-            enabled.prune = true;
+-            UpdateRwSetting(node, QStringLiteral("prune-prev"), PruneSetting(enabled));
+-            UpdateRwSetting(node, name, GuiOverrideValue(args, name, PruneSetting(m_values)));
+-        }
+-        return true;
+-    }
+-
+-    UpdateRwSetting(node, name, GuiOverrideValue(args, name, settingValue(name)));
+-    return true;
+-}
+-
+-bool Session::writeTouchedToNode(interfaces::Node& node, ArgsManager& args) const
+-{
+-    bool ok{true};
+-    for (const QString& name : SessionSettingNames()) {
+-        if (m_touched_settings.contains(name)) {
+-            ok = writeToNode(node, args, name) && ok;
+-        }
+-    }
+-    return ok;
+-}
+-
+ } // namespace QmlCoreSettings
+diff --git a/qml/core_settings.h b/qml/core_settings.h
+index 61647fbb0f0..8b11de329e5 100644
+--- a/qml/core_settings.h
++++ b/qml/core_settings.h
+@@ -120,7 +120,6 @@ Values LoadDisplayValues(interfaces::Node& node, ArgsManager& args);
+ 
+ common::SettingsValue DefaultCoreSettingValue(const QString& name);
+ common::SettingsValue DisplaySettingValue(interfaces::Node& node, ArgsManager& args, const QString& name);
+-common::SettingsValue ConfigCoreSettingValue(ArgsManager& args, const QString& name);
+ bool CoreSettingValuesEqual(const QString& name, const common::SettingsValue& left, const common::SettingsValue& right);
+ 
+ QVariantMap CoreSettingStatus(ArgsManager& args, const QString& name);
+@@ -131,7 +130,6 @@ bool CanEditCoreSetting(ArgsManager& args, const QString& name);
+ common::SettingsValue GuiOverrideValue(ArgsManager& args, const QString& name, const common::SettingsValue& value);
+ common::SettingsValue LegacyCompatibleRwSettingValue(const QString& name, const common::SettingsValue& value);
+ void SetRwSetting(ArgsManager& args, const QString& name, const common::SettingsValue& value);
+-void UpdateRwSetting(interfaces::Node& node, const QString& name, const common::SettingsValue& value);
+ bool WriteCoreSettingOverride(ArgsManager& args, const QString& name, const common::SettingsValue& value);
+ bool WriteProxySetting(ArgsManager& args, const QString& key, bool enabled, const QString& address);
+ 
+@@ -195,20 +193,9 @@ public:
+     Change applyPreviewValuesPreservingTouched(const Values& values, const QVariantMap& statuses);
+ 
+     bool setListen(bool listen);
+-    bool setNatpmp(bool natpmp);
+-    bool setServer(bool server);
+-    bool setPrune(bool prune);
+-    bool setPruneSizeGB(int prune_size_gb);
+-    bool setProxyEnabled(bool enabled);
+-    bool setTorEnabled(bool enabled);
+-    bool commitProxyLocation(const QString& location);
+-    bool commitTorLocation(const QString& location);
+-    void setPruneRecommendation(bool prune, int prune_size_gb, bool mark_touched);
+ 
+     bool writeToArgs(ArgsManager& args, const QString& name) const;
+     bool writeTouchedToArgs(ArgsManager& args) const;
+-    bool writeToNode(interfaces::Node& node, ArgsManager& args, const QString& name) const;
+-    bool writeTouchedToNode(interfaces::Node& node, ArgsManager& args) const;
+ 
+ private:
+     Change beginChange(const QString& setting_name) const;
+-- 
+2.53.0
+

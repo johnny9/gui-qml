@@ -1,0 +1,40 @@
+{
+  "source_base": "c2e8f0edb6a936f344d4332b2eaba20a47c9846f",
+  "commits": [
+    "2c8fdfdef15d7defbfbfe536af6100123cfcb585",
+    "99eb4c3c3dc7735d98f254c4ddd55954c25f9999"
+  ],
+  "final": "99eb4c3c3dc7735d98f254c4ddd55954c25f9999",
+  "Core": "44901d8f64cb617714707bd025ecd83f108353c2",
+  "file": "test/test_walletqmlmodel.cpp",
+  "source_file_sha256": "ba1777aa5fe60b542703362cdbca4638fe4cbfe593027cdb4d75146c6c3fc371",
+  "image": "sha256:a4c62a2056bc0171ce1071ea18515507bc3183770b033516a548c6c080bf391b",
+  "configuration": "Unchanged pinned tidy RelWithDebInfo/Clang23/Qt6.10.2, minimal/software, automationON. Default complete122-class unit registry and empty APP_UNIT_TEST_CLASSES. No broad final ordinary or Qt62 claim from focused tests.",
+  "evidence": {
+    "exact37_pass": true,
+    "whole_Wallet471_pass": true,
+    "clock100_pass": true,
+    "preparation90_pass": true,
+    "tidy_Wallet1_plus_MOC7_pass": true,
+    "app_lint_exit": 0,
+    "source_and_Core_clean": true
+  },
+  "cause_evidence": {
+    "original_clock": "diagnostic-02/focused/original-clock-036: policyPending=true before schedule/before249/after+1, Idle, no read request; six additional later-pending failures retained.",
+    "original_preparation": "preparation-diagnostic-throttled-01 runs02/22/23/25: original ticket false; policyPending=true; observations true and all other logged busy gates false.",
+    "GUI": "SendCreate.qml1126 declarative Review button guards fees.policyPending and customFeeTargetPending. Original no-recipient rejection fixture bypasses that button intentionally. Separate existing dialog guards were inspected, no claim about every dialog transition."
+  },
+  "preserved_oracles": [
+    "Original249+1ms deadline, before/start/finish/publish checkpoints and exact read/publication counts.",
+    "Current-error publication1, stale-error0, duplicate original publication refusal and observer-loss retirement.",
+    "Original no-recipient/manual-selection error, successor ticket/order, no Core effects, invalid-amount intent and close/delete ownership.",
+    "Original timeouts and bounded phase budgets unchanged; Scheduled/pending assertions added."
+  ],
+  "remaining": [
+    "Final combined native ordinary and Qt62 invalidated unit scope remain unrun on99eb.",
+    "Final combined ASan/TSan checks remain unrun on99eb; ordinary tidy does not certify sanitizer scope.",
+    "No production/Core/Qt/GUI binding edits; no coverage metrics changed.",
+    "Node/Peer gap drafts8111d983b23+a0931ca50ac remain UNBUILT/UNQUALIFIED; header metadata and native ListModel witnesses are task-only evidence.",
+    "Generic QML coverage integration remains unfinished; native model4controls do not certify whole QML text coverage."
+  ]
+}

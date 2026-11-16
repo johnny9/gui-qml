@@ -1,0 +1,163 @@
+From 22c79e9ae8328cc26276bdec6263f6f90627204c Mon Sep 17 00:00:00 2001
+From: johnny9 <johnny9dev@pm.me>
+Date: Mon, 16 Nov 2026 04:54:53 +0000
+Subject: [PATCH] test: own signer task receipt and canonical restore source
+
+---
+ test/test_options_model.cpp       | 70 ++++++++++++++++++++++---------
+ test/test_walletqmlcontroller.cpp |  3 +-
+ 2 files changed, 53 insertions(+), 20 deletions(-)
+
+diff --git a/test/test_options_model.cpp b/test/test_options_model.cpp
+index df85f0b4504..9dc2086facd 100644
+--- a/test/test_options_model.cpp
++++ b/test/test_options_model.cpp
+@@ -42,9 +42,11 @@
+ #include <deque>
+ #include <functional>
+ #include <future>
++#include <mutex>
+ #include <stdexcept>
+ 
+ #include <utility>
++#include <vector>
+ 
+ #ifndef BITCOINQML_NO_TEST_MAIN
+ const TranslateFn G_TRANSLATION_FUN{nullptr};
+@@ -189,37 +191,61 @@ struct ManualSnapshotGraph {
+ };
+ 
+ class ThreadProbeScheduler final : public execution::Scheduler {
++public:
++    struct Work {
++        execution::TaskId id;
++        execution::Lane lane;
++        QThread* submitted_from;
++        std::atomic<QThread*> thread{nullptr};
++        std::atomic<size_t> executions{0};
++        Work(execution::Lane lane, QThread* submitted_from) : lane(lane), submitted_from(submitted_from) {}
++    };
++private:
+     struct State {
+-        std::array<std::atomic<QThread*>, 4> threads{};
+-        std::array<std::atomic<size_t>, 4> executions{};
++        std::mutex mutex;
++        std::vector<std::shared_ptr<const Work>> submissions;
+     };
+     struct RecordedTask final : execution::Task {
+         std::shared_ptr<execution::Task> task;
+-        std::shared_ptr<State> state;
+-        execution::Lane lane;
+-        RecordedTask(std::shared_ptr<execution::Task> task, std::shared_ptr<State> state, execution::Lane lane)
+-            : task(std::move(task)), state(std::move(state)), lane(lane) {}
++        std::shared_ptr<Work> work;
++        RecordedTask(std::shared_ptr<execution::Task> task, std::shared_ptr<Work> work)
++            : task(std::move(task)), work(std::move(work)) {}
+         void execute() override
+         {
+-            const auto index = static_cast<size_t>(lane);
+-            state->threads[index] = QThread::currentThread();
+-            ++state->executions[index];
++            work->thread = QThread::currentThread();
++            ++work->executions;
+             task->execute();
+         }
+         void deliver() override { task->deliver(); }
+         void notStarted(execution::NotStarted::Cause cause) override { task->notStarted(cause); }
+     };
+-
+     const std::shared_ptr<execution::Scheduler> m_inner;
+     const std::shared_ptr<State> m_state;
+     ThreadProbeScheduler(std::shared_ptr<execution::Scheduler> inner, std::shared_ptr<State> state)
+         : m_inner(std::move(inner)), m_state(std::move(state)) {}
+-
++    execution::Admission record(std::shared_ptr<execution::Task> task, execution::TaskSpec spec, bool cleanup)
++    {
++        const auto work = std::make_shared<Work>(spec.lane, QThread::currentThread());
++        const auto recorded = std::make_shared<RecordedTask>(std::move(task), work);
++        const auto admission = cleanup ? m_inner->reserveCleanup(recorded, spec) : m_inner->submit(recorded, spec);
++        if (admission) {
++            work->id = admission.id;
++            std::lock_guard lock{m_state->mutex};
++            m_state->submissions.push_back(work);
++        }
++        return admission;
++    }
+ public:
+     explicit ThreadProbeScheduler(std::shared_ptr<execution::Scheduler> inner)
+         : m_inner(std::move(inner)), m_state(std::make_shared<State>()) {}
+-    QThread* thread(execution::Lane lane) const { return m_state->threads[static_cast<size_t>(lane)].load(); }
+-    size_t executions(execution::Lane lane) const { return m_state->executions[static_cast<size_t>(lane)].load(); }
++    std::vector<std::shared_ptr<const Work>> submitted(execution::Lane lane, QThread* from) const
++    {
++        std::lock_guard lock{m_state->mutex};
++        std::vector<std::shared_ptr<const Work>> result;
++        for (const auto& work : m_state->submissions)
++            if (work->lane == lane && work->submitted_from == from) result.push_back(work);
++        return result;
++    }
+     std::shared_ptr<execution::Scheduler> openActionScope(size_t bytes = 256) override
+     {
+         auto scope = m_inner->openActionScope(bytes);
+@@ -227,11 +253,11 @@ public:
+     }
+     execution::Admission submit(std::shared_ptr<execution::Task> task, execution::TaskSpec spec = {}) override
+     {
+-        return m_inner->submit(std::make_shared<RecordedTask>(std::move(task), m_state, spec.lane), spec);
++        return record(std::move(task), spec, false);
+     }
+     execution::Admission reserveCleanup(std::shared_ptr<execution::Task> task, execution::TaskSpec spec) override
+     {
+-        return m_inner->reserveCleanup(std::make_shared<RecordedTask>(std::move(task), m_state, spec.lane), spec);
++        return record(std::move(task), spec, true);
+     }
+     bool activateCleanup(execution::TaskId id) override { return m_inner->activateCleanup(id); }
+     execution::BorrowAdmission borrow(execution::ResourceKey key) override { return m_inner->borrow(key); }
+@@ -1263,13 +1289,19 @@ void OptionsModelTests::signerValidationRunsOnCoreWorker()
+     QVERIFY(missing_paths.isValid());
+     const QString path = missing_paths.filePath(QStringLiteral("missing-signer"));
+     QVERIFY(!QFileInfo::exists(path));
+-    const size_t core_executions_before = recording->executions(execution::Lane::Core);
++    const auto submitted_before = recording->submitted(execution::Lane::Core, QThread::currentThread()).size();
+     model.requestExternalSignerPathValidation(path);
++    // This synchronous command admits one original Core task. Independent
++    // watcher observations may run concurrently and own separate receipts.
++    const auto submitted = recording->submitted(execution::Lane::Core, QThread::currentThread());
++    QCOMPARE(submitted.size(), submitted_before + 1);
++    const auto original = submitted.back();
++    QVERIFY(original->id.value != 0);
+     QVERIFY(QTest::qWaitFor([&] { return !model.signerPathValidationPending(); }, 5000));
+     QCOMPARE(model.signerPathError(), QStringLiteral("The configured signer path does not exist."));
+-    QCOMPARE(recording->executions(execution::Lane::Core), core_executions_before + 1);
+-    QVERIFY(recording->thread(execution::Lane::Core));
+-    QVERIFY(recording->thread(execution::Lane::Core) != QThread::currentThread());
++    QCOMPARE(original->executions.load(), size_t{1});
++    QVERIFY(original->thread.load());
++    QVERIFY(original->thread.load() != QThread::currentThread());
+ 
+     QSignalSpy shutdown_finished{&model, &OptionsQmlModel::shutdownFinished};
+     model.beginShutdown();
+diff --git a/test/test_walletqmlcontroller.cpp b/test/test_walletqmlcontroller.cpp
+index b8d4431bc24..d82c1981239 100644
+--- a/test/test_walletqmlcontroller.cpp
++++ b/test/test_walletqmlcontroller.cpp
+@@ -886,6 +886,7 @@ void WalletQmlControllerTests::restorationCapturesExactSourceAndTarget()
+     QFETCH(QString, filename); QFETCH(QString, expected);
+     QTemporaryDir source, wallets; QVERIFY(source.isValid()); QVERIFY(wallets.isValid());
+     const auto path = source.filePath(filename); QVERIFY(WriteDatabaseHint(path)); const auto original_bytes = ReadTestFile(path);
++    const auto original_source = QFileInfo{path}.canonicalFilePath(); QVERIFY(!original_source.isEmpty());
+     MockNode node; FakeWalletLoader loader; loader.wallet_dir = wallets.path().toStdString(); ConfigureExpectedControllerInitialization(node, loader);
+     ManualControllerGraph graph{node}; auto& controller = *graph.controller; controller.initialize(); QVERIFY(graph.until([&] { return controller.initialized(); }));
+     const QPointer<WalletQmlModel> selected_before{controller.selectedWallet()};
+@@ -902,7 +903,7 @@ void WalletQmlControllerTests::restorationCapturesExactSourceAndTarget()
+     auto* refused = controller.restore(url); QVERIFY(refused); QCOMPARE(refused->phase(), WalletOperationModel::Rejected); QCOMPARE(controller.creationOperation(), operation);
+     QVERIFY(controller.walletLoadInProgress()); QCOMPARE(loader.restore_wallet_calls, 0);
+     QVERIFY(graph.until([&] { return operation->terminal() && !controller.walletLoadInProgress(); }));
+-    QCOMPARE(operation->phase(), WalletOperationModel::Succeeded); QCOMPARE(actual_source, path); QCOMPARE(actual_target, expected); QVERIFY(!restore_load); QVERIFY(loaded_on_core);
++    QCOMPARE(operation->phase(), WalletOperationModel::Succeeded); QCOMPARE(actual_source, original_source); QCOMPARE(actual_target, expected); QVERIFY(!restore_load); QVERIFY(loaded_on_core);
+     QCOMPARE(loader.restore_wallet_calls, 1); QCOMPARE(loader.load_wallet_calls, 1); QCOMPARE(loader.migrate_wallet_calls, 0);
+     QCOMPARE(operation->targetWalletId(), expected); QCOMPARE(operation->resultWallet(), controller.walletForName(expected)); QVERIFY(operation->canOpenResult()); QCOMPARE(controller.selectedWallet(), selected_before.data());
+     QCOMPARE(ReadTestFile(path), original_bytes); QCOMPARE(operation->warningText(), QString(5000, QLatin1Char('w'))); QVERIFY(operation->warningDetails()->rowCount() > 1);
+-- 
+2.53.0
+
