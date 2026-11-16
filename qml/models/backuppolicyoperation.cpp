@@ -281,7 +281,10 @@ bool BackupFileOperation::start()
 {
     if (m_started) return false;
     m_started = true;
-    if (!m_backend->start()) {
+    const QPointer<BackupFileOperation> observer{this};
+    const auto backend = m_backend;
+    if (!backend->start()) {
+        if (!observer) return false;
         m_projection.phase = backup::Phase::Failed;
         m_projection.error = backup::Error::Transport;
         ++m_projection.sequence;
@@ -293,12 +296,14 @@ bool BackupFileOperation::start()
 
 bool BackupFileOperation::approve()
 {
-    return m_backend && m_backend->approve();
+    const auto backend = m_backend;
+    return backend && backend->approve();
 }
 
 bool BackupFileOperation::refuse()
 {
-    return m_backend && m_backend->refuse();
+    const auto backend = m_backend;
+    return backend && backend->refuse();
 }
 
 void BackupFileOperation::retire()

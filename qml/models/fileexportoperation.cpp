@@ -8,6 +8,7 @@
 #include <qml/retainedvalue.h>
 
 #include <QFile>
+#include <QPointer>
 
 #include <atomic>
 #include <mutex>
@@ -259,6 +260,7 @@ QString FileExportOperationModel::errorText() const
 bool FileExportOperationModel::start()
 {
     if (std::exchange(m_started, true)) return false;
+    const QPointer<FileExportOperationModel> observer{this};
     if (!m_start_error.isEmpty() || !m_request) {
         Q_EMIT changed();
         return false;
@@ -266,12 +268,13 @@ bool FileExportOperationModel::start()
     const auto state = m_request->m_state;
     if (!state || !state->source->hasDocument()) {
         if (state && state->operation) state->operation->failBeforeStart(backup::Error::CoreBackup);
-        Q_EMIT changed();
+        if (observer) Q_EMIT changed();
         return false;
     }
     bool expected{false};
     if (!state->started.compare_exchange_strong(expected, true)) return false;
     const bool admitted = m_operation->start();
+    if (!observer) return admitted;
     if (!admitted && !pending()) {
         state->source->clear();
         Q_EMIT changed();

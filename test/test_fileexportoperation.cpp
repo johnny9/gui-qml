@@ -29,6 +29,20 @@ struct Fixture {
 
     explicit Fixture(execution::Limits limits = execution::Limits::Bounded()) : execution{limits} {}
 
+    ~Fixture()
+    {
+        // Model destruction and its last GUI publication can release retained
+        // values after the test's final explicit drain. Complete their Cleanup
+        // turns while the manual transport is still owned by this fixture.
+        for (int turns = 0; turns < 4096; ++turns) {
+            execution.drain();
+            deliverGui();
+            if (execution.transportIdle() && gui_posts.empty()) break;
+        }
+        QVERIFY(gui_posts.empty());
+        QVERIFY(execution.quiescent());
+    }
+
     backup::Services services()
     {
         backup::Services result;
@@ -168,6 +182,61 @@ private Q_SLOTS:
 
         executor.shutdown();
         QTRY_VERIFY(executor.isDrained());
+    }
+
+    void startAdmissionCanDeleteProjection_data()
+    {
+        QTest::addColumn<bool>("accept");
+        QTest::newRow("accepted-original-write") << true;
+        QTest::newRow("rejected-without-write") << false;
+    }
+
+    void startAdmissionCanDeleteProjection()
+    {
+        QFETCH(bool, accept);
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto path = directory.filePath(QStringLiteral("captured.psbt"));
+        auto deletion = std::make_shared<DeletionState>();
+        auto document = TrackedDocument(deletion);
+        const auto expected = psbtwork::SerializeRaw(*document);
+        int outcomes{0};
+        int terminal_phase{-1};
+        Fixture fixture;
+        std::unique_ptr<FileExportOperationModel> operation;
+        auto services = fixture.services();
+        const auto scheduler = services.scheduler;
+        const auto key = scheduler->allocateKey();
+        services.submit = [scheduler, key, accept, &operation](std::function<void()> work) {
+            const auto receipt = accept
+                ? execution::Submit(*scheduler, std::move(work), [] {}, {},
+                    {execution::Lane::Core, 256, key, execution::WorkClass::Action})
+                : execution::Admission{{}, execution::Rejection::Transport};
+            // Admission may close the public projection before returning its
+            // receipt. Its original accepted write and cleanup remain owned.
+            operation.reset();
+            return receipt;
+        };
+        services.outcome = [&](backup::Snapshot snapshot) {
+            ++outcomes;
+            terminal_phase = static_cast<int>(snapshot.phase);
+        };
+        operation = std::make_unique<FileExportOperationModel>(path, document, std::move(services));
+        document.reset();
+        const QPointer<FileExportOperationModel> original{operation.get()};
+        auto request = operation->requestForAcceptedContinuation();
+        QCOMPARE(original->start(), accept);
+        QVERIFY(!original);
+        fixture.execution.drain();
+        fixture.deliverGui();
+        QCOMPARE(QFile::exists(path), accept);
+        QCOMPARE(ReadFile(path), accept ? expected : QByteArray{});
+        QCOMPARE(outcomes, accept ? 1 : 0);
+        if (accept) QCOMPARE(terminal_phase, static_cast<int>(backup::Phase::Succeeded));
+        request.reset();
+        fixture.execution.drain();
+        QVERIFY(deletion->destroyed.load());
+        QVERIFY(fixture.execution.quiescent());
     }
 
     void retiringBeforeInspectionReleasesPsbtThroughCleanup()
