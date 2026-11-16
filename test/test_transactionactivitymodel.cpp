@@ -37,6 +37,7 @@
 
 #include <thread>
 #include <atomic>
+#include <mutex>
 #include <QSemaphore>
 #include <stdexcept>
 
@@ -107,7 +108,23 @@ struct RepeatingReadGate {
 
 class ActivityWallet : public StubWallet
 {
+protected:
+    std::recursive_mutex m_mutex;
+
 public:
+    // Match the public wallet's synchronized access to mutable transaction,
+    // status and address-book records. Test gates never hold this lock.
+    class Access
+    {
+    public:
+        explicit Access(ActivityWallet& wallet) : m_lock{wallet.m_mutex}, m_wallet{wallet} {}
+        ActivityWallet* operator->() const { return &m_wallet; }
+
+    private:
+        std::unique_lock<std::recursive_mutex> m_lock;
+        ActivityWallet& m_wallet;
+    };
+    Access locked() { return Access{*this}; }
     std::map<Txid, interfaces::WalletTx> transactions;
     std::map<Txid, interfaces::WalletTxStatus> statuses;
     std::map<std::string, std::string> labels;
@@ -139,6 +156,7 @@ public:
 
     void put(const interfaces::WalletTx& tx, int depth = 6)
     {
+        const auto access = locked();
         transactions[tx.tx->GetHash()] = tx;
         auto& status = statuses[tx.tx->GetHash()];
         status = {};
@@ -147,28 +165,41 @@ public:
     }
     void notify(const interfaces::WalletTx& tx, ChangeType change)
     {
-        for (const auto& callback : callbacks) callback(tx.tx->GetHash(), change);
+        const auto captured = [&] {
+            const auto access = locked();
+            return callbacks;
+        }();
+        for (const auto& callback : captured) callback(tx.tx->GetHash(), change);
     }
     std::vector<std::string> getAddressReceiveRequests() override {
+        const auto access = locked();
         blockingRead(); std::vector<std::string> result; result.reserve(request_blobs.size()); for (const auto& [id, blob] : request_blobs) result.push_back(blob); return result;
     }
     bool setAddressReceiveRequest(const CTxDestination&, const std::string& key, const std::string& value) override {
+        const auto access = locked();
         const auto id = ToIntegral<int64_t>(key); if (!id) throw std::invalid_argument("Invalid receive request id");
         if (value.empty()) request_blobs.erase(*id); else request_blobs[*id] = value; return true;
     }
     std::set<interfaces::WalletTx> getWalletTxs() override
     {
         blockingRead();
-        ++history_reads;
         std::set<interfaces::WalletTx> result;
-        for (const auto& [id, tx] : transactions) result.insert(tx);
-        if (history_gate) history_gate->wait();
+        std::shared_ptr<ReadGate> gate;
+        {
+            const auto access = locked();
+            ++history_reads;
+            for (const auto& [id, tx] : transactions) result.insert(tx);
+            gate = history_gate;
+        }
+        if (gate) gate->wait();
+        const auto access = locked();
         if (fail_history || fail_next_history.exchange(false)) throw std::runtime_error("wallet read failed");
         return result;
     }
     interfaces::WalletTx getWalletTx(const Txid& id) override
     {
         blockingRead();
+        const auto access = locked();
         ++snapshots;
         snapshot_on_worker |= QThread::currentThread() != qApp->thread();
         const auto it = transactions.find(id);
@@ -177,7 +208,12 @@ public:
     CTransactionRef getTx(const Txid& id) override
     {
         blockingRead();
-        if (parent_gate) parent_gate->wait();
+        const auto gate = [&] {
+            const auto access = locked();
+            return parent_gate;
+        }();
+        if (gate) gate->wait();
+        const auto access = locked();
         ++parent_reads;
         if (previous_tx && previous_tx->GetHash() == id) return previous_tx;
         const auto it = flow_parents.find(id);
@@ -185,11 +221,18 @@ public:
     }
     bool tryGetTxStatus(const Txid& id, interfaces::WalletTxStatus& status, int& height, int64_t& time) override
     {
-        ++status_reads;
-        if (busy || !statuses.contains(id)) return false;
-        status = statuses.at(id);
-        if (repeated_status_gate) repeated_status_gate->wait();
-        if (try_status_gate) try_status_gate->wait();
+        std::shared_ptr<RepeatingReadGate> repeated;
+        std::shared_ptr<ReadGate> gate;
+        {
+            const auto access = locked();
+            ++status_reads;
+            if (busy || !statuses.contains(id)) return false;
+            status = statuses.at(id);
+            repeated = repeated_status_gate;
+            gate = try_status_gate;
+        }
+        if (repeated) repeated->wait();
+        if (gate) gate->wait();
         height = 100;
         time = 1'789'200'000;
         return true;
@@ -205,6 +248,7 @@ public:
     bool getAddress(const CTxDestination& address, std::string* label, wallet::AddressPurpose* purpose) override
     {
         blockingRead();
+        const auto access = locked();
         ++label_reads;
         if (!labels.contains(EncodeDestination(address))) return false;
         if (label) *label = labels.at(EncodeDestination(address));
@@ -214,6 +258,7 @@ public:
     bool setAddressBook(const CTxDestination& address, const std::string& label,
                         const std::optional<wallet::AddressPurpose>& purpose) override
     {
+        const auto access = locked();
         ++address_writes;
         labels[EncodeDestination(address)] = label;
         if (purpose) purposes[EncodeDestination(address)] = *purpose;
@@ -221,17 +266,19 @@ public:
     }
     CAmount getAvailableBalance(const wallet::CCoinControl&) override { return 10 * COIN; }
     CAmount getBalance() override { return 10 * COIN; }
-    bool privateKeysDisabled() override { return external_signer; }
-    bool hasExternalSigner() override { return external_signer; }
+    bool privateKeysDisabled() override { const auto access = locked(); return external_signer; }
+    bool hasExternalSigner() override { const auto access = locked(); return external_signer; }
     util::Result<wallet::CreatedTransactionResult> createTransaction(const std::vector<wallet::CRecipient>&,
         const wallet::CCoinControl&, bool, std::optional<unsigned int>) override
     {
+        const auto access = locked();
         if (!send_draft) return util::Error{Untranslated("No send draft")};
         return wallet::CreatedTransactionResult{send_draft->tx, 1'000, 3, FeeReason::FEE_RATE_ESTIMATOR};
     }
     std::optional<common::PSBTError> fillPSBT(const common::PSBTFillOptions& options, size_t* count,
                                             PartiallySignedTransaction& psbt, bool& complete) override
     {
+        const auto access = locked();
         if (count) *count = psbt.inputs.size();
         complete = options.sign;
         for (auto& input : psbt.inputs) {
@@ -242,15 +289,25 @@ public:
     }
     void commitTransaction(CTransactionRef tx, const std::vector<std::string>&) override
     {
-        if (commit_gate) commit_gate->wait();
-        ++commits;
-        send_draft->tx = std::move(tx);
-        put(*send_draft, 0);
-        notify(*send_draft, CT_NEW);
+        const auto gate = [&] {
+            const auto access = locked();
+            return commit_gate;
+        }();
+        if (gate) gate->wait();
+        interfaces::WalletTx committed;
+        {
+            const auto access = locked();
+            ++commits;
+            send_draft->tx = std::move(tx);
+            put(*send_draft, 0);
+            committed = *send_draft;
+        }
+        notify(committed, CT_NEW);
     }
     std::vector<interfaces::WalletTxOut> getCoins(const std::vector<COutPoint>& outputs) override
     {
         blockingRead();
+        const auto access = locked();
         std::vector<interfaces::WalletTxOut> result;
         result.reserve(outputs.size());
         for (const auto& output : outputs) {
@@ -264,6 +321,7 @@ public:
         std::vector<std::string>&, std::vector<std::string>&, bool& in_mempool, int& height) override
     {
         blockingRead();
+        const auto access = locked();
         // Existing Activity fixtures intentionally lack the optional blocking
         // details port. Only this fixture's actual send has a recorded receipt.
         if (!send_draft || !send_draft->tx || send_draft->tx->GetHash() != id) return {};
@@ -277,12 +335,18 @@ public:
     bool transactionCanBeBumped(const Txid&) override
     {
         blockingRead();
-        if (bump_gate) bump_gate->wait();
+        const auto gate = [&] {
+            const auto access = locked();
+            return bump_gate;
+        }();
+        if (gate) gate->wait();
+        const auto access = locked();
         ++bump_reads;
         return true;
     }
     std::unique_ptr<interfaces::Handler> handleTransactionChanged(TransactionChangedFn callback) override
     {
+        const auto access = locked();
         callbacks.push_back(std::move(callback));
         return {};
     }
@@ -298,6 +362,7 @@ public:
     {
         blockingRead();++blocking_status_reads;
         if(status_gate)status_gate->wait();
+        const auto access = locked();
         const auto found=transactions.find(id);if(found==transactions.end())return {};
         status=statuses.at(id);status.depth_in_main_chain=fallback_depth.load();status.is_in_main_chain=status.depth_in_main_chain>0;
         in_mempool=false;height=100;return found->second;
@@ -349,8 +414,8 @@ struct Fixture {
     void requests(const std::vector<QmlRecentRequestEntry>& values, bool replace) {
         auto done = std::make_shared<std::atomic_bool>(false);
         const auto admitted = wallet->opening()->read([values, replace](interfaces::Wallet& backend) {
-            auto& state = dynamic_cast<ActivityWallet&>(backend); if (replace) state.request_blobs.clear();
-            for (const auto& value : values) state.request_blobs[value.id] = walletrequests::Encode(value);
+            auto& state = dynamic_cast<ActivityWallet&>(backend); if (replace) state.locked()->request_blobs.clear();
+            for (const auto& value : values) state.locked()->request_blobs[value.id] = walletrequests::Encode(value);
             return true;
         }, [done](bool) { done->store(true); }, [done](std::exception_ptr) { done->store(true); }, execution::WorkClass::Action);
         QVERIFY(admitted); QVERIFY(QTest::qWaitFor([done] { return done->load(); }, 5000));
@@ -510,7 +575,7 @@ void TransactionActivityModelTests::oneChangedStatusReusesLargeNativeRowsAndFilt
     QVERIFY(QTest::qWaitFor([&] { fixture.settle(); return !proxy.busy(); }, 5000)); QCOMPARE(proxy.rowCount(), 512);
     auto previous = model->preparedSnapshot(); QVERIFY(previous); const std::weak_ptr<const activityview::Snapshot> retired = previous->snapshot;
     const QPersistentModelIndex retained{Find(*model, Id(values[10]))}; QVERIFY(retained.isValid());
-    original->statuses[values[300].tx->GetHash()].depth_in_main_chain = 7; model->refreshStatuses();
+    original->locked()->statuses[values[300].tx->GetHash()].depth_in_main_chain = 7; model->refreshStatuses();
     QVERIFY(QTest::qWaitFor([&] { fixture.settle(); return !proxy.busy() && !model->loading(); }, 5000));
     const auto current = model->preparedSnapshot(); QVERIFY(current); QCOMPARE(current->snapshot->transformed_rows, size_t{1}); QCOMPARE(current->snapshot->changed_ids.size(), size_t{1});
     size_t shared{0}; for (const auto& [id, row] : previous->snapshot->rows) if (current->snapshot->rows.at(id) == row) ++shared;
@@ -525,13 +590,13 @@ void TransactionActivityModelTests::fullHiddenSearchChangesInvalidateTheDeltaWit
     const auto changed = MakeTx({{100'000, false}}, {{50'000, true}});
     const auto kept = MakeTx({{100'001, false}}, {{50'001, true, false, 2}});
     original->put(changed); original->put(kept);
-    original->labels[Address(changed).toStdString()] = std::string(2048, 'x') + "oldTail";
+    original->locked()->labels[Address(changed).toStdString()] = std::string(2048, 'x') + "oldTail";
     ManualActivityFixture fixture{env, original}; fixture.settle(); auto* model = fixture.activity.get();
     Proxy::Services services; services.execution = {env.scheduler, [&env](auto callback) { env.post(std::move(callback)); }}; services.automaticDateRefresh = false;
     Proxy proxy{services}; proxy.setSourceModel(model); proxy.setSearchText("newTail");
     QVERIFY(QTest::qWaitFor([&] { fixture.settle(); return !proxy.busy(); }, 5000)); QCOMPARE(proxy.rowCount(), 0);
     QSignalSpy previews{model, &QAbstractItemModel::dataChanged}; const auto before = model->preparedSnapshot();
-    original->labels[Address(changed).toStdString()] = std::string(2048, 'x') + "newTail";
+    original->locked()->labels[Address(changed).toStdString()] = std::string(2048, 'x') + "newTail";
     Q_EMIT fixture.wallet->addressListChanged();
     QVERIFY(QTest::qWaitFor([&] { fixture.settle(); return !proxy.busy() && !model->loading(); }, 5000));
     const auto after = model->preparedSnapshot(); QCOMPARE(after->snapshot->transformed_rows, size_t{1}); QCOMPARE(after->snapshot->changed_ids.size(), size_t{1});
@@ -572,13 +637,13 @@ void TransactionActivityModelTests::manualProjectionOwnsTransactionKeysAcrossRef
     QCOMPARE(model->transactionCount(), 1);
     QVERIFY(model->preparedSnapshot()->snapshot->rows.contains(first_id));
     original->put(second, 3);
-    const auto reads_before_notification = original->snapshots;
+    const auto reads_before_notification = original->locked()->snapshots;
     Q_EMIT fixture.wallet->transactionChanged(Id(second), CT_NEW);
     QCoreApplication::processEvents();
-    QCOMPARE(original->snapshots, reads_before_notification);
+    QCOMPARE(original->locked()->snapshots, reads_before_notification);
     QVERIFY(!env.turnsIdle());
     env.drain();
-    QCOMPARE(original->snapshots, reads_before_notification + 1);
+    QCOMPARE(original->locked()->snapshots, reads_before_notification + 1);
     QCOMPARE(model->transactionCount(), 1);
     QCOMPARE(row.data(Model::IdRole).toString(), first_id);
     fixture.settle();
@@ -589,21 +654,21 @@ void TransactionActivityModelTests::manualProjectionOwnsTransactionKeysAcrossRef
     QCOMPARE(Find(*model, Id(second)).data(Model::IdRole).toString(), second_id);
     QVERIFY(model->preparedSnapshot()->snapshot->rows.contains(first_id));
     QVERIFY(model->preparedSnapshot()->snapshot->rows.contains(second_id));
-    const auto history_before_reload = original->history_reads;
+    const auto history_before_reload = original->locked()->history_reads;
     model->reload();
-    QCOMPARE(original->history_reads, history_before_reload);
+    QCOMPARE(original->locked()->history_reads, history_before_reload);
     fixture.settle();
-    QVERIFY(original->history_reads > history_before_reload);
+    QVERIFY(original->locked()->history_reads > history_before_reload);
     QCOMPARE(model->transactionCount(), 2);
     QCOMPARE(Find(*model, Id(first)).data(Model::IdRole).toString(), first_id);
     QCOMPARE(Find(*model, Id(second)).data(Model::IdRole).toString(), second_id);
     // This manual transport executes selected effects on the test thread.
     // The oracle is that reads require those held effects, while getters and
     // GUI publication consume only the prepared immutable projection.
-    const auto final_reads = original->history_reads + original->snapshots;
+    const auto final_reads = original->locked()->history_reads + original->locked()->snapshots;
     QCOMPARE(Find(*model, Id(first)).data(Model::IdRole).toString(), first_id);
     QCOMPARE(Find(*model, Id(second)).data(Model::IdRole).toString(), second_id);
-    QCOMPARE(original->history_reads + original->snapshots, final_reads);
+    QCOMPARE(original->locked()->history_reads + original->locked()->snapshots, final_reads);
 }
 
 void TransactionActivityModelTests::oldGuiWakeupCannotResurrectDeletedRows()
@@ -619,9 +684,9 @@ void TransactionActivityModelTests::oldGuiWakeupCannotResurrectDeletedRows()
     QPersistentModelIndex kept_row{Find(*model, Id(kept))}; QVERIFY(kept_row.isValid());
     model->reload(); QCoreApplication::processEvents(); env.drain();
     auto old_wakeup = env.takePublicationBack(); QVERIFY(old_wakeup);
-    original->transactions.erase(deleted.tx->GetHash()); original->statuses.erase(deleted.tx->GetHash());
+    original->locked()->transactions.erase(deleted.tx->GetHash()); original->locked()->statuses.erase(deleted.tx->GetHash());
     original->put(added, 6);
-    original->statuses[kept.tx->GetHash()].depth_in_main_chain = 6;
+    original->locked()->statuses[kept.tx->GetHash()].depth_in_main_chain = 6;
     Q_EMIT fixture.wallet->transactionChanged(Id(deleted), CT_DELETED);
     Q_EMIT fixture.wallet->transactionChanged(Id(added), CT_NEW);
     model->refreshStatuses();
@@ -638,9 +703,9 @@ void TransactionActivityModelTests::oldGuiWakeupCannotResurrectDeletedRows()
     old_wakeup(); fixture.settle();
     QCOMPARE(changed.count(), 0); QCOMPARE(inserted.count(), 0); QCOMPARE(removed.count(), 0);
     QCOMPARE(model->rowCount(), 2); QVERIFY(!Find(*model, Id(deleted)).isValid());
-    const int reads = original->status_reads + original->label_reads + original->snapshots;
+    const int reads = original->locked()->status_reads + original->locked()->label_reads + original->locked()->snapshots;
     for (int row = 0; row < model->rowCount(); ++row) for (const auto role : model->roleNames().keys()) model->index(row).data(role);
-    QCOMPARE(original->status_reads + original->label_reads + original->snapshots, reads);
+    QCOMPARE(original->locked()->status_reads + original->locked()->label_reads + original->locked()->snapshots, reads);
 }
 
 void TransactionActivityModelTests::notificationDuringApplyingRetainsDeletionWork()
@@ -658,7 +723,7 @@ void TransactionActivityModelTests::notificationDuringApplyingRetainsDeletionWor
     const auto insertion = connect(model, &QAbstractItemModel::rowsInserted, model, [&] {
         if (injected) return;
         injected = true;
-        original->transactions.erase(deleted.tx->GetHash()); original->statuses.erase(deleted.tx->GetHash());
+        original->locked()->transactions.erase(deleted.tx->GetHash()); original->locked()->statuses.erase(deleted.tx->GetHash());
         Q_EMIT fixture.wallet->transactionChanged(Id(deleted), CT_DELETED);
     });
     const auto loading = connect(model, &Model::loadingChanged, model, [&] {
@@ -686,7 +751,7 @@ void TransactionActivityModelTests::manualStatusSnapshotPublishesOnlyAtGuiBounda
     QCOMPARE(model->rowCount(), 1);
     QCOMPARE(model->index(0).data(Model::DepthRole).toInt(), 2);
 
-    original->statuses[tx.tx->GetHash()].depth_in_main_chain = 5;
+    original->locked()->statuses[tx.tx->GetHash()].depth_in_main_chain = 5;
     model->refreshStatuses();
     QCoreApplication::processEvents();
     QVERIFY(model->loading());
@@ -715,8 +780,8 @@ void TransactionActivityModelTests::pollTicksDoNotSupersedeHeldStatusRead()
 
     const int balances_before = original->balance_reads.load();
     auto gate = std::make_shared<RepeatingReadGate>();
-    original->repeated_status_gate = gate;
-    original->statuses[tx.tx->GetHash()].depth_in_main_chain = 5;
+    original->locked()->repeated_status_gate = gate;
+    original->locked()->statuses[tx.tx->GetHash()].depth_in_main_chain = 5;
     original->tip = 2;
     const auto release = qScopeGuard([&] { gate->release.release(8); });
 
@@ -775,7 +840,7 @@ void TransactionActivityModelTests::manualAcceptedRawCopyRetainsOriginalDocument
     QGuiApplication::clipboard()->setText(QStringLiteral("before"));
     const auto ticket = model->requestCopyRawTransaction(Id(tx)); QVERIFY(ticket);
     QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("before"));
-    fixture.activity.reset(); original->transactions.clear();
+    fixture.activity.reset(); original->locked()->transactions.clear();
     env.drain(); QCoreApplication::processEvents(); env.publishAll();
     QCOMPARE(QGuiApplication::clipboard()->text(), expected);
 }
@@ -798,7 +863,7 @@ void TransactionActivityModelTests::fullActionModelRetainsRowsBeyondBoundedActiv
     Fixture fixture; std::vector<Output> outputs; outputs.reserve(100);
     for (int i = 0; i < 100; ++i) outputs.push_back({1000, false, false, static_cast<unsigned char>(i + 1)});
     const auto tx = MakeTx({{110'000, true}}, outputs); fixture.state->put(tx);
-    fixture.state->labels[Address(tx, 99).toStdString()] = std::string(5000, 'z');
+    fixture.state->locked()->labels[Address(tx, 99).toStdString()] = std::string(5000, 'z');
     auto* model = fixture.model(); const auto row = Find(*model, Id(tx));
     QCOMPARE(row.data(Model::ActionCountRole).toInt(), 100);
     QCOMPARE(row.data(Model::ActionsRole).toList().size(), 64);
@@ -822,7 +887,7 @@ void TransactionActivityModelTests::formatsDisplayAmountsForLocale()
     const auto batch = MakeTx({{120'000, true}}, {{60'000, false}, {40'000, false, false, 2}, {19'000, true, true, 3}});
     CMutableTransaction parent;
     parent.vout.emplace_back(120'000, batch.tx->vout[2].scriptPubKey);
-    f.state->flow_parents[batch.tx->vin[0].prevout.hash] = MakeTransactionRef(parent);
+    f.state->locked()->flow_parents[batch.tx->vin[0].prevout.hash] = MakeTransactionRef(parent);
     f.state->put(batch);
     auto* model = f.model();
 
@@ -851,7 +916,7 @@ void TransactionActivityModelTests::historyReadsLeaveTheEventLoopFreeAndDiscardS
     const auto new_tx = MakeTx({{60'000, false}}, {{59'000, true}});
     f.state->put(old_tx);
     auto gate = std::make_shared<ReadGate>();
-    f.state->history_gate = gate;
+    f.state->locked()->history_gate = gate;
     const auto release = qScopeGuard([&] { gate->release.release(); });
     // Construction schedules work; it must not enter the wallet synchronously.
     auto* model = f.wallet->transactionActivityModel();
@@ -863,7 +928,7 @@ void TransactionActivityModelTests::historyReadsLeaveTheEventLoopFreeAndDiscardS
     QTRY_VERIFY(heartbeat);
     QVERIFY(model->loading());
     QVERIFY(f.wallet->opening()->read([state = f.state, new_tx](interfaces::Wallet&) {
-        state->transactions.clear();
+        state->locked()->transactions.clear();
         state->put(new_tx); return true;
     }, [](bool) {}, {}, execution::WorkClass::Action));
     model->reload();
@@ -888,7 +953,7 @@ void TransactionActivityModelTests::detailReadsDiscardPreviousSelectionsAndHandl
     f.state->put(b);
     auto* model = f.model();
     auto gate = std::make_shared<ReadGate>();
-    f.state->parent_gate = gate;
+    f.state->locked()->parent_gate = gate;
     const auto release = qScopeGuard([&] { gate->release.release(); });
     model->requestTransactionDetails(Id(a));
     QTRY_VERIFY(gate->entered.available() > 0);
@@ -913,7 +978,7 @@ void TransactionActivityModelTests::detailReadsDiscardPreviousSelectionsAndHandl
     QVERIFY(!model->transactionDetails(Id(a), true).contains("flow"));
     // An unrelated update may discover that a previously resolved detail has
     // disappeared. Retrying its cached row must still resolve the full flow.
-    f.state->transactions.erase(b.tx->GetHash());
+    f.state->locked()->transactions.erase(b.tx->GetHash());
     Q_EMIT f.wallet->transactionChanged(Id(a), CT_UPDATED);
     QTRY_VERIFY(!model->transactionDetails(Id(b), true).value("detailsError").toString().isEmpty());
     Wait(model);
@@ -937,7 +1002,7 @@ void TransactionActivityModelTests::detailRefreshResumesAfterStoreCatchesUp()
     auto* source = f.model();
 
     auto gate = std::make_shared<ReadGate>();
-    f.state->parent_gate = gate;
+    f.state->locked()->parent_gate = gate;
     const auto release = qScopeGuard([&] { gate->release.release(); });
     QObject view_owner;
     std::unique_ptr<ActivityDetailModel> detail{source->createDetailView(&view_owner)};
@@ -974,14 +1039,14 @@ void TransactionActivityModelTests::largeDetailPreviewDoesNotWaitForInputReads()
     const auto tx = MakeTx({{1'003'000, false}}, outputs);
     CMutableTransaction parent;
     parent.vout.emplace_back(1'003'000, tx.tx->vout[0].scriptPubKey);
-    f.state->flow_parents[tx.tx->vin[0].prevout.hash] = MakeTransactionRef(parent);
+    f.state->locked()->flow_parents[tx.tx->vin[0].prevout.hash] = MakeTransactionRef(parent);
     f.state->put(tx);
     auto request = Request(91, Address(tx, 500), "Invoice", 2'000);
     request.recipient.noteSelf = "My payment";
     f.request(request);
     auto* model = f.model();
     auto gate = std::make_shared<ReadGate>();
-    f.state->parent_gate = gate;
+    f.state->locked()->parent_gate = gate;
     const auto release = qScopeGuard([&] { gate->release.release(); });
     QObject view_owner;
     std::unique_ptr<ActivityDetailModel> view{model->createDetailView(&view_owner)};
@@ -1044,10 +1109,10 @@ void TransactionActivityModelTests::bumpEligibilityIsOnlyReadForTheSelectedTrans
     auto* model = f.model();
     model->refreshStatuses();
     Wait(model);
-    QCOMPARE(f.state->bump_reads, 0);
+    QCOMPARE(f.state->locked()->bump_reads, 0);
     const auto txid = model->index(0).data(Model::TxidRole).toString();
     auto gate = std::make_shared<ReadGate>();
-    f.state->bump_gate = gate;
+    f.state->locked()->bump_gate = gate;
     const auto release = qScopeGuard([&] { gate->release.release(); });
     model->requestTransactionDetails(txid);
     QTRY_VERIFY(gate->entered.available() > 0);
@@ -1055,12 +1120,12 @@ void TransactionActivityModelTests::bumpEligibilityIsOnlyReadForTheSelectedTrans
     QVERIFY(!model->transactionDetails(txid, true).value("canBump").toBool());
     gate->release.release();
     Wait(model);
-    QCOMPARE(f.state->bump_reads, 1);
+    QCOMPARE(f.state->locked()->bump_reads, 1);
     QVERIFY(model->transactionDetails(txid, true).value("canBump").toBool());
     model->requestTransactionDetails("");
     model->refreshStatuses();
     Wait(model);
-    QCOMPARE(f.state->bump_reads, 1);
+    QCOMPARE(f.state->locked()->bump_reads, 1);
     QVERIFY(!f.state->blocking_read_on_gui);
 }
 
@@ -1068,7 +1133,7 @@ void TransactionActivityModelTests::deletingWalletDoesNotWaitForActivityReads()
 {
     Fixture f;
     auto gate = std::make_shared<ReadGate>();
-    f.state->history_gate = gate;
+    f.state->locked()->history_gate = gate;
     const auto release = qScopeGuard([&] { gate->release.release(); });
     // Observe the actual native owner, rather than the facade borrower alias.
     const auto lifetime = f.native_lifetime;
@@ -1103,10 +1168,10 @@ void TransactionActivityModelTests::opensNewTransactionBeforeItsNotification()
 void TransactionActivityModelTests::readFailuresCanBeRetried()
 {
     Fixture f;
-    f.state->fail_history = true;
+    f.state->locked()->fail_history = true;
     auto* model = f.model();
     QVERIFY(!model->loadError().isEmpty());
-    f.state->fail_history = false;
+    f.state->locked()->fail_history = false;
     f.state->put(MakeTx({{50'000, false}}, {{49'000, true}}));
     model->reload();
     Wait(model);
@@ -1123,7 +1188,7 @@ void TransactionActivityModelTests::failedRefreshRetainsRowsAndCanRetry()
     const auto stable_id = model->index(0).data(Model::IdRole);
     QVERIFY(!stable_id.toString().isEmpty());
 
-    f.state->fail_history = true;
+    f.state->locked()->fail_history = true;
     model->reload();
     Wait(model);
     QVERIFY(!model->loadError().isEmpty());
@@ -1132,7 +1197,7 @@ void TransactionActivityModelTests::failedRefreshRetainsRowsAndCanRetry()
     QVERIFY(!model->initialLoading());
     QVERIFY(!model->refreshing());
 
-    f.state->fail_history = false;
+    f.state->locked()->fail_history = false;
     model->reload();
     Wait(model);
     QVERIFY(model->loadError().isEmpty());
@@ -1154,15 +1219,15 @@ void TransactionActivityModelTests::failedInitialHistoryRetainsWorkAfterNotifica
     const auto old_tx = MakeTx({{50'000, false}}, {{49'000, true}});
     const auto new_tx = MakeTx({{60'000, false}}, {{59'000, true}});
     f.state->put(old_tx);
-    f.state->fail_history = true;
+    f.state->locked()->fail_history = true;
     auto gate = std::make_shared<ReadGate>();
-    f.state->history_gate = gate;
+    f.state->locked()->history_gate = gate;
     const auto release = qScopeGuard([&] { gate->release.release(); });
     auto* model = f.wallet->transactionActivityModel();
     QTRY_VERIFY(gate->entered.available() > 0);
     QVERIFY(f.wallet->opening()->read([state = f.state, new_tx, retry_fails](interfaces::Wallet&) {
         state->put(new_tx);
-        state->fail_history = retry_fails; return true;
+        state->locked()->fail_history = retry_fails; return true;
     }, [](bool) {}, {}, execution::WorkClass::Action));
     Q_EMIT f.wallet->transactionChanged(Id(new_tx), CT_NEW);
     gate->release.release();
@@ -1170,7 +1235,7 @@ void TransactionActivityModelTests::failedInitialHistoryRetainsWorkAfterNotifica
     if (retry_fails) {
         QVERIFY(!model->loadError().isEmpty());
         QCOMPARE(model->rowCount(), 0);
-        f.state->fail_history = false;
+        f.state->locked()->fail_history = false;
         model->reload();
         Wait(model);
     }
@@ -1192,15 +1257,18 @@ void TransactionActivityModelTests::obsoleteRefreshFailureCannotHideCurrentRows(
     QCOMPARE(model->rowCount(), 2);
 
     const auto gate = std::make_shared<ReadGate>();
-    f.state->history_gate = gate;
+    f.state->locked()->history_gate = gate;
     f.state->fail_next_history = true;
     model->reload();
     QTRY_VERIFY(gate->entered.available() > 0);
 
     // The held read has already captured the old history set. A deletion
     // notification supersedes that read while its final failure is pending.
-    f.state->transactions.erase(deleted_tx.tx->GetHash());
-    f.state->statuses.erase(deleted_tx.tx->GetHash());
+    {
+        const auto access = f.state->locked();
+        access->transactions.erase(deleted_tx.tx->GetHash());
+        access->statuses.erase(deleted_tx.tx->GetHash());
+    }
     Q_EMIT f.wallet->transactionChanged(Id(deleted_tx), CT_DELETED);
     bool surfaced_error{false};
     const auto connection = connect(model, &Model::loadingChanged, model, [&] { surfaced_error |= !model->loadError().isEmpty(); });
@@ -1227,15 +1295,15 @@ void TransactionActivityModelTests::obsoleteStatusSnapshotIsRejectedBeforeProjec
     QCOMPARE(row.data(Model::DepthRole).toInt(), 6);
 
     const auto gate = std::make_shared<ReadGate>();
-    f.state->try_status_gate = gate;
-    f.state->statuses[tx.tx->GetHash()].depth_in_main_chain = 2;
+    f.state->locked()->try_status_gate = gate;
+    f.state->locked()->statuses[tx.tx->GetHash()].depth_in_main_chain = 2;
     model->refreshStatuses();
     QTRY_VERIFY(gate->entered.available() > 0);
 
     // The old status value has been copied by the Native read. A successor
     // update arrives before it can finish, so that obsolete value must never
     // be projected between the old and current snapshot.
-    f.state->statuses[tx.tx->GetHash()].depth_in_main_chain = 6;
+    f.state->locked()->statuses[tx.tx->GetHash()].depth_in_main_chain = 6;
     model->refreshStatuses();
     QSignalSpy changes{model, &QAbstractItemModel::dataChanged};
     gate->release.release();
@@ -1316,7 +1384,10 @@ void TransactionActivityModelTests::confirmationUpdatesAreBatchedAndPreserveAmou
     QSignalSpy pending(&proxy, &Proxy::pendingBalanceChanged);
     QSignalSpy maximum(&proxy, &Proxy::availableMaxAmountChanged);
     const auto before = proxy.availableMaxAmount();
-    for (auto& [id, status] : f.state->statuses) ++status.depth_in_main_chain;
+    {
+        const auto access = f.state->locked();
+        for (auto& [id, status] : access->statuses) ++status.depth_in_main_chain;
+    }
     source->refreshStatuses();
     Wait(source);
     WaitProxy(proxy);
@@ -1369,18 +1440,18 @@ void TransactionActivityModelTests::loadsFlowLazilyAndRefreshesOutputAssociation
     const auto tx = MakeTx({{100'000, true}}, {{70'000, false}, {29'000, true, true, 2}});
     CMutableTransaction parent;
     parent.vout.emplace_back(100'000, tx.tx->vout[1].scriptPubKey);
-    f.state->flow_parents[tx.tx->vin[0].prevout.hash] = MakeTransactionRef(parent);
+    f.state->locked()->flow_parents[tx.tx->vin[0].prevout.hash] = MakeTransactionRef(parent);
     const QString input_address = Address(tx, 1);
-    f.state->labels[input_address.toStdString()] = "Savings";
+    f.state->locked()->labels[input_address.toStdString()] = "Savings";
     f.state->put(tx, 2);
-    f.state->statuses[tx.tx->GetHash()].block_height = 100;
+    f.state->locked()->statuses[tx.tx->GetHash()].block_height = 100;
     auto* model = f.model();
     QVERIFY(!model->transactionDetails(Id(tx)).contains("flow"));
-    QCOMPARE(f.state->parent_reads, 0);
+    QCOMPARE(f.state->locked()->parent_reads, 0);
     model->requestTransactionDetails(Id(tx));
     Wait(model);
     auto details = model->transactionDetails(Id(tx), true);
-    QCOMPARE(f.state->parent_reads, 1);
+    QCOMPARE(f.state->locked()->parent_reads, 1);
     QCOMPARE(model->rawTransaction(Id(tx)), QString::fromStdString(EncodeHexTx(*tx.tx)));
     QVERIFY(details.value("rawAvailable").toBool());
     QVERIFY(!model->transactionDetails(Id(tx), true).contains("rawTransaction"));
@@ -1402,19 +1473,19 @@ void TransactionActivityModelTests::loadsFlowLazilyAndRefreshesOutputAssociation
     model->refreshStatuses();
     Wait(model);
     model->transactionDetails(Id(tx), true);
-    QCOMPARE(f.state->parent_reads, 1);
+    QCOMPARE(f.state->locked()->parent_reads, 1);
 
     // Address edits refresh the input title without reloading transaction data.
     QSignalSpy input_changed(model, &Model::transactionDetailsChanged);
-    f.state->labels[input_address.toStdString()] = "Long-term savings";
+    f.state->locked()->labels[input_address.toStdString()] = "Long-term savings";
     Q_EMIT f.wallet->addressListChanged();
     Wait(f.wallet->transactionActivityModel());
     QVERIFY(!input_changed.isEmpty());
     details = model->transactionDetails(Id(tx), true);
     QCOMPARE(details.value("flow").toMap().value("inputs").toList()[0].toMap().value("label").toString(),
         QString("Long-term savings"));
-    QCOMPARE(f.state->parent_reads, 1);
-    f.state->labels[input_address.toStdString()].clear();
+    QCOMPARE(f.state->locked()->parent_reads, 1);
+    f.state->locked()->labels[input_address.toStdString()].clear();
     Q_EMIT f.wallet->addressListChanged();
     Wait(f.wallet->transactionActivityModel());
     QVERIFY(model->transactionDetails(Id(tx), true).value("flow").toMap().value("inputs").toList()[0].toMap().value("label").toString().isEmpty());
@@ -1435,8 +1506,8 @@ void TransactionActivityModelTests::loadsFlowLazilyAndRefreshesOutputAssociation
     output = model->transactionDetails(Id(tx), true).value("flow").toMap().value("outputs").toList()[1].toMap();
     QVERIFY(output.value("label").toString().isEmpty());
     QVERIFY(output.value("amount").toString().endsWith(" sats"));
-    QCOMPARE(f.state->parent_reads, 1);
-    QCOMPARE(f.state->address_writes, 0);
+    QCOMPARE(f.state->locked()->parent_reads, 1);
+    QCOMPARE(f.state->locked()->address_writes, 0);
     QSignalSpy notification(f.wallet.get(), &WalletQmlModel::transactionChanged);
     f.state->notify(tx, CT_UPDATED);
     // Request/display edits already emitted detail changes. Wait for the
@@ -1445,7 +1516,7 @@ void TransactionActivityModelTests::loadsFlowLazilyAndRefreshesOutputAssociation
     Wait(model);
     QVERIFY(changed.size() > 2);
     model->transactionDetails(Id(tx), true);
-    QCOMPARE(f.state->parent_reads, 2);
+    QCOMPARE(f.state->locked()->parent_reads, 2);
     QVERIFY(model->transactionDetails("not a txid", true).isEmpty());
 }
 
@@ -1454,8 +1525,8 @@ void TransactionActivityModelTests::exposesParentsAndActionsWithoutAllocatingFee
     Fixture f;
     const auto batch = MakeTx({{120'000, true}}, {{60'000, false}, {40'000, false, false, 2}, {19'000, true, true, 3}});
     f.state->put(batch);
-    f.state->labels[Address(batch).toStdString()] = "Robert";
-    f.state->labels[Address(batch, 1).toStdString()] = "Elisabeth";
+    f.state->locked()->labels[Address(batch).toStdString()] = "Robert";
+    f.state->locked()->labels[Address(batch, 1).toStdString()] = "Elisabeth";
     auto* source = f.model();
     QAbstractItemModelTester tester(source, QAbstractItemModelTester::FailureReportingMode::QtTest);
     QCOMPARE(source->rowCount(), 1);
@@ -1476,10 +1547,10 @@ void TransactionActivityModelTests::exposesParentsAndActionsWithoutAllocatingFee
     QCOMPARE(actions[1].toMap().value("outputIndex").toInt(), 1);
     QVERIFY(actions[0].toMap().value("actionId") != actions[1].toMap().value("actionId"));
 
-    const int reads = f.state->status_reads + f.state->label_reads + f.state->snapshots;
+    const int reads = f.state->locked()->status_reads + f.state->locked()->label_reads + f.state->locked()->snapshots;
     for (auto role : source->roleNames().keys()) source->data(row, role);
     QCOMPARE(source->transactionDetails(Id(batch)).value("actions").toList(), actions);
-    QCOMPARE(f.state->status_reads + f.state->label_reads + f.state->snapshots, reads);
+    QCOMPARE(f.state->locked()->status_reads + f.state->locked()->label_reads + f.state->locked()->snapshots, reads);
     f.wallet->setDisplayUnit(3);
     Wait(source);
     QVERIFY(row.data(Model::AmountRole).toString().endsWith(" sats"));
@@ -1502,15 +1573,15 @@ void TransactionActivityModelTests::savesBatchRecipientNotesWhenSending()
         {{60'000, false}, {40'000, false, false, 2}, {10'000, false, false, 3}, {19'000, true, true, 4}});
     CMutableTransaction previous;
     previous.vout.emplace_back(130'000, CScript{} << OP_DROP << OP_TRUE);
-    f.state->previous_tx = MakeTransactionRef(previous);
+    f.state->locked()->previous_tx = MakeTransactionRef(previous);
     CMutableTransaction spending{*batch.tx};
-    spending.vin[0].prevout = COutPoint{f.state->previous_tx->GetHash(), 0};
+    spending.vin[0].prevout = COutPoint{f.state->locked()->previous_tx->GetHash(), 0};
     batch.tx = MakeTransactionRef(spending);
-    f.state->send_draft = batch;
-    f.state->external_signer = externalSigner;
+    f.state->locked()->send_draft = batch;
+    f.state->locked()->external_signer = externalSigner;
     const auto second_address = Address(batch, 1).toStdString();
-    f.state->labels[second_address] = "Previous label";
-    f.state->purposes[second_address] = wallet::AddressPurpose::RECEIVE;
+    f.state->locked()->labels[second_address] = "Previous label";
+    f.state->locked()->purposes[second_address] = wallet::AddressPurpose::RECEIVE;
     auto request = Request(1, Address(batch, 1), "Public request name");
     request.recipient.noteSelf = "Private request note";
     f.request(request);
@@ -1526,7 +1597,7 @@ void TransactionActivityModelTests::savesBatchRecipientNotesWhenSending()
         recipient->amount()->setSatoshi(batch.tx->vout[i].nValue);
     }
     QVERIFY2(AwaitPreparation(*f.wallet), qPrintable(f.wallet->transactionError()));
-    QCOMPARE(f.state->address_writes, 0); // Reviewing/cancelling must not save notes.
+    QCOMPARE(f.state->locked()->address_writes, 0); // Reviewing/cancelling must not save notes.
     if (externalSigner) {
         QSignalSpy approved(f.wallet.get(), &WalletQmlModel::externalSignerApprovalSucceeded);
         QVERIFY(AwaitSignerApprovalOutcome(*f.wallet));
@@ -1535,34 +1606,34 @@ void TransactionActivityModelTests::savesBatchRecipientNotesWhenSending()
     }
     // A new intent must pass the current-review guard. Once admitted, its
     // immutable transaction/notes belong to that receipt through live edits.
-    const auto gate = std::make_shared<ReadGate>(); f.state->commit_gate = gate;
+    const auto gate = std::make_shared<ReadGate>(); f.state->locked()->commit_gate = gate;
     const auto unblock = qScopeGuard([&] { gate->release.release(); });
     const auto ticket = f.wallet->requestSendTransaction(); QVERIFY(ticket);
     const auto original = f.wallet->sendOperation(); QVERIFY(original);
     QTRY_VERIFY(gate->entered.available() > 0 || original->result().has_value() || f.wallet->sendState() == WalletQmlModel::SendState::SendNeedsConfirmation);
     if (f.wallet->sendState() == WalletQmlModel::SendState::SendNeedsConfirmation) QVERIFY(f.wallet->confirmSendTransaction(ticket));
     QTRY_VERIFY2(gate->entered.available() > 0, qPrintable(f.wallet->transactionError()));
-    QCOMPARE(f.state->commits, 0); QVERIFY(!original->result());
-    recipients->clear(); QCOMPARE(f.state->commits, 0); QVERIFY(!original->result());
+    QCOMPARE(f.state->locked()->commits, 0); QVERIFY(!original->result());
+    recipients->clear(); QCOMPARE(f.state->locked()->commits, 0); QVERIFY(!original->result());
     gate->release.release();
     QTRY_VERIFY(original->result().has_value());
     QVERIFY2(bool(original->result()->committed), qPrintable(f.wallet->transactionError()));
-    QCOMPARE(f.state->commits, 1);
+    QCOMPARE(f.state->locked()->commits, 1);
     // Committing and saving the original reviewed notes have separate receipts.
     const QString committed_txid = QString::fromStdString(original->result()->committed->GetHash().GetHex());
     QVERIFY(!committed_txid.isEmpty());
     QTRY_COMPARE(f.wallet->recipientLabelsTransactionId(), committed_txid);
     QTRY_VERIFY(!f.wallet->recipientLabelsPending());
     QVERIFY2(f.wallet->recipientLabelsError().isEmpty(), qPrintable(f.wallet->recipientLabelsError()));
-    QCOMPARE(f.state->address_writes, 2);
-    QCOMPARE(f.state->labels.at(Address(batch).toStdString()), notes[0].toStdString());
-    QCOMPARE(f.state->labels.at(second_address), notes[1].toStdString());
-    QCOMPARE(f.state->purposes.at(Address(batch).toStdString()), wallet::AddressPurpose::SEND);
-    QCOMPARE(f.state->purposes.at(second_address), wallet::AddressPurpose::RECEIVE);
+    QCOMPARE(f.state->locked()->address_writes, 2);
+    QCOMPARE(f.state->locked()->labels.at(Address(batch).toStdString()), notes[0].toStdString());
+    QCOMPARE(f.state->locked()->labels.at(second_address), notes[1].toStdString());
+    QCOMPARE(f.state->locked()->purposes.at(Address(batch).toStdString()), wallet::AddressPurpose::SEND);
+    QCOMPARE(f.state->locked()->purposes.at(second_address), wallet::AddressPurpose::RECEIVE);
     QCOMPARE(f.wallet->receiveRequests()->matchingEntriesForAddress(Address(batch, 1)).first().toMap().value("noteSelf").toString(),
              QStringLiteral("Private request note"));
 
-    const QString txid = Id(*f.state->send_draft);
+    const QString txid = Id(*f.state->locked()->send_draft);
     QTRY_VERIFY(Find(*source, txid).isValid());
     auto actions = Find(*source, txid).data(Model::ActionsRole).toList();
     QCOMPARE(actions.size(), 3);
@@ -1577,7 +1648,7 @@ void TransactionActivityModelTests::filtersWholeTransactionsAndExportsParentImpa
     Fixture f;
     const auto mixed = MakeTx({{100'000, true}, {50'000, false}}, {{120'000, false}, {29'000, true, true, 2}}, Time(8, 12, 22));
     f.state->put(mixed);
-    f.state->labels[Address(mixed, 1).toStdString()] = "Savings";
+    f.state->locked()->labels[Address(mixed, 1).toStdString()] = "Savings";
     Proxy proxy;
     proxy.setSourceModel(f.model());
     QAbstractItemModelTester tester(&proxy, QAbstractItemModelTester::FailureReportingMode::QtTest);
@@ -1660,8 +1731,8 @@ void TransactionActivityModelTests::exportsBatchActionsWithoutDuplicatingFees()
     Fixture f;
     const auto batch = MakeTx({{100'000, true}}, {{40'000, false}, {59'000, false, false, 2}}, Time(8, 12));
     f.state->put(batch);
-    f.state->labels[Address(batch, 0).toStdString()] = "=Bob";
-    f.state->labels[Address(batch, 1).toStdString()] = "Alice, savings";
+    f.state->locked()->labels[Address(batch, 0).toStdString()] = "=Bob";
+    f.state->locked()->labels[Address(batch, 1).toStdString()] = "Alice, savings";
     Proxy proxy;
     proxy.setSourceModel(f.model());
     proxy.setDisplayUnit(3);
@@ -1716,7 +1787,7 @@ void TransactionActivityModelTests::malformedStoredRequestStillDrainsTheLivePare
     auto stored = std::make_shared<std::atomic_bool>(false);
     QVERIFY(f.wallet->opening()->read([malformed](interfaces::Wallet& backend) {
         auto& wallet = dynamic_cast<ActivityWallet&>(backend);
-        wallet.request_blobs.clear(); wallet.request_blobs.emplace(1, malformed); return true;
+        wallet.locked()->request_blobs.clear(); wallet.locked()->request_blobs.emplace(1, malformed); return true;
     }, [stored](bool) { stored->store(true); }, {}, execution::WorkClass::Action));
     QTRY_VERIFY(stored->load());
     f.wallet->reloadReceiveRequests();
@@ -1775,7 +1846,7 @@ void TransactionActivityModelTests::groupsPendingMonthsAndDaysAndCountsParents()
     QCOMPARE(Find(proxy, Id(incoming)).data(Proxy::SectionKeyRole).toString(), QString("pending"));
     WaitProxy(proxy);
     QVERIFY(Find(proxy, Id(incoming)).data(Proxy::DateTimeLabelRole).toString().contains("12"));
-    f.state->statuses[incoming.tx->GetHash()].depth_in_main_chain = 1;
+    f.state->locked()->statuses[incoming.tx->GetHash()].depth_in_main_chain = 1;
     f.model()->refreshStatuses();
     Wait(f.model());
     WaitProxy(proxy);
@@ -1810,7 +1881,7 @@ void TransactionActivityModelTests::groupsTransactionsInPendingUntilFirstConfirm
     QCOMPARE(proxy.transactionCount(), int(transactions.size()));
 
     for (const int depth : {0, 1, 2, 5, 6, 0}) {
-        for (const auto& tx : transactions) f.state->statuses[tx.tx->GetHash()].depth_in_main_chain = depth;
+        for (const auto& tx : transactions) f.state->locked()->statuses[tx.tx->GetHash()].depth_in_main_chain = depth;
         source->refreshStatuses();
         Wait(source);
         for (const auto& tx : transactions) {
@@ -1859,21 +1930,21 @@ void TransactionActivityModelTests::totalsPendingWalletImpactWithoutRequests()
     QCOMPARE(proxy.pendingBalanceSat(), -52'000);
 
     changed.clear();
-    f.state->statuses[batch.tx->GetHash()].depth_in_main_chain = 1;
+    f.state->locked()->statuses[batch.tx->GetHash()].depth_in_main_chain = 1;
     source->refreshStatuses();
     Wait(source);
     WaitProxy(proxy);
     QCOMPARE(proxy.pendingBalanceSat(), 49'000);
     WaitProxy(proxy);
     QVERIFY(!changed.empty());
-    f.state->statuses[receive.tx->GetHash()].depth_in_main_chain = 1;
+    f.state->locked()->statuses[receive.tx->GetHash()].depth_in_main_chain = 1;
     source->refreshStatuses();
     Wait(source);
     WaitProxy(proxy);
     QCOMPARE(proxy.pendingBalanceSat(), 0);
 
     // A same-height reorg returns the outgoing impact to pending.
-    f.state->statuses[batch.tx->GetHash()].depth_in_main_chain = 0;
+    f.state->locked()->statuses[batch.tx->GetHash()].depth_in_main_chain = 0;
     source->refreshStatuses();
     Wait(source);
     WaitProxy(proxy);
@@ -1989,7 +2060,7 @@ void TransactionActivityModelTests::movesReplacedBatchToHistoryAndKeepsReplaceme
     QVERIFY(!csv.contains("\"-101000\""));
     file.close();
 
-    f.state->statuses[replacement.tx->GetHash()].depth_in_main_chain = 1;
+    f.state->locked()->statuses[replacement.tx->GetHash()].depth_in_main_chain = 1;
     source->refreshStatuses();
     Wait(source);
     WaitProxy(proxy);
@@ -1997,7 +2068,7 @@ void TransactionActivityModelTests::movesReplacedBatchToHistoryAndKeepsReplaceme
     QCOMPARE(proxy.pendingBalanceSat(), 0);
 
     // An original that confirms must not be zeroed by stale replacement metadata.
-    f.state->statuses[original.tx->GetHash()].depth_in_main_chain = 6;
+    f.state->locked()->statuses[original.tx->GetHash()].depth_in_main_chain = 6;
     source->refreshStatuses();
     Wait(source);
     WaitProxy(proxy);
@@ -2060,7 +2131,7 @@ void TransactionActivityModelTests::usesPrivateRequestNotesWithoutChangingStored
 {
     Fixture f;
     const auto tx = MakeTx({{50'000, false}}, {{49'000, true}});
-    f.state->labels[Address(tx).toStdString()] = "Address book name";
+    f.state->locked()->labels[Address(tx).toStdString()] = "Address book name";
     auto request = Request(1, Address(tx), "Public request name");
     f.request(request);
     auto* source = f.model();
@@ -2107,14 +2178,14 @@ void TransactionActivityModelTests::usesPrivateRequestNotesWithoutChangingStored
     WaitProxy(proxy);
     QCOMPARE(stored->recipient.label, std::string("Public request name"));
     WaitProxy(proxy);
-    QCOMPARE(f.state->labels.at(Address(tx).toStdString()), std::string("Address book name"));
+    QCOMPARE(f.state->locked()->labels.at(Address(tx).toStdString()), std::string("Address book name"));
     proxy.setSearchText("Public request name");
     WaitProxy(proxy);
     QCOMPARE(proxy.rowCount(), 1); // Public metadata remains searchable.
 
     Fixture unnamed;
     unnamed.state->put(tx);
-    unnamed.state->labels[Address(tx).toStdString()] = "Public address name";
+    unnamed.state->locked()->labels[Address(tx).toStdString()] = "Public address name";
     WaitProxy(proxy);
     QVERIFY(unnamed.model()->transactionDetails(Id(tx)).value("label").toString().isEmpty());
 }
@@ -2127,20 +2198,23 @@ void TransactionActivityModelTests::restoresRequestsOnConflictAbandonmentReplace
     f.request(Request(1, Address(tx)));
     auto* source = f.model();
     QCOMPARE(source->requestCount(), 0);
-    auto& status = f.state->statuses[tx.tx->GetHash()];
-    status.depth_in_main_chain = -1;
+    f.state->locked()->statuses[tx.tx->GetHash()].depth_in_main_chain = -1;
     source->refreshStatuses();
     Wait(source);
     QCOMPARE(source->requestCount(), 1);
     QVERIFY(Find(*source, Id(tx)).data(Model::IsInactiveRole).toBool());
     QVERIFY(!Find(*source, Id(tx)).data(Model::IsPendingRole).toBool());
-    status.depth_in_main_chain = 0;
-    status.is_abandoned = true;
+    {
+        const auto access = f.state->locked();
+        auto& status = access->statuses[tx.tx->GetHash()];
+        status.depth_in_main_chain = 0;
+        status.is_abandoned = true;
+    }
     source->refreshStatuses();
     Wait(source);
     QCOMPARE(source->requestCount(), 1);
     QCOMPARE(Find(*source, Id(tx)).data(Model::StatusRole).toInt(), int(Transaction::Abandoned));
-    status.is_abandoned = false;
+    f.state->locked()->statuses[tx.tx->GetHash()].is_abandoned = false;
     source->refreshStatuses();
     Wait(source);
     QCOMPARE(source->requestCount(), 0);
@@ -2157,8 +2231,11 @@ void TransactionActivityModelTests::restoresRequestsOnConflictAbandonmentReplace
     QTRY_COMPARE(source->transactionCount(), 2);
     QCOMPARE(source->requestCount(), 0);
     QCOMPARE(Find(*source, Id(replacement)).data(Model::ReplacesTxidRole).toString(), Id(tx));
-    f.state->transactions.erase(replacement.tx->GetHash());
-    f.state->statuses.erase(replacement.tx->GetHash());
+    {
+        const auto access = f.state->locked();
+        access->transactions.erase(replacement.tx->GetHash());
+        access->statuses.erase(replacement.tx->GetHash());
+    }
     f.state->notify(replacement, CT_DELETED);
     QTRY_COMPARE(source->transactionCount(), 1);
     QCOMPARE(source->requestCount(), 1);
@@ -2167,7 +2244,7 @@ void TransactionActivityModelTests::restoresRequestsOnConflictAbandonmentReplace
     QCOMPARE(source->requestCount(), 1);
     // The original can win a race (or confirm after a reorg). Historical RBF
     // metadata must not override its current confirmed state.
-    f.state->statuses[tx.tx->GetHash()].depth_in_main_chain = 1;
+    f.state->locked()->statuses[tx.tx->GetHash()].depth_in_main_chain = 1;
     source->refreshStatuses();
     Wait(source);
     QCOMPARE(source->requestCount(), 0);
@@ -2254,7 +2331,7 @@ void TransactionActivityModelTests::preservesStatusWhenBusyAndRetries()
     QCOMPARE(row.data(Model::DepthRole).toInt(), 2);
     QCOMPARE(row.data(Model::StatusRole).toInt(), int(Transaction::Confirming));
     QCOMPARE(source->requestCount(), 0);
-    f.state->statuses[tx.tx->GetHash()].depth_in_main_chain = 6;
+    f.state->locked()->statuses[tx.tx->GetHash()].depth_in_main_chain = 6;
     f.state->busy = false;
     QTRY_COMPARE(row.data(Model::DepthRole).toInt(), 6);
     QVERIFY(!row.data(Model::IsPendingRole).toBool());
@@ -2275,9 +2352,9 @@ void TransactionActivityModelTests::refreshesOnWalletTipAndSameHeightReorg()
     const auto tx = MakeTx({{50'000, false}}, {{49'000, true}});
     f.state->put(tx, 5);
     auto* source = f.model();
-    f.state->statuses[tx.tx->GetHash()].depth_in_main_chain = 6;
+    f.state->locked()->statuses[tx.tx->GetHash()].depth_in_main_chain = 6;
     QTRY_COMPARE(source->index(0).data(Model::DepthRole).toInt(), 6);
-    f.state->statuses[tx.tx->GetHash()].depth_in_main_chain = 0;
+    f.state->locked()->statuses[tx.tx->GetHash()].depth_in_main_chain = 0;
     f.state->tip = 2; // Same height, different wallet-processed block.
     QTRY_COMPARE(source->index(0).data(Model::DepthRole).toInt(), 0);
     QVERIFY(source->index(0).data(Model::IsPendingRole).toBool());
@@ -2294,7 +2371,7 @@ void TransactionActivityModelTests::queuesWalletNotificationsAndRetainsStableInd
     notify.join();
     QCOMPARE(source->rowCount(), 0);
     QTRY_COMPARE(source->rowCount(), 1);
-    QVERIFY(f.state->snapshot_on_worker);
+    QVERIFY(f.state->locked()->snapshot_on_worker);
     const QPersistentModelIndex row{source->index(0)};
     const auto id = row.data(Model::IdRole);
     QSignalSpy resets(source, &QAbstractItemModel::modelReset);
@@ -2303,7 +2380,7 @@ void TransactionActivityModelTests::queuesWalletNotificationsAndRetainsStableInd
     Wait(source);
     QCOMPARE(resets.count(), 0);
     QCOMPARE(changes.count(), 0);
-    f.state->labels[Address(tx).toStdString()] = "Updated label";
+    f.state->locked()->labels[Address(tx).toStdString()] = "Updated label";
     Q_EMIT f.wallet->addressListChanged();
     Wait(f.wallet->transactionActivityModel());
     QVERIFY(row.data(Model::LabelRole).toString().isEmpty());
@@ -2316,8 +2393,11 @@ void TransactionActivityModelTests::queuesWalletNotificationsAndRetainsStableInd
     source->reload();
     Wait(source);
     QCOMPARE(source->rowCount(), 2);
-    f.state->transactions.clear();
-    f.state->statuses.clear();
+    {
+        const auto access = f.state->locked();
+        access->transactions.clear();
+        access->statuses.clear();
+    }
     source->reload();
     Wait(source);
     QVERIFY(!row.isValid());
@@ -2381,7 +2461,7 @@ void TransactionActivityModelTests::handlesInternalAndMinedTypes()
     auto mined = MakeTx({{0, false}}, {{312'500'000, true}});
     mined.is_coinbase = true;
     for (const auto& tx : {consolidation, split, internal, mined}) f.state->put(tx);
-    f.state->statuses[mined.tx->GetHash()].blocks_to_maturity = 94;
+    f.state->locked()->statuses[mined.tx->GetHash()].blocks_to_maturity = 94;
     Proxy proxy;
     proxy.setSourceModel(f.model());
     proxy.setTypeFilter(Proxy::SentToSelf);
@@ -2418,7 +2498,7 @@ void TransactionActivityModelTests::handlesInternalAndMinedTypes()
     QCOMPARE(proxy.index(0, 0).data(Model::StatusRole).toInt(), int(Transaction::Immature));
     WaitProxy(proxy);
     QCOMPARE(proxy.index(0, 0).data(Model::BlocksToMaturityRole).toInt(), 94);
-    f.state->statuses[mined.tx->GetHash()].is_in_main_chain = false;
+    f.state->locked()->statuses[mined.tx->GetHash()].is_in_main_chain = false;
     f.model()->refreshStatuses();
     Wait(f.model());
     WaitProxy(proxy);
