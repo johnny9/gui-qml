@@ -7995,7 +7995,8 @@ void WalletQmlModelTests::prepareTransactionWithPassphraseForwardsUtf8Bytes()
     QFETCH(QString,original_password);const std::string expected_passphrase{original_password.toUtf8().toStdString()};
     auto unlock_thread=std::make_shared<std::atomic<QThread*>>(nullptr);const auto original_unlock=wallet->unlock_fn;
     wallet->unlock_fn=[unlock_thread,original_unlock](const SecureString& password){*unlock_thread=QThread::currentThread();return original_unlock(password);};
-    QTRY_VERIFY(!model->coinSelectionPending()&&!model->sendRecipientList()->validationPending());
+    QTRY_VERIFY(!model->coinSelectionPending() && !model->sendRecipientList()->validationPending() &&
+        !model->customFeeTargetPending());
     const auto ticket=model->requestPrepareTransactionWithPassphrase(original_password);QVERIFY(ticket);original_password.fill(QLatin1Char('z'));
     QTRY_VERIFY(!model->preparationBusy());QCOMPARE(model->preparationId(),ticket);QCOMPARE(model->preparationState(),WalletQmlModel::PreparationState::PreparationReady);
     QVERIFY(unlock_thread->load());QVERIFY(unlock_thread->load()!=QThread::currentThread());
