@@ -4540,6 +4540,10 @@ private Q_SLOTS:
         const auto original = receipts->startRead(); QVERIFY(original);
         env->publishAll(); // Acknowledge Reading before retaining the original outcome.
         QCOMPARE(captured, std::vector<CAmount>{50000});
+        // B already owns the desired intent. An old success may publish
+        // retained stale progress; an old error must never become B's error.
+        QVERIFY(receipts->finishOutcome(*original));
+        QCOMPARE(receipts->publicationCount(), old_error ? size_t{0} : size_t{1});
         receipts->drain(); receipts->publishAll(); env->publishAll();
         QVERIFY(QTest::qWaitFor([&] {
             receipts->drain(); env->publishAll(); QCoreApplication::processEvents();
@@ -4570,18 +4574,39 @@ private Q_SLOTS:
         auto env = std::make_shared<ManualExecutionEnvironment>();
         auto receipts = std::make_shared<ManualFeeReceipts>(env);
         int reads{0};
-        FeeReadServices services{env->scheduler, env, [&, receipts](const FeeReadInput&) -> FeeReadResult {
-            receipts->readStarted(); ++reads;
+        std::optional<feeestimate::Dependencies> captured_dependencies;
+        FeeReadServices services{env->scheduler, env, [&, receipts](const FeeReadInput& input) -> FeeReadResult {
+            receipts->readStarted(); ++reads; captured_dependencies = input.dependencies;
             if (error) throw std::runtime_error("synthetic fee failure");
             FeeReadResult result; result.estimates.insert(6, SendFeePreview{500, 1, 1000, {}, false}); return result;
         }, [receipts](auto publication) { receipts->post(std::move(publication)); }};
-        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services));
+        // Opening facts and fee work share the controlled transport. A late
+        // real-thread balance/policy observation would legitimately supersede
+        // this row's original fee revision and suppress its stale exception.
+        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services), false, {}, {}, {}, env->scheduler);
         const auto cleanup = qScopeGuard([&] { model.reset(); receipts->drain(); receipts->publishAll(); env->publishAll(); });
         SetValidRecipient(*model, VALID_MAINNET_ADDRESS, env);
+        const auto settle_observations = [&] {
+            for (int budget{0}; budget < 128; ++budget) {
+                receipts->drain(); env->publishAll();
+                QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+                if (env->turnsIdle() && env->publicationsIdle() && model->availableSendBalanceKnown() &&
+                    !model->fees()->policyPending() && model->sendRecipientList()->draftSnapshot()) return true;
+            }
+            return false;
+        };
+        QVERIFY(settle_observations());
         model->scheduleFeeEstimates(); receipts->drain(); env->rejectNext();
         env->advance(std::chrono::milliseconds{250}); QCOMPARE(reads, 0); env->publishAll(); QVERIFY(!model->feeEstimatePending());
         model->scheduleFeeEstimates(); receipts->drain(); env->advance(std::chrono::milliseconds{250});
         const auto original = receipts->startRead(); QVERIFY(original); QCOMPARE(reads, 1); env->publishAll();
+        const auto original_draft = model->sendRecipientList()->draftSnapshot(); QVERIFY(original_draft);
+        QVERIFY(captured_dependencies);
+        QCOMPARE(captured_dependencies->draft, original_draft->revision);
+        QCOMPARE(captured_dependencies->intent, original_draft->intent_revision);
+        QCOMPARE(captured_dependencies->policy, model->fees()->policyRevision());
+        QCOMPARE(captured_dependencies->requirements, model->fees()->observationRevision());
+        QCOMPARE(model->fees()->estimateState(), FeeSelectionModel::Reading);
         QVERIFY(receipts->finishOutcome(*original)); QCOMPARE(receipts->publicationCount(), size_t{1});
         QVERIFY(receipts->publish(*original));
         QCOMPARE(model->estimatedFeeSatoshi(), error ? -1 : 500); QVERIFY(!model->feeEstimatePending());
