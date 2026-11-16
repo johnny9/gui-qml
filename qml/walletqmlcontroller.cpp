@@ -655,7 +655,7 @@ WalletQmlController::WalletQmlController(interfaces::Node& node, execution::Limi
     connect(m_selection, &WalletSelectionModel::selectedWalletChanged, this, [this] {
         const QPointer<WalletQmlController> observer{this};
         updateNotificationContext();
-        if (observer && !m_shutting_down) Q_EMIT selectedWalletChanged();
+        if (observer) Q_EMIT selectedWalletChanged();
     });
     m_home_path = qEnvironmentVariable("HOME");
     m_registry->setNotificationOrigin(newAdoptionOrigin());
