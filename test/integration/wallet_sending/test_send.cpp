@@ -16,6 +16,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include <QLocale>
 #include <QScopeGuard>
@@ -25,8 +26,13 @@
 #include <core_io.h>
 #include <qml/models/options_model.h>
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <future>
+#include <memory>
 #include <optional>
 #include <set>
 #include <vector>
@@ -305,11 +311,49 @@ private Q_SLOTS:
         QVERIFY(signed_funding.find_value("complete").get_bool());
         milestone("transaction-signed");
         UniValue send{UniValue::VARR}; send.push_back(signed_funding.find_value("hex"));
-        const auto funding_id = qmltest::Rpc(m_app, "sendrawtransaction", send).get_str();
+        // Keep the original GUI event-loop/RPC helper semantics while separating
+        // physical Core completion from delivery delayed by a long GUI event.
+        const auto rpc_started = std::chrono::steady_clock::now();
+        const auto native_ms = std::make_shared<std::atomic<qint64>>(-1);
+        qint64 last_heartbeat{setup_time.elapsed()}, maximum_gui_gap{0};
+        int heartbeats{0};
+        QTimer heartbeat;
+        heartbeat.setInterval(60);
+        connect(&heartbeat, &QTimer::timeout, &heartbeat, [&] {
+            const auto now = setup_time.elapsed();
+            maximum_gui_gap = std::max(maximum_gui_gap, now - last_heartbeat);
+            last_heartbeat = now;
+            ++heartbeats;
+        });
+        const auto stop_heartbeat = qScopeGuard([&] { heartbeat.stop(); });
+        heartbeat.start();
+        const auto measured_rpc = [native_ms](interfaces::Node* node, UniValue arguments) {
+            const auto started = std::chrono::steady_clock::now();
+            const auto record_completion = qScopeGuard([&] {
+                const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started).count();
+                native_ms->store(duration, std::memory_order_relaxed);
+                std::fprintf(stdout, "R42_FUNDING_NATIVE_COMPLETE elapsed_ms=%lld\n", static_cast<long long>(duration));
+                std::fflush(stdout);
+            });
+            try {
+                return node->executeRpc("sendrawtransaction", arguments, "");
+            } catch (const UniValue& error) {
+                throw std::runtime_error{"RPC sendrawtransaction failed: " + error.write()};
+            }
+        };
+        const auto funding_id = qmltest::Call(m_app, measured_rpc, send).get_str();
+        maximum_gui_gap = std::max(maximum_gui_gap, setup_time.elapsed() - last_heartbeat);
+        heartbeat.stop();
+        qInfo() << "Oversized funding delivery native-ms" << native_ms->load(std::memory_order_relaxed)
+                << "gui-return-ms" << std::chrono::duration_cast<std::chrono::milliseconds>(
+                       std::chrono::steady_clock::now() - rpc_started).count()
+                << "heartbeats" << heartbeats << "maximum-gui-gap-ms" << maximum_gui_gap;
         milestone("transaction-published");
         qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + mining.toStdString() + "\"]"));
         milestone("funding-mined");
         const auto coins = qmltest::Rpc(m_app, "listunspent", {}, wallet->name()); QCOMPARE(coins.size(), size_t{1600});
+        milestone("unspent-catalog-read");
         std::set<int> output_indices;
         for (size_t coin{0}; coin < coins.size(); ++coin) {
             QCOMPARE(coins[coin].find_value("txid").get_str(), funding_id);
