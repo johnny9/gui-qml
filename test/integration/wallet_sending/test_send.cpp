@@ -7,6 +7,8 @@
 #include <test/integration/fixture/test_wallet.h>
 #include <rpc/util.h>
 #include <key_io.h>
+#include <script/solver.h>
+#include <primitives/transaction.h>
 #include <wallet/wallet.h> // Public CRecipient value required by interfaces::Wallet.
 #include <qt/bitcoinunits.h>
 
@@ -26,6 +28,8 @@
 #include <cmath>
 #include <future>
 #include <optional>
+#include <set>
+#include <vector>
 
 class SendIntegrationTests : public QObject
 {
@@ -279,19 +283,36 @@ private Q_SLOTS:
         auto* wallet = qmltest::CreateWallet(m_app, "many-coins"); QVERIFY(wallet);
         QElapsedTimer setup_time; setup_time.start();
         QVERIFY(!qmltest::Rpc(m_app, "getwalletinfo", {}, wallet->name()).find_value("avoid_reuse").get_bool());
-        // The oversize condition requires 1600 distinct outpoints. Reuse
-        // 100 real recipients across 16 funding transactions to bound setup
-        // round trips while retaining every input in the original oracle.
-        UniValue amounts{UniValue::VOBJ};
-        for (int coin{0}; coin < 100; ++coin)
-            amounts.pushKV(qmltest::NewAddress(m_app, wallet->name()).toStdString(), UniValue{UniValue::VNUM, "0.001"});
-        for (int batch{0}; batch < 16; ++batch) {
-            UniValue params{UniValue::VOBJ}; params.pushKV("dummy", ""); params.pushKV("amounts", amounts); params.pushKV("fee_rate", 2);
-            qmltest::Rpc(m_app, "sendmany", params, source->name());
-            qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + mining.toStdString() + "\"]"));
-            qInfo() << "Oversized maximum funded batch" << batch + 1 << "elapsed ms" << setup_time.elapsed();
+        // Keep 1600 distinct outpoints, using 100 real receiving scripts in
+        // one ordinary funding transaction. Per-block rescans of 16 separate
+        // funding batches are setup work, not part of the oversize oracle.
+        std::vector<CScript> scripts;
+        scripts.reserve(100);
+        for (int address{0}; address < 100; ++address) {
+            const auto destination = DecodeDestination(qmltest::NewAddress(m_app, wallet->name()).toStdString());
+            QVERIFY(IsValidDestination(destination));
+            scripts.push_back(GetScriptForDestination(destination));
         }
+        CMutableTransaction funding;
+        for (size_t coin{0}; coin < 1600; ++coin) funding.vout.emplace_back(100'000, scripts[coin % scripts.size()]);
+        UniValue fund{UniValue::VOBJ}, options{UniValue::VOBJ};
+        fund.pushKV("hexstring", EncodeHexTx(CTransaction{funding}));
+        options.pushKV("fee_rate", 2); fund.pushKV("options", options);
+        const auto funded = qmltest::Rpc(m_app, "fundrawtransaction", fund, source->name());
+        UniValue sign{UniValue::VOBJ}; sign.pushKV("hexstring", funded.find_value("hex"));
+        const auto signed_funding = qmltest::Rpc(m_app, "signrawtransactionwithwallet", sign, source->name());
+        QVERIFY(signed_funding.find_value("complete").get_bool());
+        UniValue send{UniValue::VARR}; send.push_back(signed_funding.find_value("hex"));
+        const auto funding_id = qmltest::Rpc(m_app, "sendrawtransaction", send).get_str();
+        qmltest::Rpc(m_app, "generatetoaddress", qmltest::Json("[1,\"" + mining.toStdString() + "\"]"));
+        qInfo() << "Oversized maximum funded 1600 outpoints elapsed ms" << setup_time.elapsed();
         const auto coins = qmltest::Rpc(m_app, "listunspent", {}, wallet->name()); QCOMPARE(coins.size(), size_t{1600});
+        std::set<int> output_indices;
+        for (size_t coin{0}; coin < coins.size(); ++coin) {
+            QCOMPARE(coins[coin].find_value("txid").get_str(), funding_id);
+            QVERIFY(output_indices.insert(coins[coin].find_value("vout").getInt<int>()).second);
+        }
+        QCOMPARE(output_indices.size(), size_t{1600});
         QTRY_COMPARE(wallet->balanceSatoshi(), CAmount{160'000'000});
         QVERIFY(qmltest::Click(m_app, "sendTabButton")); QVERIFY(qmltest::Click(m_app, "sendUseMaximumButton"));
         QTRY_COMPARE(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi(), CAmount{160'000'000});
