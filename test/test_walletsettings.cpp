@@ -219,6 +219,35 @@ private Q_SLOTS:
         const auto paid_after_write = storage.read(wallet, "paid-address");
         QVERIFY2(paid_after_write.ok, qPrintable(native_types));
         QVERIFY(paid_after_write.retired);
+        // Native settings may widen an integer and return a property-list
+        // array as QVariantList. Preserve exact version/value semantics.
+        for (const QVariant& version : {QVariant{2}, QVariant::fromValue<qlonglong>(2)}) {
+            auto native_shape = persisted;
+            native_shape["version"] = version;
+            auto payload = native_shape.value("payload").toMap();
+            payload["retired"] = QVariantList{QStringLiteral("paid-address")};
+            native_shape["payload"] = payload;
+            settings.setValue("walletSettings/v2/reservations/w4c6564676572", native_shape);
+            settings.sync();
+            const auto retained = storage.read(wallet, "paid-address");
+            QVERIFY(retained.ok); QVERIFY(retained.retired);
+            QCOMPARE(storage.read(wallet, {}).address, QStringLiteral("new-address"));
+        }
+        for (const QVariant& invalid_version : {QVariant{QStringLiteral("2")}, QVariant{2.0}, QVariant{true}}) {
+            auto invalid = persisted; invalid["version"] = invalid_version;
+            settings.setValue("walletSettings/v2/reservations/w4c6564676572", invalid);
+            settings.sync();
+            QVERIFY(!storage.read(wallet, {}).ok);
+        }
+        for (const QVariant& invalid_retired : {QVariant{QVariantList{QStringLiteral("paid-address"), 7}}, QVariant{QStringLiteral("paid-address")}}) {
+            auto invalid = persisted; auto payload = invalid.value("payload").toMap();
+            payload["retired"] = invalid_retired; invalid["payload"] = payload;
+            settings.setValue("walletSettings/v2/reservations/w4c6564676572", invalid);
+            settings.sync();
+            QVERIFY(!storage.read(wallet, {}).ok);
+        }
+        settings.setValue("walletSettings/v2/reservations/w4c6564676572", persisted);
+        settings.sync();
         settings.setValue("receiveAddressTypes/./Ledger/address", "stale-old-writer");
         settings.sync();
         QCOMPARE(storage.read(wallet, {}).address, QStringLiteral("new-address"));
