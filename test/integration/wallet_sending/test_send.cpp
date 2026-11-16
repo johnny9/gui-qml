@@ -811,8 +811,33 @@ private Q_SLOTS:
         const auto setup = prepareSweep(manual, self_send);
         QVERIFY(setup);
         auto* wallet = setup->wallet;
+        const QPointer<SendRecipient> original_recipient{wallet->sendRecipientList()->currentRecipient()};
+        auto* maximum = qmltest::Find(m_app, "sendUseMaximumButton"); QVERIFY(maximum);
+        QSignalSpy clicked{maximum, SIGNAL(clicked())}; QVERIFY(clicked.isValid());
+        QSignalSpy rejected{wallet->sendRecipientList(), SIGNAL(commandRejected(QString))}; QVERIFY(rejected.isValid());
+        const auto report_original = qScopeGuard([&] {
+            const auto draft = wallet->sendRecipientList()->draftSnapshot();
+            const auto selected = wallet->selectedCoins();
+            qInfo() << "Original Maximum receipt" << "clicked" << clicked.count() << "rejected" << rejected.count()
+                    << "rejection" << (rejected.isEmpty() ? QString{} : rejected.constFirst().value(0).toString())
+                    << "same-recipient" << (original_recipient == wallet->sendRecipientList()->currentRecipient())
+                    << "mode" << (original_recipient ? int(original_recipient->amountMode()) : -1)
+                    << "maximum-owner" << (original_recipient && wallet->maximumRecipient() == original_recipient)
+                    << "intent-revision" << wallet->sendRecipientList()->revision()
+                    << "draft-revision" << (draft ? draft->revision : 0)
+                    << "draft-maximum" << (draft ? draft->maximum : 0)
+                    << "draft-pending" << wallet->sendRecipientList()->validationPending()
+                    << "selection-pending" << wallet->coinSelectionPending()
+                    << "selected-count" << (selected ? qint64(selected->size()) : qint64{-1})
+                    << "selected-sats" << wallet->coinsListModel()->totalSelectedSatoshi()
+                    << "available-sats" << wallet->availableSendBalanceSatoshi()
+                    << "amount-sats" << (original_recipient ? original_recipient->amount()->satoshi() : -1)
+                    << "error" << wallet->sendRecipientList()->validationError();
+        });
         QVERIFY(qmltest::Click(m_app, "sendUseMaximumButton"));
         QTRY_COMPARE(wallet->sendRecipientList()->currentRecipient()->amount()->satoshi(), 100 * COIN);
+        QCOMPARE(clicked.count(), 1);
+        QCOMPARE(rejected.count(), 0);
         QVERIFY(!qmltest::Find(m_app, "sendReviewButton")->property("enabled").toBool());
         QVERIFY(qmltest::SetText(m_app, "sendAddressInput", setup->address));
         QTRY_VERIFY(!wallet->sendRecipientList()->currentRecipient()->validationPending() &&
