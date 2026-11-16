@@ -217,6 +217,8 @@ TestCase {
 
     function test_wallet_unavailable_routes_to_node_runner() {
         const window = createMain(false)
+        compare(window.desktopShell, null)
+        compare(window.walletCreationHost, null)
         verify(findChild(window, "mainPageStack") !== null)
         verify(findChild(window, "nodeRunner") !== null)
         verify(findChild(window, "walletBadge") === null)

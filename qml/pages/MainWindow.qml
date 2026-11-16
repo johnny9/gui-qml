@@ -9,7 +9,6 @@ import org.bitcoincore.qt 1.0
 import "../components"
 import "../controls"
 import "./node"
-import "./wallet"
 
 ApplicationWindow {
     id: appWindow
@@ -56,18 +55,19 @@ ApplicationWindow {
             && appWindow.menuWalletController.selectedWallet.available
         onContinueRequested: {
             if (!continuationAvailable) return
-            const shell = main.currentItem as DesktopWallets
-            if (shell) shell.continueDesktopImport(mailbox)
+            const shell = appWindow.desktopShell
+            if (shell) shell.continueImportRequested(mailbox)
         }
     }
     readonly property var menuEditTarget: appWindow.editTarget(appWindow.activeFocusItem)
     readonly property var menuWalletController: appWindow.desktopWalletMode ? ApplicationModels.walletController : null
-    readonly property DesktopWallets desktopShell: main.currentItem as DesktopWallets
+    readonly property WalletShellPage desktopShell: main.currentItem as WalletShellPage
+    readonly property WalletCreationPort walletCreationHost: walletCreationModal.item as WalletCreationPort
     readonly property NodeShell nodeShell: main.currentItem as NodeShell
     // Native menus do not participate in Qt Quick's popup pointer grab. The
     // same bounded presentation gate also rejects a delayed direct route.
-    readonly property bool modalNavigationBlocked: (walletCreationModal.item !== null
-            && (walletCreationModal.item as WalletCreationHost).modalVisible)
+    readonly property bool modalNavigationBlocked: (appWindow.walletCreationHost !== null
+            && appWindow.walletCreationHost.modalVisible)
         || ApplicationModels.nodeModel.runtimeDialogVisible
         || (appWindow.desktopShell !== null && appWindow.desktopShell.modalNavigationBlocked)
         || (appWindow.nodeShell !== null && appWindow.nodeShell.modalNavigationBlocked)
@@ -95,19 +95,19 @@ ApplicationWindow {
         const desktop = appWindow.desktopShell
         if (desktop !== null) {
             switch (route) {
-            case MainWindow.RouteCloseWallet: desktop.requestCloseWallet(); break
-            case MainWindow.RouteBackup: desktop.startWalletBackup(); break
-            case MainWindow.RouteImportUri: desktop.openUriImporter(); break
-            case MainWindow.RouteSignMessage: desktop.openSignVerifyMessage(SignVerifyMessage.SignTab); break
-            case MainWindow.RouteVerifyMessage: desktop.openSignVerifyMessage(SignVerifyMessage.VerifyTab); break
-            case MainWindow.RouteImportPsbt: desktop.openPsbtImporter(); break
-            case MainWindow.RouteNode: desktop.openNode(); break
-            case MainWindow.RouteActivity: desktop.openActivity(); break
-            case MainWindow.RouteSend: desktop.openSend(); break
-            case MainWindow.RouteReceive: desktop.openReceive(); break
-            case MainWindow.RouteConsole: desktop.openConsole(); break
-            case MainWindow.RouteNetworkTraffic: desktop.openNetworkTraffic(); break
-            case MainWindow.RoutePeers: desktop.openPeers(); break
+            case MainWindow.RouteCloseWallet: desktop.closeWalletRequested(); break
+            case MainWindow.RouteBackup: desktop.backupRequested(); break
+            case MainWindow.RouteImportUri: desktop.uriImportRequested(); break
+            case MainWindow.RouteSignMessage: desktop.signMessageRequested(); break
+            case MainWindow.RouteVerifyMessage: desktop.verifyMessageRequested(); break
+            case MainWindow.RouteImportPsbt: desktop.psbtImportRequested(); break
+            case MainWindow.RouteNode: desktop.nodeRequested(); break
+            case MainWindow.RouteActivity: desktop.activityRequested(); break
+            case MainWindow.RouteSend: desktop.sendRequested(); break
+            case MainWindow.RouteReceive: desktop.receiveRequested(); break
+            case MainWindow.RouteConsole: desktop.consoleRequested(); break
+            case MainWindow.RouteNetworkTraffic: desktop.networkTrafficRequested(); break
+            case MainWindow.RoutePeers: desktop.peersRequested(); break
             }
             return
         }
@@ -150,7 +150,7 @@ ApplicationWindow {
 
     function openSettings(section: string) {
         if (!appWindow.menuNavigationEnabled) return
-        if (appWindow.desktopShell !== null) appWindow.desktopShell.openSettings(section)
+        if (appWindow.desktopShell !== null) appWindow.desktopShell.settingsRequested(section)
         else if (appWindow.nodeShell !== null) appWindow.nodeShell.openSettings(section)
     }
 
@@ -164,10 +164,10 @@ ApplicationWindow {
 
     // This consumes the exact retained operation result. Popup exit animation
     // is presentation only and cannot turn its completion into a fresh route.
-    function presentCreatedWallet(wallet: WalletQmlModel) {
+    function presentCreatedWallet(wallet: QtObject) {
         if (appWindow.shutdownInProgress || ApplicationModels.nodeModel.fatalException) return
-        const shell = main.depth === 1 ? main.currentItem as DesktopWallets : null
-        if (shell !== null) shell.openWallet(wallet)
+        const shell = main.depth === 1 ? appWindow.desktopShell : null
+        if (shell !== null) shell.presentWalletRequested(wallet)
     }
 
     function resolvePostOnboardingWalletRoute() {
@@ -469,8 +469,8 @@ ApplicationWindow {
         id: walletCreationModal
         active: appWindow.desktopWalletMode
         source: active ? "../components/WalletCreationHost.qml" : ""
-        function open() { if (item) (item as WalletCreationHost).open() }
-        function openForOnboarding() { if (item) (item as WalletCreationHost).openForOnboarding() }
+        function open() { if (item) (item as WalletCreationPort).openRequested() }
+        function openForOnboarding() { if (item) (item as WalletCreationPort).onboardingOpenRequested() }
     }
 
     Connections {

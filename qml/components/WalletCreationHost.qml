@@ -6,10 +6,11 @@ import QtQuick 2.15
 import org.bitcoincore.qt 1.0
 
 // The Loader owns an Item so the popup has the containing window immediately.
-Item {
+WalletCreationPort {
     id: root
-    readonly property bool modalVisible: modal.visible
-    signal finished(bool openActivity, WalletQmlModel wallet)
+    modalVisible: modal.visible
+    onOpenRequested: modal.open()
+    onOnboardingOpenRequested: modal.openForOnboarding()
     function open() { modal.open() }
     function openForOnboarding() { modal.openForOnboarding() }
     WalletCreationModal {

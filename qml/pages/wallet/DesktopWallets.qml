@@ -13,7 +13,7 @@ import "../../controls/utils.js" as Utils
 import "../../components"
 import "../node"
 
-Page {
+WalletShellPage {
     id: root
     objectName: "desktopWalletsPage"
     background: null
@@ -33,14 +33,29 @@ Page {
         && (navigationTabs.checkedButton as WalletNavigationTab).index <= 2
     readonly property Item walletSettingsHost: settingsLoader.item ? (settingsLoader.item as SettingsView).walletSettingsHost : null
     readonly property SettingsView settingsView: settingsLoader.item as SettingsView
-    readonly property bool modalNavigationBlocked: settingsView !== null
+    modalNavigationBlocked: settingsView !== null
         && (settingsView.settingsNavigationPending
             || (settingsView.settingsEditor !== null && settingsView.settingsEditor.closeQuestion))
     readonly property alias walletViews: walletViews
 
     ButtonGroup { id: navigationTabs }
 
-    signal addWallet()
+    onCloseWalletRequested: root.requestCloseWallet()
+    onBackupRequested: root.startWalletBackup()
+    onUriImportRequested: root.openUriImporter()
+    onSignMessageRequested: root.openSignVerifyMessage(SignVerifyMessage.SignTab)
+    onVerifyMessageRequested: root.openSignVerifyMessage(SignVerifyMessage.VerifyTab)
+    onPsbtImportRequested: root.openPsbtImporter()
+    onNodeRequested: root.openNode()
+    onActivityRequested: root.openActivity()
+    onSendRequested: root.openSend()
+    onReceiveRequested: root.openReceive()
+    onConsoleRequested: root.openConsole()
+    onNetworkTrafficRequested: root.openNetworkTraffic()
+    onPeersRequested: root.openPeers()
+    onSettingsRequested: function(section) { root.openSettings(section) }
+    onPresentWalletRequested: function(wallet) { root.openWallet(wallet as WalletQmlModel) }
+    onContinueImportRequested: function(mailbox) { root.continueDesktopImport(mailbox) }
 
     function viewForWallet(wallet) {
         if (!wallet) return null
