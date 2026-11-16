@@ -1,143 +1,105 @@
 # R42 qualification checkpoint
 
 R41 is focused accepted at `90abf2fdd928bcdf8fc4ce3a831d2a2538d70a24`.
-R42 remains active and **is not accepted**. The combined repair source is
-`fcd37c4f8af31f2dc60237eb9c916945c69024a8`, with unchanged stock Core
-`44901d8f64cb617714707bd025ecd83f108353c2`. Repairs have separate commits;
-qualification does not hide application changes in a documentation commit.
+R42 remains active and **is not accepted**. The integrated repair source before
+this checkpoint is `9670cc23704711ac6f6e802e0803975104a8f72e`; stock Core remains
+`44901d8f64cb617714707bd025ecd83f108353c2`, unchanged. Repairs retain separate
+commits and evidence; this document does not confer acceptance.
 
-The latest user instruction, **“Skip windows validation”**, supersedes the
-earlier final-stage Windows requirement for this R42 run. Existing Windows
-artifacts remain available. Its build and six executable manifests passed;
-runtime qualification is incomplete and is not a Windows pass. The task's
-stopped jobs were collected and the VM is suspended (`shut off`, managed save).
-Linux, macOS, coverage and sanitizer obligations remain in scope.
-The [environment limits](R42_ENVIRONMENT_LIMITS.md) retain the actual static
-macOS, tracing, MSan and native-producer qualification gaps.
+Windows is excluded by the user's explicit instruction. The VM is suspended.
+Linux, macOS, coverage and sanitizer requirements remain. No R43 or push is
+authorized. Evidence paths below are relative to workspace
+`.validation/qt6-r41-r42-20261115/R42/`.
 
-Evidence lives under workspace
-`.validation/qt6-r41-r42-20261115/R42/`. Exact commands, image identities,
-source/binary hashes, executed selectors, stdout/stderr and exits are retained
-there. A command template, discovery, old executable or empty selection is
-never passing execution evidence. Final-source jobs use frozen inputs and
-continue independent checks after a failure.
+## Qualified repairs and source-specific results
 
-The baseline full suites found real application defects and stale fixtures.
-Repairs include owned QString values, send admission/outcome ownership, coin
-eligibility publication order, settings observation/intent fencing, and Activity
-cleanup leases. Explicit import replacement, wallet load/selection, batch Save
-and asynchronous readiness remain required user actions in process tests.
-Fixture repairs preserve their original effect, persistence and stale-result
-assertions. Timing tests use the general manual executors; physical-thread and
-Core/RPC checks remain separate.
+- The pending-coin-selection Maximum defect is repaired at `a37df7c3d13`.
+  The original controlled regression fails on its parent and all 25 affected
+  bodies pass after the fix. Full pinned Clang 23 tidy passes 322/322 entries
+  at a37; full app/Core lint passes. See `repairs/maximum-notice-audit/`,
+  `final-tidy-a37-03/` and `lint-final-04/`.
+- Qt 6.2 Release qualification at `7290ec7e025` passes all 78 ordinary CTest
+  entries: 6,577 Qt bodies pass, with 12 existing delegated fatal skips whose
+  child exits are independently checked. Its complete 121-class native
+  registry finishes. All ten integration groups passed at a37; ELF/source
+  identity audits are retained rather than assuming a later revision passes.
+  The subsequent fee fixture relay checks remain under qualification.
+  See `qt62-fee-receipt-currency/QUALIFICATION.json`.
+- The Qt 6.2 QThread abort came from our test formatting a retired QObject
+  pointer. Opaque thread-address equality preserves its affinity assertion.
+  This is separate from the approved deferred Qt picker issue. The portable
+  Main rendering helper preserves actual frame checks where supported and
+  requires the original render receipt where minimal QPA returns a 0x0 frame.
+  These changes are integrated at `8de713cefc3` and `e9009342bb9`.
+- Stock ASan/LSan/UBSan/integer full qualification at a37 found fixture-owned
+  retained leases: 50,097 bytes in 211 allocations. Exact parent controls
+  reproduce them. Explicit fixture retirement passes the nine exact controls
+  and all 89 affected bodies without leaks. The legacy receive fixture now
+  waits for public reconciliation readiness before its single commit; all four
+  real Core metadata rows pass. These repairs are integrated at `398bec66a37`
+  and `1d11dca8b25`. The full final-source sanitizer result remains pending.
+  Independent a37 lifecycle qualification passes 34 cases with 45 inspected
+  process receipts; source equivalence is required before carrying it forward.
+- A PSBT Node replacement retained a paging notifier bound to the previous
+  generation. Two public/manual rows reproduce the stuck pending state. Query
+  retirement preserves the immutable summary and stale-result fencing; all
+  88 affected model bodies pass. The regression and repair are integrated at
+  `12abc87e8b4` and `795c2da50f7`. No Core implementation is accessed or changed.
+  See `repairs/psbt-summary-node/`.
+- GCC 15 rejected the original settings fixture's variant copy at the actual
+  Release/O3 flags. Active-type construction preserves every original value;
+  the identical TU compile fails on the parent and succeeds after the repair,
+  without suppressing diagnostics. Integrated at `9670cc23704`.
+- The integrated eight handwritten C++ files plus seven fresh MOC aggregates
+  pass pinned tidy: 15/15, `integration-tidy-04/`. Later fee fixture changes
+  still require their affected checks.
 
-The latest bounded repairs have actual evidence:
+## Remaining acceptance gates
 
-- Activity patch disposal: its held-task schedule fails on the parent and
-  passes after retaining the cleanup lease. Four native cases and nine pinned
-  C++/MOC tidy entries pass (`repairs/activity-cleanup/ACCEPTANCE.json`).
-- Signed amount presentation: the minimum signed integer originally triggers
-  UBSan through public setters. Exact unsigned-magnitude formatting retains
-  signed values and monetary validation. Both full affected native classes
-  total 96 passing cases; all three public QML controls pass with stock
-  ASan/UBSan/integer options (`amount-boundary-asan-03/`).
-- GCC Release: the complete registry compiles; 249/250 focused cases initially
-  pass. The remaining storage fixture counted independent readiness changes.
-  Its corrected original two controls pass (`platform-matrix/linux-repair-08/`).
+The full a37 platform results retain actual failures in
+`platform-matrix/final-remote-audit-a37/`. Gameboy GCC Release never reached
+runtime after the compile failure and generated TestBridge MOC cache failure;
+zero tests is not a pass. Bazzite wallet-enabled and wallet-disabled both ran,
+with Main rendering and separate fixture failures still recorded. Native macOS
+has real test/process failures and descriptor exhaustion, not an assumed Qt
+waiver. A new inspection shell reports soft NOFILE 256, hard unlimited; the
+historical failing process did not retain those measurements. Its 33-wallet
+fixture can legitimately create 175 executor threads. Measure peak use and
+post-drain baselines before attributing exhaustion to capacity or retention.
 
-Subsequent repairs preserve the original contracts: reentrant controller owner
-loss, public native-settings type decoding, the common PSBT serialization link
-boundary, original action/readiness receipts, and lazy typed wallet presentation
-ports. The wallet-disabled configuration now builds all targets, inventories all
-78 configured unit classes, passes the original 20 file-export bodies and exits
-the strict GUI startup/shutdown journey with empty stderr. This is focused
-configuration evidence, not a full wallet-disabled test pass
-(`platform-matrix/wallet-off-qml-11/ACTUAL_RESULTS_REVIEW.json`). The four new
-shipped QML resources remain in the final coverage denominator (263 after retiring the unused selector).
+The static Linux Qt 6.8.4 SDK and archive audit pass; the application must still
+build, link and run against that exact SDK. The static macOS attempt failed in
+Qt with SDK 27. Follow-up finds older CLT SDKs; compatibility must be qualified
+without changing Core/Qt implementation or pinned archives. Actual native OS
+Dock/reopen, URI and FileOpen producers remain separate from Cocoa bridge tests.
+See [environment limits](R42_ENVIRONMENT_LIMITS.md).
 
-The later focused ASan run at `1e5d110` exposed controller fixture lifetime,
-wallet-preparation owner loss and file-export leaks. Their bounded repairs now
-pass: Controller 290 plus WalletQmlModel 466 bodies, and FileExport 22 plus
-BackupPolicyOperation 73 bodies, with zero failures/skips and clean sanitizer
-process exits. Exact source-qualified receipts are `wallet-preparation-guard/`
-and `repairs/file-export-admission/`. Subset controls are not counted twice.
-These focused results do not certify a full final-source sanitizer suite.
+Coverage remains a blocking measured gap. At historical frozen `34b87996094`,
+raw unit line/branch coverage is 85.429%/70.490%; combined is 88.107%/73.034%.
+There are 5,670 mapped line gaps, 12,082 nonfolded branch gaps and 54 files
+without emitted mapping in that Linux configuration. Some files are tooling or
+platform-only, but handwritten header initializers need qualified attribution.
+Constructor counters alone do not prove initializer execution: retained negative
+controls demonstrate that distinction. QML AST tooling also has unmeasured
+initializer spans and incomplete qualification. No denominator reduction or
+metric adjustment has been granted. The target remains 100% of reachable,
+unit-testable handwritten logic, with all source files accounted for. See
+`coverage-current/` and `qt62-fee-receipt-currency/coverage-attribution/`.
 
-The late R41 coin-selector cleanup passes 242 focused model/QML/Core bodies,
-both QML lint variants and 13 pinned tidy entries. It removes the unused page
-and unchecked legacy change aliases. Current selector production files remain
-unchanged; shipped QML inventory is now 263. See
-`coin-selector-qualification/ACCEPTANCE.json` and
-[R41 cleanup notes](R41_LATE_COIN_SELECTOR_RETIREMENT.md).
+Final combined native/configuration/platform tests, sanitizer qualification,
+coverage, changed-scope/static checks and the 329-scope/36-schedule producer,
+progress and seven evolution-rehearsal audit are still required. Passing parent
+results carry only with explicit source, executable and toolchain equivalence.
+Original failures and skipped bodies remain distinct from passing execution.
 
-The Gameboy ordinary O0/g0 run at `9106ca7` passes 89/90 CTest entries,
-including all ten Core integration groups; MainRouting aborts with
-`free(): invalid size`. Its cause is unresolved. All 16 focused cases and
-17 remaining process scenarios pass, and affected pinned tidy passes. The full
-run takes 2045 seconds and does not establish the required optimized Release
-configuration (`gameboy-repair-04/artifacts/`).
+Keep approved upstream remainders explicit: R09 device locking/cancellation,
+R17 preview change policy (actual review authoritative), R20 precise commit
+receipts and R30 capability007. Native Qt dependency diagnostics are documented
+and deferred as authorized; do not patch Qt, suppress the whole application or
+replace native components. Unavailable MSan dependencies and tracing privileges
+remain actual limitations, with applicability assessed independently.
 
-Qt 6.2 now builds the complete Release configuration. Its original full run
-passes 73/78 ordinary and 8/10 integration entries. Missing timezone data is
-proved by unchanged-binary controls. Explicit native activation and rendered
-frame checks qualify 75 affected QML bodies, while the bounded declarative
-Receive scrolling workaround passes 55 native Receive and 19 QML bodies.
-Per-component Xvfb preserves parallel targeting. The complete final-source
-matrix and actual tzdata package receipt remain pending.
-
-Manual Maximum retains two real macOS failures despite later passing diagnostic
-runs. The consumer returns before acknowledging a ready SnapshotQuery result
-when selection is pending. A deterministic regression is being checked before
-repair; no Core-interface or product fix is claimed from a later pass.
-
-Core compatibility passes all seven selected cases with zero skips, using eleven
-stock checksum-verified releases and the stock generated functional runner.
-The five USDT cases actually skip for missing Python BCC and remain unqualified;
-the stock runner's exit zero does not convert those skips into passes. Static
-Linux Qt 6.8.4 builds and its semantic SDK audit passes; the app still needs to
-build and run against that exact SDK. The actual macOS SDK attempt first stops
-for missing GNU Make; the documented prerequisite is installed and a separate
-retry retains all nine pinned archive checks. No SDK-only result certifies the
-application. Qt 6.2, final combined ordinary suites and full matrix obligations
-remain pending.
-
-The original macOS 1,600-outpoint oversized-send error and 100-input recovery
-case passes without increasing its 120-second deadline. Native RPC publication
-takes about 65.2 seconds while GUI heartbeats continue (maximum gap 71 ms).
-The one-script setup preserves 1,600 distinct outpoints and exact recovery
-oracles; the result has a narrow deadline margin and does not establish that
-the Native performance cost is fixed (`platform-matrix/macos-07-timing/`).
-
-Coverage is a real acceptance gap. At frozen app `34b87996094e8fd5c3abe103deccc3443d5ad63e`,
-the independently joined six instrumented executables and 799 raw profiles give
-unit-only raw line/branch coverage of 85.429%/70.490%, and combined coverage of
-88.107%/73.034%. There are 5,670 mapped line gaps after separately proved Qt
-metadata, 12,082 nonfolded branch gaps and 54 native files without emitted
-mapping in that Linux configuration. QML has uncovered AST sites, twelve
-unmeasured native ListElement initializer spans and incomplete tool qualification.
-These are not 100% coverage or evidence for a later repaired source. The direct
-unit abort and three failed full-CTest entries remain failures even when their
-retained counters contribute to coverage (`coverage-current/REPORT.md` and
-`coverage-current/STATUS.json`).
-
-Task-private `R42/LIVE_CHECKPOINT.json` identifies active lanes and new results;
-earlier ledgers retain historical source-specific runs. A parent pass carries
-only when the relevant source, configuration and producer are unchanged and
-that equivalence is explicitly audited. New app/fixture repairs reopen their
-responsible implementation slices; R42's qualification order does not hide
-behavior changes in a documentation commit. All 329 original oracles, 36
-schedules, real producer/progress obligations and seven evolution rehearsals
-still require their source-qualified final accounting.
-
-Keep the approved upstream remainders explicit: R09 device locking/cancellation,
-R17 preview change policy (actual review is authoritative), R20 precise commit
-receipts and R30 capability007. Native Qt picker and newly identified Qt engine
-dependency diagnostics remain documented/deferred: do not edit Qt, suppress
-the whole app or implement a replacement native component. MSan dependency
-qualification is incomplete. A sanitizer build or ordinary pass does not close
-these results.
-
-The original dirty checkout and canonical 318-finding/329-scope/36-schedule
-registers remain preserved. R42 adds evidence overlays; it does not rewrite
-their historical dispositions. Stop at the R42 boundary. No R43 or push is
-authorized by this checkpoint.
+The original 11 dirty files and canonical 318-finding/329-scope/36-schedule
+registers remain preserved. Task-private `R42/LIVE_CHECKPOINT.json` identifies
+live owners; source-specific receipts retain exact commands, selected and
+executed counts, revisions, hashes, stderr and exit statuses.
