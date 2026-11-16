@@ -3191,10 +3191,16 @@ void OptionsModelTests::rejectedDisplayRefreshDoesNotReenterItsFailure()
     {OptionsQmlModel model{node,args,graph.services()};bool delivering{false},reentered{false};int notices{0};
      const auto finish=qScopeGuard([&]{disconnect(&model,nullptr,this,nullptr);model.beginShutdown();graph.drainLive();});
      QVERIFY(graph.drainLive());graph.transport.scheduler->closeOrdinaryAdmission();
+     QVERIFY(model.settingsReady());
+     QCOMPARE(model.settingsOperationState(),OptionsQmlModel::SettingsApplied);
      const auto original=model.settingsOperationId();
+     QSignalSpy operations{&model,&OptionsQmlModel::settingsOperationChanged};
      connect(&model,&OptionsQmlModel::settingsErrorChanged,this,[&]{reentered|=delivering;delivering=true;if(++notices<=2)model.refreshDisplaySettings();delivering=false;});
-     model.refreshDisplaySettings();QVERIFY(!reentered);QCOMPARE(notices,1);QCOMPARE(model.settingsOperationId(),original+1);QVERIFY(!model.settingsPending());QVERIFY(!model.settingsError().isEmpty());
-     QCOMPARE(model.settingsOperationState(),OptionsQmlModel::SettingsFailed);
+     model.refreshDisplaySettings();QVERIFY(!reentered);QCOMPARE(notices,1);QCOMPARE(model.settingsOperationId(),original);QVERIFY(!model.settingsPending());QVERIFY(!model.settingsError().isEmpty());
+     // A refused observation reports its diagnostic without inventing a user
+     // operation or replacing the original accepted operation's receipt.
+     QCOMPARE(model.settingsOperationState(),OptionsQmlModel::SettingsApplied);
+     QCOMPARE(operations.count(),0);
     }
     QVERIFY(graph.drainLive());QVERIFY(graph.transport.quiescent());
 }
