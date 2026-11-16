@@ -485,7 +485,8 @@ bool SettleManualFeeInputs(WalletQmlModel& model, const std::shared_ptr<ManualEx
         receipts->drain(); environment->publishAll();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
         if (environment->turnsIdle() && environment->publicationsIdle() && receipts->publicationCount() == 0 &&
-            model.availableSendBalanceKnown() && !model.fees()->policyPending() && model.sendRecipientList()->draftSnapshot()) return true;
+            model.capabilitiesKnown() && model.balanceKnown() && model.availableSendBalanceKnown() &&
+            !model.coinSelectionPending() && !model.fees()->policyPending() && model.sendRecipientList()->draftSnapshot()) return true;
     }
     return false;
 }
@@ -4393,7 +4394,8 @@ private Q_SLOTS:
             clock->publishAll();
             QCoreApplication::processEvents();
             return model->sendRecipientList()->allValid() && model->availableSendBalanceKnown() &&
-                !model->coinSelectionPending() && transport.transportIdle() && clock->publicationsIdle();
+                !model->coinSelectionPending() && !model->fees()->policyPending() &&
+                transport.transportIdle() && clock->publicationsIdle();
         }, 5000));
         model->scheduleFeeEstimates();
         // Scheduling also requests an independent Native send-facts refresh.
@@ -4411,7 +4413,8 @@ private Q_SLOTS:
             QCoreApplication::processEvents();
             return native_barrier->load() && model->availableSendBalanceKnown() &&
                 model->sendRecipientList()->allValid() && model->sendRecipientList()->draftSnapshot() &&
-                !model->coinSelectionPending() && transport.transportIdle() && clock->publicationsIdle();
+                !model->coinSelectionPending() && !model->fees()->policyPending() &&
+                transport.transportIdle() && clock->publicationsIdle();
         }, 5000));
         QVERIFY(captured.empty());
         const auto core_before = transport.coreSubmissions();
@@ -4477,14 +4480,19 @@ private Q_SLOTS:
         FeeReadServices services{env->scheduler, env, [&, receipts](const FeeReadInput&) {
             receipts->readStarted(); ++reads; return FeeReadResult{};
         }, [receipts](auto publication) { receipts->post(std::move(publication)); }};
-        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services));
+        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services), false, {}, {}, {}, env->scheduler);
         const auto cleanup = qScopeGuard([&] { model.reset(); receipts->drain(); receipts->publishAll(); env->publishAll(); });
         SetValidRecipient(*model, VALID_MAINNET_ADDRESS, env);
+        QVERIFY(SettleManualFeeInputs(*model, env, receipts));
         model->scheduleFeeEstimates(); receipts->drain();
+        QCOMPARE(model->fees()->estimateState(), FeeSelectionModel::Scheduled);
+        QVERIFY(model->feeEstimatePending());
         env->rejectNext(); env->advance(std::chrono::milliseconds{250});
         receipts->drain(); receipts->publishAll(); env->publishAll();
         QVERIFY(!model->feeEstimatePending());
         model->scheduleFeeEstimates(); receipts->drain();
+        QCOMPARE(model->fees()->estimateState(), FeeSelectionModel::Scheduled);
+        QVERIFY(model->feeEstimatePending());
         env->rejectNext(); env->advance(std::chrono::milliseconds{250});
         receipts->drain(); receipts->publishAll(); env->publishAll();
         QVERIFY(!model->feeEstimatePending());
@@ -4503,10 +4511,13 @@ private Q_SLOTS:
             if (input.recipients.size() != 1) throw std::runtime_error("unexpected recipient count");
             FeeReadResult result; result.estimates.insert(6, SendFeePreview{500, 2, 2500, {}, false}); return result;
         }, [receipts](auto publication) { receipts->post(std::move(publication)); }};
-        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services));
+        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services), false, {}, {}, {}, env->scheduler);
         const auto cleanup = qScopeGuard([&] { model.reset(); receipts->drain(); receipts->publishAll(); env->publishAll(); });
         SetValidRecipient(*model, VALID_MAINNET_ADDRESS, env);
+        QVERIFY(SettleManualFeeInputs(*model, env, receipts));
         model->scheduleFeeEstimates(); receipts->drain();
+        QCOMPARE(model->fees()->estimateState(), FeeSelectionModel::Scheduled);
+        QVERIFY(model->feeEstimatePending());
         env->advance(std::chrono::milliseconds{249}); QCOMPARE(reads, 0);
         env->advance(std::chrono::milliseconds{1}); QCOMPARE(reads, 0);
         const auto original = receipts->startRead(); QVERIFY(original); QCOMPARE(reads, 1);
@@ -4541,10 +4552,13 @@ private Q_SLOTS:
             if (old_error && captured.size() == 1) throw std::runtime_error("old fee failure");
             FeeReadResult result; result.estimates.insert(6, SendFeePreview{input.recipients.front().amount == 50000 ? 500 : 600, 1, 1000, {}, false}); return result;
         }, [receipts](auto publication) { receipts->post(std::move(publication)); }};
-        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services));
+        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services), false, {}, {}, {}, env->scheduler);
         const auto cleanup = qScopeGuard([&] { model.reset(); receipts->drain(); receipts->publishAll(); env->publishAll(); });
         SetValidRecipient(*model, VALID_MAINNET_ADDRESS, env);
+        QVERIFY(SettleManualFeeInputs(*model, env, receipts));
         model->scheduleFeeEstimates(); receipts->drain();
+        QCOMPARE(model->fees()->estimateState(), FeeSelectionModel::Scheduled);
+        QVERIFY(model->feeEstimatePending());
         env->advance(std::chrono::milliseconds{250});
         // Explicitly admit immutable A on Domain before replacing the mailbox.
         const auto decision = env->takeTurnFront(); QVERIFY(decision); decision->turn(); env->publishAll();
@@ -4658,7 +4672,7 @@ private Q_SLOTS:
         const auto cleanup = qScopeGuard([&] { model.reset(); receipts->drain(); receipts->publishAll(); env->publishAll(); });
         SetValidRecipient(*model, VALID_MAINNET_ADDRESS, env); auto* recipient = model->sendRecipientList()->currentRecipient();
         model->useMaximum();
-        QVERIFY(QTest::qWaitFor([&] { receipts->drain(); env->publishAll(); QCoreApplication::processEvents(); return model->maximumRecipient() == recipient && model->sendRecipientList()->allValid(); }, 3000));
+        QVERIFY(QTest::qWaitFor([&] { receipts->drain(); env->publishAll(); QCoreApplication::processEvents(); return model->maximumRecipient() == recipient && model->sendRecipientList()->allValid() && model->availableSendBalanceKnown() && !model->coinSelectionPending() && !model->fees()->policyPending() && model->feeEstimatePending(); }, 3000));
         env->advance(std::chrono::milliseconds{250}); const auto original = receipts->startRead(); QVERIFY(original);
         env->publishAll(); // Acknowledge Reading; retain only the original outcome.
         QVERIFY(receipts->finishOutcome(*original)); const auto exact = recipient->amount()->satoshi();
@@ -4668,7 +4682,7 @@ private Q_SLOTS:
         QVERIFY(!model->sendRecipientList()->draftSnapshot());
         QVERIFY(receipts->publish(*original)); // GUI receives the old successful estimate after the new input.
         QCOMPARE(recipient->amount()->satoshi(), exact);
-        QVERIFY(QTest::qWaitFor([&] { receipts->drain(); env->publishAll(); QCoreApplication::processEvents(); return !model->maximumRecipient() && model->sendRecipientList()->allValid(); }, 3000));
+        QVERIFY(QTest::qWaitFor([&] { receipts->drain(); env->publishAll(); QCoreApplication::processEvents(); return !model->maximumRecipient() && model->sendRecipientList()->allValid() && model->availableSendBalanceKnown() && !model->coinSelectionPending() && !model->fees()->policyPending() && model->feeEstimatePending(); }, 3000));
         env->advance(std::chrono::milliseconds{250}); const auto successor = receipts->startRead(); QVERIFY(successor);
         env->publishAll(); // Acknowledge Reading; retain only the successor outcome.
         QCOMPARE(tokens.size(), size_t{2}); QCOMPARE(tokens.back(), quint64{0});
@@ -4779,12 +4793,12 @@ private Q_SLOTS:
         }
         QVERIFY(QTest::qWaitFor([&] {
             receipts->drain(); env->publishAll(); QCoreApplication::processEvents();
-            return model->capabilitiesKnown() && model->balanceKnown() && model->availableSendBalanceKnown() && model->sendRecipientList()->allValid();
+            return model->capabilitiesKnown() && model->balanceKnown() && model->availableSendBalanceKnown() && model->sendRecipientList()->allValid() && !model->coinSelectionPending() && !model->fees()->policyPending();
         }, 3000));
         model->useMaximum(); receipts->drain();
         QVERIFY(QTest::qWaitFor([&] {
             receipts->drain(); env->publishAll(); QCoreApplication::processEvents();
-            return model->availableSendBalanceKnown() && model->sendRecipientList()->allValid();
+            return model->availableSendBalanceKnown() && model->sendRecipientList()->allValid() && !model->coinSelectionPending() && !model->fees()->policyPending() && model->feeEstimatePending();
         }, 3000));
         bool reentrant_edit{false};
         const auto reentrant_connection = connect(original_recipient->amount(), &BitcoinAmount::amountChanged, model.get(), [&] {
@@ -4974,7 +4988,7 @@ private Q_SLOTS:
         QVERIFY(QTest::qWaitFor([&] {
             receipts->drain(); env->publishAll(); QCoreApplication::processEvents();
             return model->capabilitiesKnown() && model->balanceKnown() && model->availableSendBalanceKnown() &&
-                model->sendRecipientList()->allValid() && !model->sendRecipientList()->currentRecipient()->validationPending() && model->feeEstimatePending();
+                model->sendRecipientList()->allValid() && !model->sendRecipientList()->currentRecipient()->validationPending() && model->feeEstimatePending() && !model->coinSelectionPending() && !model->fees()->policyPending();
         }, 3000));
         env->advance(std::chrono::milliseconds{250});
         const auto original = receipts->startRead(); QVERIFY(original); QCOMPARE(reads, 1); env->publishAll();
