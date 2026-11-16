@@ -227,7 +227,6 @@
         <file>pages/wallet/AddressList.qml</file>
         <file>pages/wallet/AddressDetails.qml</file>
         <file>pages/wallet/AddressRow.qml</file>
-        <file>pages/wallet/CoinSelection.qml</file>
         <file>pages/wallet/SendCreate.qml</file>
         <file>pages/wallet/SendComplete.qml</file>
         <file>pages/wallet/SpeedUpComplete.qml</file>

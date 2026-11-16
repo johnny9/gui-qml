@@ -1244,8 +1244,6 @@ public:
     Q_PROPERTY(bool selectionReconciliationRequired MEMBER m_selection_reconciliation_required NOTIFY selectionSnapshotChanged)
     Q_PROPERTY(int coinCount READ coinCount NOTIFY coinCountChanged)
     Q_PROPERTY(QString totalSelected READ totalSelected NOTIFY totalSelectedChanged)
-    Q_PROPERTY(bool overRequiredAmount READ overRequiredAmount NOTIFY overRequiredAmountChanged)
-    Q_PROPERTY(QString changeAmount READ changeAmount NOTIFY changeAmountChanged)
 
 public:
     enum Roles {
@@ -1388,13 +1386,6 @@ public:
         return QStringLiteral("%1 selected").arg(selectedCoinsCount());
     }
 
-    bool overRequiredAmount() const { return selectedCoinsCount() > 1; }
-
-    QString changeAmount() const
-    {
-        return overRequiredAmount() ? QStringLiteral("0.00050000 BTC") : QStringLiteral("0.00000000 BTC");
-    }
-
     Q_INVOKABLE void toggleCoinSelection(int index)
     {
         if (index < 0 || index >= rowCount()) return;
@@ -1477,8 +1468,6 @@ Q_SIGNALS:
     void selectedCoinsCountChanged();
     void coinCountChanged();
     void totalSelectedChanged();
-    void overRequiredAmountChanged();
-    void changeAmountChanged();
 
 private:
     qint64 m_available_min{100000}, m_available_max{300000};
@@ -1488,8 +1477,6 @@ private:
         Q_EMIT selectionSnapshotChanged();
         Q_EMIT selectedCoinsCountChanged();
         Q_EMIT totalSelectedChanged();
-        Q_EMIT overRequiredAmountChanged();
-        Q_EMIT changeAmountChanged();
     }
 
     quint64 m_selection_revision{0};

@@ -842,5 +842,3 @@ void CoinsListModel::publishLocks()
     Q_EMIT lockOperationChanged(); if (!guard || m_stopping) return;
     Q_EMIT marksChanged(); if (guard && !m_stopping) Q_EMIT selectionSnapshotChanged();
 }
-QString CoinsListModel::changeAmount() const { return BitcoinAmount::satsToBtcString(std::abs(m_selected_total - (m_wallet_model ? m_wallet_model->sendTotalSatoshi() : 0))); }
-bool CoinsListModel::overRequiredAmount() const { return m_wallet_model && m_selected_total >= m_wallet_model->sendTotalSatoshi(); }

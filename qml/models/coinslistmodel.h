@@ -28,8 +28,6 @@ class CoinsListModel : public QAbstractListModel
     Q_PROPERTY(qint64 totalSelectedSatoshi READ totalSelectedSatoshi NOTIFY selectedCoinsCountChanged)
     Q_PROPERTY(qint64 totalSatoshi READ totalSatoshi NOTIFY coinCountChanged)
     Q_PROPERTY(qint64 lockedSatoshi READ lockedSatoshi NOTIFY coinCountChanged)
-    Q_PROPERTY(QString changeAmount READ changeAmount NOTIFY selectedCoinsCountChanged)
-    Q_PROPERTY(bool overRequiredAmount READ overRequiredAmount NOTIFY selectedCoinsCountChanged)
     Q_PROPERTY(QString searchText READ searchText WRITE setSearchText NOTIFY viewChanged)
     Q_PROPERTY(QString sortBy READ sortBy WRITE setSortBy NOTIFY viewChanged)
     Q_PROPERTY(bool sortDescending READ sortDescending WRITE setSortDescending NOTIFY viewChanged)
@@ -96,8 +94,6 @@ public:
     qint64 totalSelectedSatoshi() const { return m_selected_total; }
     qint64 totalSatoshi() const { return m_total; }
     qint64 lockedSatoshi() const { return m_locked_total; }
-    QString changeAmount() const;
-    bool overRequiredAmount() const;
     QString searchText() const { return m_search; }
     QString sortBy() const { return m_sort; }
     bool sortDescending() const { return m_descending; }
