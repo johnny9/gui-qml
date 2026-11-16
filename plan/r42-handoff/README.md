@@ -1,6 +1,19 @@
 # R42 acceptance handoff
 
-**R42 is NOT accepted. Windows is excluded by explicit user instruction.**
+**Windows is excluded by explicit user instruction.**
+
+**Broad Linux validation pass (2026-11-16):** every failure found on the Linux
+matrix was fixed and requalified on the branch head — see
+[linux-acceptance-20261116.json](linux-acceptance-20261116.json). Qt 6.10.2 and
+Qt 6.4.2 wallet-on CTest pass 90/90 each, wallet-off passes 81/81, the unit
+suite passes 5600/5600, all 36 functional journeys pass on both Qt lines under
+Xvfb, app/Core lint, QML lint and tidy (322/322) pass, and the MainRouting
+QtQml GC crash no longer reproduces (20/20 + 15/15 clean full-suite runs) after
+collecting between cases. Sanitizer runs are no longer required for acceptance by user decision
+(the executed ASan/UBSan evidence is retained). The remaining Linux gates are
+the static Qt 6.8.4 application lane, Core USDT privileged tracing and the
+final-head coverage measurement; upstream attribution for the GC crash remains
+unproved. R42 acceptance still requires those lanes.
 Core remains clean at `44901d8f64cb617714707bd025ecd83f108353c2`.
 This branch includes the qualified implementation/fixture commits and plans.
 Latest two fixture commits preserve exact manual clock and preparation admission

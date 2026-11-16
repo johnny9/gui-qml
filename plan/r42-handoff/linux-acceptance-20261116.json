@@ -1,0 +1,57 @@
+{
+  "scope": "Broad Linux validation of the R42 branch head on the completion host; fixes for every failure found",
+  "head": "154ae474aa (work/r42-linux-acceptance; parent 8de4c5102d)",
+  "core": "44901d8f64cb617714707bd025ecd83f108353c2 (pin unchanged)",
+  "environment": {
+    "host": "Fedora 44, x86_64, 20 cores",
+    "compilers": "Clang 22.1.8 (pinned CI Clang 23 unavailable on this host; documented, not substituted)",
+    "qt": [
+      "6.10.2 (aqt local install)",
+      "6.4.2 (local install)",
+      "offscreen for CTest, Xvfb 1920x1080 + xcb for functional journeys"
+    ],
+    "capnp": "1.3.0 local RPM extraction (ENABLE_IPC=ON)",
+    "mold": "2.40.4 local extraction for the pinned sanitizer profile"
+  },
+  "fixes": [
+    "Ported the R10 animation test switch: every QML Behavior and popup enter/exit Transition is gated by Theme.animationsEnabled; the QML, unit and integration mains, CTest environments and both functional harnesses default BITCOIN_QML_TEST_NO_ANIMATIONS=1; motion-asserting cases opt in; production keeps animations when the variable is unset",
+    "Sandboxed XDG_CONFIG_HOME for the whole unit-test binary: legacy-migration fixtures capture and verify external QSettings stores by organization/application name, so a real ~/.config/Bitcoin presence (a key serialized as @Invalid(), where contains() is true but the value is invalid) can never satisfy the capture contract, and unsandboxed writes polluted the machine across runs",
+    "Anchored the pinned Core signer mock with a compile-time absolute path: ctest starts the integration binary in a build subdirectory, so the __FILE__-relative traversal only worked when the build tree happened to sit three levels under the source root",
+    "Added the controls import that the gated ReceiveRequestModal transitions reference",
+    "Collect QtQml between MainRouting cases (gc() in cleanup after destruction receipts): an allocation-triggered full collection inside a later case crashed intermittently in QtQml GCStateMachine (SEGV writing through a corrupted QV4 array during runFullGC from allocString) on Qt 6.4.2 and 6.10.2, after the case assertions already passed. 20/20 clean full-suite runs on Qt 6.10.2 and 15/15 on Qt 6.4.2 where the crash previously reproduced within a handful of runs. Controlled-point collection, not an upstream root-cause claim",
+    "The coins amount-popup drag case opts into motion: with test motion disabled the settled scene stops producing frames and waitForRendering times out",
+    "Suppressed Qt QBitArray's qsizetype-to-byte narrowing (qbitarray.h:92) as a dependency exception next to the existing qhashfunctions.h entry; the pinned halt-on-error UBSan configuration halted the PsbtWork suite on that Qt-header diagnostic",
+    "Widened the wallet security-state QTRY budget to a shared 15 s constant in the integration fixture: under ASan the unlock/encrypt paths reported 150-300 ms over QtTest's 5 s default (QtTest named the sufficient margin). Assertions unchanged; all six previously failing ASan integration groups pass",
+    "Kept motion enabled inside the integration child journeys (qunsetenv in the integration runner main): integration cases drive the complete application before and after the child re-exec, and with instant transitions the shutdown visibility cascade crashed Qt Quick's teardown binding on 6.4.2/6.10.2. The send manual-sweep case crashed 7/8 with motion off and passes 10/10 with motion on. Component QML suites keep motion disabled via the ctest environment"
+  ],
+  "results": {
+    "ctest_qt_6_10_2_wallet_on": "90/90 selectors pass (full serial run; the three initial failures were the MainRouting GC crash, the ambient-HOME migration capture failure and a stale coins binary, all fixed)",
+    "ctest_qt_6_4_2_wallet_on": "90/90 selectors pass; the single send manual-sweep teardown crash after the first final-head run was traced to the motion split and fixed (10/10 isolated)",
+    "ctest_wallet_off_qt_6_10_2": "81/81 selectors pass (compile-time ENABLE_WALLET=OFF)",
+    "unit_suite_serial": "5600/5600 body rows pass, exit 0, twice, from the build root on Qt 6.10.2",
+    "mainrouting_stability": "20/20 full-suite runs exit 0 on Qt 6.10.2 and 15/15 on Qt 6.4.2 (45 passed, 1 minimal-QPA skip each)",
+    "functional_journeys": "36/36 scenarios pass across node, wallet-sending, console, wallet and wallet-activity suites on both Qt 6.10.2 and Qt 6.4.2 under Xvfb 1920x1080 + xcb; the initial settings-geometry failures were environmental (the offscreen platform's 800x600 screen makes the R34 clamping policy clamp the saved 1200x800 rectangle; pre-existing at the parent commit and passing with a real screen size)",
+    "app_lint": "exit 0 (COMMIT_RANGE 8de4c5102d..HEAD)",
+    "core_lint": "exit 0 against the pinned Core checkout",
+    "qml_lint": "263 files, 0 warnings/errors per qt62/qt65 resource profile, 1107 compatibility notes each; all negative probes pass",
+    "clang_tidy": "322/322 handwritten units and moc aggregates pass, exit 0 (local LLVM 22 toolchain with the rebuilt bitcoin-tidy plugin; pinned 23 unavailable here, documented)",
+    "asan_ubsan_wrapped_ctest": "Componentized reruns after the fixes: suppression control passes with LSan enabled; the wrapped unit suite passes 5600/5600 exit 0; all six previously failing integration groups pass (node_tools, wallet_management, wallet_activity, wallet_sending_1, psbt, payment_import). A clean end-to-end wrapped full run follows the same configuration"
+  },
+  "preexisting_environmental_findings": [
+    "The settings-geometry journeys require a screen at least as large as the saved rectangle; the offscreen platform's fixed 800x600 screen clamps it. CI used Xvfb; this host now does the same",
+    "An earlier unwrapped sanitizer run reports Core's known sha256 unsigned-overflow diagnostics unless the pinned UBSAN suppressions are applied via ci/with_sanitizer_env.py, matching the pinned lanes"
+  ],
+  "still_open_linux_gates": [
+    "Static Linux Qt 6.8.4 application build/tests against the audited SDK prefix remain separate",
+    "Core USDT privileged tracing remains blocked by the rootless container",
+    "Coverage final-head measurement below target; QML/JS line/branch measurement outstanding",
+    "Upstream Qt attribution for the GCStateMachine crash remains unproved; the gc() mitigation removes the observed trigger only"
+  ],
+  "asan_host_environment_notes": {
+    "wrapper": "ci/with_sanitizer_env.py applies Core's pinned ASan/LSan/UBSan options with the combined app suppressions",
+    "ubsan": "Core's random.h shift and sha256 overflow diagnostics are suppressed only when llvm-symbolizer is on PATH (the pinned CI images carry it); without symbolization the function-name suppressions cannot match and halt_on_error kills the children",
+    "lsan": "This host's desktop stack (NVIDIA GL, session DBus, X11) leaks at exit inside system libraries; every reported leak stack is in those libraries with zero application frames. The pinned CI containers do not load them. With the symbolizer enabled, LSan suppression matching on this host cannot match the stripped Qt/system module frames, so the full ASan run disables leak detection for this environment noise; ASan memory-error detection and UBSan halting remain fully active; the suppression-control test itself still runs with LSan enabled and passes",
+    "stale_binary_note": "An intermediate ASan binary built incrementally across the fix commits reported 16 BackupPolicy failures; a clean parent+head rebuild passes 146/146 for that class at both revisions, isolating the report to stale incremental artifacts rather than source"
+  },
+  "sanitizer_waiver": "User decision 2026-11-16: sanitizer runs are no longer required for R42 acceptance. The executed ASan/UBSan evidence (full run 90/91 with only the LSan control failing by configuration; componentized unit and integration reruns green) is retained but no further sanitizer runs are required. TSan/MSan leave the blocking set"
+}
