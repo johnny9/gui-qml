@@ -6023,7 +6023,9 @@ void WalletQmlModelTests::customFeeRateRespectsRelayMinimum()
         }});
     Q_UNUSED(wallet);
     SetValidRecipient(*model, VALID_REGTEST_ADDRESS);
-    QTRY_VERIFY(model->availableSendBalanceKnown());
+    QTRY_VERIFY(model->capabilitiesKnown() && model->balanceKnown() &&
+        model->availableSendBalanceKnown() && !model->coinSelectionPending() &&
+        !model->fees()->policyPending());
     QCOMPARE(model->minimumCustomFeeRate(), static_cast<double>(relay_minimum) / 1000);
     QVERIFY(policy_thread->load());
     QVERIFY(policy_thread->load() != QThread::currentThread());
@@ -6033,16 +6035,22 @@ void WalletQmlModelTests::customFeeRateRespectsRelayMinimum()
     QTRY_VERIFY(!model->fees()->policyPending());
     QCOMPARE(model->customFeeRateValid(), valid);
     model->scheduleFeeEstimates();
+    // Scheduling also starts a Native send-facts observation. Settle that
+    // original observation and its policy before advancing the manual clock;
+    // a late dependency publication must not supersede the quote under test.
+    const auto native_barrier = std::make_shared<std::atomic_bool>(false);
+    const auto barrier = model->opening()->read([](interfaces::Wallet&) { return 0; },
+        [native_barrier](int) { native_barrier->store(true); });
+    QVERIFY(barrier);
+    QTRY_VERIFY(native_barrier->load() && model->availableSendBalanceKnown() &&
+        !model->coinSelectionPending() && !model->fees()->policyPending());
+    const auto observation_revision = model->fees()->observationRevision();
+    const auto policy_revision = model->fees()->policyRevision();
     QCOMPARE(calls->Size(), size_t{0});
     clock->advance(std::chrono::milliseconds{249});
     QCOMPARE(calls->Size(), size_t{0});
     clock->advance(std::chrono::milliseconds{1});
-    // The relay getter is deliberately real-threaded here. A later public
-    // policy publication can revise the request after this first deadline.
-    // Advance only that still-unread revision; the fully manual fee-clock
-    // regression separately proves the exact 249/250-ms dispatch boundary.
     const bool estimate_complete = QTest::qWaitFor([&] {
-        if (valid && calls->Size() == 0 && !model->fees()->policyPending()) clock->advance(std::chrono::milliseconds{250});
         return calls->Size() == (valid ? 4U : 0U) && !model->feeEstimatePending() && !model->fees()->policyPending();
     }, FEE_ESTIMATE_TIMEOUT_MS);
     QStringList effects;
@@ -6055,6 +6063,8 @@ void WalletQmlModelTests::customFeeRateRespectsRelayMinimum()
         .arg(model->fees()->observationRevision()).arg(model->fees()->policyRevision())
         .arg(model->customFeeRate()).arg(model->fees()->errorText()).arg(effects.join(QStringLiteral("; ")));
     QVERIFY2(estimate_complete, qPrintable(observation));
+    QCOMPARE(model->fees()->observationRevision(), observation_revision);
+    QCOMPARE(model->fees()->policyRevision(), policy_revision);
     QCOMPARE(!model->estimatedFee().isEmpty(), valid);
     if (valid) {
         const auto previews = calls->Snapshot();
