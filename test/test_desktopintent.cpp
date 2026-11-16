@@ -251,11 +251,13 @@ private Q_SLOTS:
         QObject recipient_view;
         auto* operation = model.takeInspection(&recipient_view); QVERIFY(operation); QCOMPARE(operation->requestId(), original);
         QVERIFY(!model.inspection());
-        const auto original_owner = model.owner();
+        auto original_owner = model.owner();
         model.closeAdmission(); factory.closeAdmission(); delete operation; drain();
         std::optional<desktopintent::Receipt> receipt;
         QVERIFY(original_owner->lookup(QStringLiteral("1"), [&](auto value) { receipt = value; })); drain();
         QVERIFY(receipt); QCOMPARE(receipt->inspection, static_cast<uint64_t>(original));
+        original_owner.reset(); drain();
+        QVERIFY(commands.quiescent());
     }
     void automaticInspectionKeepsOneOwnedPresentation_data()
     {

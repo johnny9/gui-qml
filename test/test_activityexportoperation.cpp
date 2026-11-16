@@ -165,6 +165,12 @@ private Q_SLOTS:
     void competingConsentCommandsHaveOneOrderedNativeOutcome()
     {
         QFETCH(bool, approve_first); QTemporaryDir directory; QVERIFY(directory.isValid()); Fixture f{2}; const auto path = directory.filePath("ordered.csv"); QVERIFY(Put(path, "original"));
+        const auto cleanup = qScopeGuard([&] {
+            do { f.commands.drain(); f.publish(); } while (!f.commands.queuedIdle() || !f.commands.activeIdle());
+            QVERIFY(f.commands.quiescent());
+            QCOMPARE(f.outcomes.size(), size_t{1}); QCOMPARE(f.installed, approve_first ? 1 : 0);
+            if (!approve_first) QCOMPARE(Read(path), QByteArray{"original"});
+        });
         ActivityExportOperation operation{{path, Source(), 0}, f.files(), f.execution(), ActivityFilterProxyModel::WriteCsv};
         QVERIFY(operation.start()); f.commands.drain(); f.publish(); QVERIFY(operation.confirmationRequired());
         if (approve_first) { QVERIFY(operation.approve()); QVERIFY(operation.refuse()); }

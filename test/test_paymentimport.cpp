@@ -379,7 +379,7 @@ private Q_SLOTS:
             }, [] {}, std::move(failed), {execution::Lane::Core, 512});
         };
         services.present = [&](auto, auto, auto, auto) { ++presentations; };
-        const auto port = paymentimport::WithReviewFactory(base, services); QVERIFY(port);
+        auto port = paymentimport::WithReviewFactory(base, services); QVERIFY(port);
         const paymentimport::Child child{1, 1, paymentimport::ChildKind::CreateReview, Target(), false};
         std::optional<paymentimport::ChildReply> queried; const auto source = std::make_shared<const paymentimport::Inspection>(Psbt());
         QVERIFY(port->dispatch({42, 1}, child, source, [](auto) {}, {}));
@@ -388,6 +388,8 @@ private Q_SLOTS:
         QVERIFY(port->query({42, 1}, child, [&](auto reply) { queried = reply; }, {})); commands.drain();
         QVERIFY(queried); QCOMPARE(queried->receipt.outcome, paymentimport::Outcome::ReviewOpened); QCOMPARE(creates, 1);
         QVERIFY(port->acknowledge({42, 1}, child)); commands.drain();
+        queried.reset(); port.reset(); commands.drain();
+        QVERIFY(commands.quiescent());
     }
     void rejectedApplyAdmissionIsKnownNoEffect() {
         Fixture f; f.inspect(); f.target.rejectLane(execution::Lane::Domain); f.owner->apply(); f.drain();
@@ -421,7 +423,7 @@ private Q_SLOTS:
             }, [] {}, std::move(failed), {execution::Lane::Core, 512});
         };
         services.present = [&](auto, auto, auto, auto allowed) { gui = [&, allowed] { if (allowed->load()) ++installs; }; };
-        const auto port = paymentimport::WithReviewFactory(base, services); QVERIFY(port);
+        auto port = paymentimport::WithReviewFactory(base, services); QVERIFY(port);
         const paymentimport::Child child{1, 1, paymentimport::ChildKind::CreateReview, Target(), false};
         QVERIFY(port->dispatch({42, 1}, child, std::make_shared<const paymentimport::Inspection>(Psbt()), [](auto) {}, {}));
         commands.drain(); QCOMPARE(creates, 1); QVERIFY(gui);
@@ -430,6 +432,8 @@ private Q_SLOTS:
         QVERIFY(port->query({42, 1}, child, [&](auto reply) { result = reply; }, {})); commands.drain();
         QVERIFY(result); QCOMPARE(result->receipt.outcome, paymentimport::Outcome::ReviewOpened); QCOMPARE(creates, 1);
         QVERIFY(port->acknowledge({42, 1}, child)); commands.drain();
+        result.reset(); port.reset(); commands.drain();
+        QVERIFY(commands.quiescent());
     }
     void reviewFactoryRetainsKnownFailuresForLostAcknowledgment() {
         ManualRoutedExecution commands; auto base = std::make_shared<paymentimport::TargetPort>();
@@ -439,13 +443,15 @@ private Q_SLOTS:
             return execution::Submit(*commands.scheduler, [&] { ++creates; throw std::runtime_error{"read failure"}; },
                 [] {}, std::move(failed), {execution::Lane::Core, 512});
         };
-        const auto port = paymentimport::WithReviewFactory(base, services); QVERIFY(port);
+        auto port = paymentimport::WithReviewFactory(base, services); QVERIFY(port);
         const paymentimport::Child child{1, 1, paymentimport::ChildKind::CreateReview, Target(), false};
         QVERIFY(port->dispatch({42, 1}, child, std::make_shared<const paymentimport::Inspection>(Psbt()), [](auto) {}, {})); commands.drain();
         std::optional<paymentimport::ChildReply> result;
         QVERIFY(port->query({42, 1}, child, [&](auto reply) { result = reply; }, {})); commands.drain();
         QVERIFY(result); QCOMPARE(result->receipt.outcome, paymentimport::Outcome::Rejected); QCOMPARE(creates, 1);
         QVERIFY(!result->review->message.isEmpty()); QVERIFY(port->acknowledge({42, 1}, child)); commands.drain();
+        result.reset(); port.reset(); commands.drain();
+        QVERIFY(commands.quiescent());
     }
     void originalExportRequiresMatchingSourceToken() {
         ManualRoutedExecution commands; std::deque<std::function<void()>> gui;
@@ -462,7 +468,12 @@ private Q_SLOTS:
         QVERIFY(operation->fileExportOperation()->saved());
         QFile saved{dir.filePath("original.psbt")}; QVERIFY(saved.open(QIODevice::ReadOnly)); QCOMPARE(saved.readAll(), bytes);
         operation->cancel(); QVERIFY(!operation->requestSaveOriginal(operation->exportToken(), dir.filePath("closed")));
-        model.closeAdmission(); commands.drain();
+        model.closeAdmission(); delete operation;
+        do {
+            commands.drain();
+            while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+        } while (!commands.queuedIdle() || !commands.activeIdle());
+        QVERIFY(commands.quiescent());
     }
     void closedTypedSourcesReleaseTheirActionScopes() {
         ManualRoutedExecution commands; BitcoinUriModel importer; QObject view;
@@ -629,7 +640,7 @@ private Q_SLOTS:
         const auto pump = [&] { sources.drain(); commands.drain(); publish(target_gui); publish(source_gui); QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall); };
         const auto cleanup = qScopeGuard([&] {
             importer.closeAdmission(); model.beginShutdown();
-            if (!QTest::qWaitFor([&] { pump(); return model.shutdownComplete() && model.backendExecutor()->isDrained() && commands.quiescent(); }, 3000))
+            if (!QTest::qWaitFor([&] { pump(); return model.shutdownComplete() && model.backendExecutor()->isDrained() && commands.quiescent() && sources.quiescent() && target_gui.empty() && source_gui.empty(); }, 3000))
                 QTest::qFail("Original applied import graph did not physically drain", __FILE__, __LINE__);
         });
         QVERIFY(QTest::qWaitFor([&] { pump(); return model.capabilitiesKnown() && !model.sendRecipientList()->validationPending(); }, 5000));
@@ -650,6 +661,7 @@ private Q_SLOTS:
         QVERIFY(QTest::qWaitFor([&] { pump(); return operation->state() == PaymentImportOperation::State::Closed; }, 5000));
         QCOMPARE(operation->outcome(), PaymentImportOperation::Outcome::AppliedOutcome);
         QVERIFY(operation->resultId() > 0); QCOMPARE(dispatches, 1); QVERIFY(queries >= 1); QVERIFY(!operation->pending());
+        delete operation; // Release the retained Source snapshot before its manual Native transport.
     }
     void typedFacadePublishesBoundedSourceWithoutTargetOrGuiParsing() {
         ManualRoutedExecution commands; std::deque<std::function<void()>> gui;
@@ -662,7 +674,12 @@ private Q_SLOTS:
         QCOMPARE(operation->outcome(), PaymentImportOperation::Outcome::NoOutcome);
         QCOMPARE(operation->address(), Address()); QCOMPARE(operation->publicLabel(), QStringLiteral("Public"));
         QCOMPARE(operation->message(), QStringLiteral("Message")); QCOMPARE(operation->amount(), qint64{12'345'678}); QVERIFY(!operation->canApply());
-        operation->cancel(); commands.drain(); model.closeAdmission(); commands.drain();
+        operation->cancel(); commands.drain(); model.closeAdmission(); delete operation;
+        do {
+            commands.drain();
+            while (!gui.empty()) { auto turn = std::move(gui.front()); gui.pop_front(); turn(); }
+        } while (!commands.queuedIdle() || !commands.activeIdle());
+        QVERIFY(commands.quiescent());
     }
 };
 BITCOINQML_REGISTER_QT_TEST(PaymentImportTests)
