@@ -788,7 +788,15 @@ void RpcConsoleModelTests::acceptedCancellationStaysKnownNotStarted()
     env.drain(); env.publishAll();
     QCOMPARE(node.effects, 0); QVERIFY(!model.executing());
     const auto result = receipt->result(); QVERIFY(result); QVERIFY(result->error); QVERIFY(!result->value);
-    QVERIFY_THROWS_EXCEPTION(execution::NotStarted, std::rethrow_exception(result->error));
+    bool known_not_started{false};
+    try {
+        std::rethrow_exception(result->error);
+    } catch (const execution::NotStarted&) {
+        known_not_started = true;
+    } catch (...) {
+        QFAIL("Cancelled RPC receipt retained an unexpected exception type");
+    }
+    QVERIFY(known_not_started);
     auto* output = model.outputModel(); QCOMPARE(output->rowCount(), 1);
     QVERIFY(output->data(output->index(0), RpcOutputListModel::WalletContextRole).toBool());
     QCOMPARE(output->data(output->index(0), RpcOutputListModel::WalletNameRole).toString(), QStringLiteral("original"));

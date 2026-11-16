@@ -76,7 +76,15 @@ void RpcCommandExecutorTests::preparedValidationPrecedesAnyNestedEffect()
         UniValue executeRpc(const std::string&, const UniValue&, const std::string&) override { ++effects; return {}; }
     } node;
     std::string result;
-    QVERIFY_THROWS_EXCEPTION(std::runtime_error, RpcCommandExecutor::RPCExecuteCommandLine(node, result, "getblockcount() getblockcount()"));
+    bool malformed_rejected{false};
+    try {
+        RpcCommandExecutor::RPCExecuteCommandLine(node, result, "getblockcount() getblockcount()");
+    } catch (const std::runtime_error&) {
+        malformed_rejected = true;
+    } catch (...) {
+        QFAIL("Malformed nested RPC command threw an unexpected exception type");
+    }
+    QVERIFY(malformed_rejected);
     QCOMPARE(node.effects, 0);
 }
 
