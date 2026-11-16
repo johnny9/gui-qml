@@ -4605,12 +4605,15 @@ private Q_SLOTS:
         env->advance(std::chrono::milliseconds{250}); QCOMPARE(reads, 0); env->publishAll(); QVERIFY(!model->feeEstimatePending());
         model->scheduleFeeEstimates(); receipts->drain(); env->advance(std::chrono::milliseconds{250});
         const auto original = receipts->startRead(); QVERIFY(original); QCOMPARE(reads, 1); env->publishAll();
-        const auto original_draft = model->sendRecipientList()->draftSnapshot(); QVERIFY(original_draft);
-        QVERIFY(captured_dependencies);
-        QCOMPARE(captured_dependencies->draft, original_draft->revision);
-        QCOMPARE(captured_dependencies->intent, original_draft->intent_revision);
-        QCOMPARE(captured_dependencies->policy, model->fees()->policyRevision());
-        QCOMPARE(captured_dependencies->requirements, model->fees()->observationRevision());
+        {
+            // This inspection alias owns Native cleanup until it is released.
+            const auto original_draft = model->sendRecipientList()->draftSnapshot(); QVERIFY(original_draft);
+            QVERIFY(captured_dependencies);
+            QCOMPARE(captured_dependencies->draft, original_draft->revision);
+            QCOMPARE(captured_dependencies->intent, original_draft->intent_revision);
+            QCOMPARE(captured_dependencies->policy, model->fees()->policyRevision());
+            QCOMPARE(captured_dependencies->requirements, model->fees()->observationRevision());
+        }
         QCOMPARE(model->fees()->estimateState(), FeeSelectionModel::Reading);
         QVERIFY(receipts->finishOutcome(*original)); QCOMPARE(receipts->publicationCount(), size_t{1});
         QVERIFY(receipts->publish(*original));
@@ -5021,12 +5024,15 @@ private Q_SLOTS:
         QVERIFY(SettleManualFeeInputs(*model, env, receipts));
         model->scheduleFeeEstimates(); receipts->drain(); env->advance(std::chrono::milliseconds{250});
         const auto original = receipts->startRead(); QVERIFY(original); QCOMPARE(reads, 1); env->publishAll();
-        const auto original_draft = model->sendRecipientList()->draftSnapshot(); QVERIFY(original_draft);
-        QVERIFY(captured_dependencies);
-        QCOMPARE(captured_dependencies->draft, original_draft->revision);
-        QCOMPARE(captured_dependencies->intent, original_draft->intent_revision);
-        QCOMPARE(captured_dependencies->policy, model->fees()->policyRevision());
-        QCOMPARE(captured_dependencies->requirements, model->fees()->observationRevision());
+        {
+            // This inspection alias owns Native cleanup until it is released.
+            const auto original_draft = model->sendRecipientList()->draftSnapshot(); QVERIFY(original_draft);
+            QVERIFY(captured_dependencies);
+            QCOMPARE(captured_dependencies->draft, original_draft->revision);
+            QCOMPARE(captured_dependencies->intent, original_draft->intent_revision);
+            QCOMPARE(captured_dependencies->policy, model->fees()->policyRevision());
+            QCOMPARE(captured_dependencies->requirements, model->fees()->observationRevision());
+        }
         QCOMPARE(model->fees()->estimateState(), FeeSelectionModel::Reading);
         QVERIFY(receipts->finishOutcome(*original));
         QCOMPARE(receipts->publicationCount(), size_t{1}); QVERIFY(!env->scheduler->phase(*original));
