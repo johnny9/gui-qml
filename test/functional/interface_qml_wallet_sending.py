@@ -236,7 +236,8 @@ def legacy_fee_matrix(harness, checkpoint, version, confirmed=True):
             signed = rpc_call(harness.gui_rpc_port, "finalizepsbt", [doc])
             assert signed["complete"]
             control_hex = signed["hex"]
-            expected_txid = rpc_call(harness.gui_rpc_port, "decoderawtransaction", [control_hex])["txid"]
+            decoded_control = rpc_call(harness.gui_rpc_port, "decoderawtransaction", [control_hex])
+            expected_txid = decoded_control["txid"]
             candidate = PSBT.from_base64(doc)
             assert candidate.version == version
             if forged or not confirmed:
@@ -289,7 +290,24 @@ def legacy_fee_matrix(harness, checkpoint, version, confirmed=True):
                   "can_send": gui.get_property("sendTransactionReviewPage", "canSend"),
                   "can_broadcast": gui.get_property("sendTransactionReviewPage", "canBroadcast")}), flush=True)
             assert gui.get_property("sendTransactionReviewPage", "wallet.recipients.count") == 1
-            assert sum(bool(output["isChange"]) for output in full_outputs) == (1 if owned == 2 else 0)
+            # R21 imported reviews bind every output and deliberately leave
+            # change intent unknown. Retain the independent Core classification
+            # oracle without inferring intent from wallet ownership in the DTO.
+            assert {output["index"] for output in full_outputs} == set(range(len(outputs)))
+            core_change_count = 0
+            for output in full_outputs:
+                index = output["index"]
+                authoritative = decoded_control["vout"][index]
+                assert output["id"] == f"output:{index}", output
+                assert output["address"] == authoritative["scriptPubKey"]["address"], output
+                assert output["amountKnown"] is True, output
+                assert output["amountSat"] == int(Decimal(str(authoritative["value"])) * 100_000_000), output
+                info = rpc_call(harness.gui_rpc_port, "getaddressinfo", [output["address"]], wallet="fee-reviewer")
+                assert (output["ownership"] == "wallet") == info["ismine"], (output, info)
+                core_change_count += bool(info.get("ischange", False))
+                assert output["changeKnown"] is False, output
+                assert output["isChange"] is False, output
+            assert core_change_count == (1 if owned == 2 else 0), full_outputs
             if forged:
                 assert not fee_known and fee_sat is None
                 assert not gui.get_property("sendTransactionReviewPage", "canSend")
