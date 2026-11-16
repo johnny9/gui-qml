@@ -653,8 +653,9 @@ WalletQmlController::WalletQmlController(interfaces::Node& node, execution::Limi
     m_import_error_services = {backgroundScheduler(), m_services.post};
     m_selection = new WalletSelectionModel(m_empty_wallet, [this](WalletQmlModel* wallet) { return m_registry->containsExact(wallet); }, this);
     connect(m_selection, &WalletSelectionModel::selectedWalletChanged, this, [this] {
+        const QPointer<WalletQmlController> observer{this};
         updateNotificationContext();
-        Q_EMIT selectedWalletChanged();
+        if (observer && !m_shutting_down) Q_EMIT selectedWalletChanged();
     });
     m_home_path = qEnvironmentVariable("HOME");
     m_registry->setNotificationOrigin(newAdoptionOrigin());
@@ -696,10 +697,11 @@ void WalletQmlController::setSelectedWallet(QString path, QString wallet_format)
     m_admitting_command = true;
     const QPointer<WalletQmlController> observer{this};
     const auto admission_guard = qScopeGuard([observer] { if (observer) observer->m_admitting_command = false; });
-    m_admission_selection_revision = m_selection->beginSelection(path);
+    const auto revision = m_selection->beginSelection(path);
     if (!observer || m_shutting_down) return;
-    const auto revision = m_admission_selection_revision;
+    m_admission_selection_revision = revision;
     updateNotificationContext();
+    if (!observer || m_shutting_down) return;
     startWalletLoad(path, wallet_format);
     if (observer && m_command_state != WalletOperationState::WalletOperationPending) m_selection->finishSelection(revision);
 }
@@ -1112,11 +1114,19 @@ void WalletQmlController::trackCreation(WalletOperationModel* operation)
     const QPointer<WalletOperationModel> original{operation};
     m_registry->registerForm(operation, [original] { if (original) original->closeAdmission(); });
     connect(operation, &QObject::destroyed, this, [this, operation] { m_registry->forgetForm(operation); });
-    connect(operation, &WalletOperationModel::activated, this, [this](WalletOperationModel* active) { if (m_creation == active && m_creation_busy) return; m_creation = active; m_creation_busy = true; updateNotificationContext(); Q_EMIT walletLoadInProgressChanged(); });
+    connect(operation, &WalletOperationModel::activated, this, [this](WalletOperationModel* active) {
+        if (m_creation == active && m_creation_busy) return;
+        m_creation = active; m_creation_busy = true;
+        const QPointer<WalletQmlController> guard{this};
+        updateNotificationContext();
+        if (guard && !m_shutting_down) Q_EMIT walletLoadInProgressChanged();
+    });
     connect(operation, &WalletOperationModel::changed, this, [this, original] {
         if (!original || m_shutting_down || m_creation != original) return;
         const QPointer<WalletQmlController> guard{this};
-        updateNotificationContext(); Q_EMIT walletOperationChanged(); if (!guard) return;
+        updateNotificationContext();
+        if (!guard || m_shutting_down || !original || m_creation != original) return;
+        Q_EMIT walletOperationChanged(); if (!guard || !original) return;
         const auto error = original->errorText().constData();
         const auto warning = original->warningText().constData();
         if (m_creation_error_data != error) { m_creation_error_data = error; Q_EMIT walletCreateErrorChanged(); if (!guard) return; Q_EMIT walletLoadErrorChanged(); if (!guard) return; }
@@ -1156,8 +1166,9 @@ void WalletQmlController::trackCreation(WalletOperationModel* operation)
             else Q_EMIT walletCreateSucceeded(original->resultWallet());
         }
     });
-    updateNotificationContext();
     const QPointer<WalletQmlController> guard{this};
+    updateNotificationContext();
+    if (!guard || m_shutting_down) return;
     Q_EMIT walletOperationChanged(); if (guard) Q_EMIT walletLoadInProgressChanged();
 }
 WalletOperationModel* WalletQmlController::startCreation(WalletCreationModel::Kind kind, const QString& name, const QString& key, const QString& passphrase)
@@ -1426,13 +1437,14 @@ size_t WalletQmlController::adoptionFenceCount() const
 void WalletQmlController::updateNotificationContext()
 {
     if (!m_load_subscription || m_shutting_down) return;
+    const auto subscription = m_load_subscription;
     auto origin = walletLoadInProgress() && m_registry->commandOrigin() ? m_registry->commandOrigin() : m_registry->notificationOrigin();
     if (!origin) {
-        m_load_subscription->rejectNotificationContext();
+        subscription->rejectNotificationContext();
         return;
     }
     const auto deferred_name = m_creation && m_creation->busy() && m_creation->creationKind() == walletcreation::Kind::WatchOnly ? m_creation->targetWalletId() : m_deferred_wallet_name;
-    m_load_subscription->setNotificationContext(deferred_name, walletLoadInProgress(), m_selection->revision(), std::move(origin), m_creation && m_creation_admission->creationPending() ? m_creation->nativeObservation() : nullptr);
+    subscription->setNotificationContext(deferred_name, walletLoadInProgress(), m_selection->revision(), std::move(origin), m_creation && m_creation_admission->creationPending() ? m_creation->nativeObservation() : nullptr);
 }
 void WalletQmlController::closeOpeningAdoption(WalletQmlModel* wallet)
 { m_registry->closeOpening(wallet); }
@@ -1479,6 +1491,7 @@ void WalletQmlController::initialize()
         }, [clock = m_registry->eventClock()] { return clock->next(); },
         [node = &m_node](interfaces::Wallet& wallet) { return walletidentity::Canonical(QString::fromStdString(wallet.getWalletName()), QString::fromStdString(node->walletLoader().getWalletDir())).toStdString(); });
     updateNotificationContext();
+    if (!guard || m_shutting_down) return;
     if (!m_registry->notificationOrigin() || !m_load_subscription->start()) {
         m_initializing = false;
         m_initialization_failed = true;

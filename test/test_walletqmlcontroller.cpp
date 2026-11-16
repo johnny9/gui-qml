@@ -688,6 +688,8 @@ private Q_SLOTS:
     void manualCloseEscrowRefusalKeepsActualSuccessWithoutResurrection();
     void manualControllerAdmissionSurvivesReentrantOwnerLoss_data();
     void manualControllerAdmissionSurvivesReentrantOwnerLoss();
+    void manualPendingSelectionKeepsNoOwnerReferenceAfterNotification_data();
+    void manualPendingSelectionKeepsNoOwnerReferenceAfterNotification();
     void manualInjectedShutdownOwnsAcceptedOutcomeAfterObserverLoss_data();
     void manualInjectedShutdownOwnsAcceptedOutcomeAfterObserverLoss();
     void acceptedCreationDoesNotRetargetLaterSelection();
@@ -3652,12 +3654,16 @@ void WalletQmlControllerTests::manualCloseEscrowRefusalKeepsActualSuccessWithout
 void WalletQmlControllerTests::manualControllerAdmissionSurvivesReentrantOwnerLoss_data()
 {
     QTest::addColumn<bool>("after_borrow");
-    QTest::newRow("after-cleanup-reservation") << false;
-    QTest::newRow("after-original-borrow") << true;
+    QTest::addColumn<bool>("destroy");
+    QTest::newRow("after-cleanup-reservation") << false << true;
+    QTest::newRow("after-original-borrow") << true << true;
+    QTest::newRow("quiet-after-cleanup-reservation") << false << false;
+    QTest::newRow("quiet-after-original-borrow") << true << false;
 }
 void WalletQmlControllerTests::manualControllerAdmissionSurvivesReentrantOwnerLoss()
 {
     QFETCH(bool, after_borrow);
+    QFETCH(bool, destroy);
     MockNode node;
     FakeWalletLoader loader;
     ConfigureExpectedControllerInitialization(node, loader);
@@ -3669,11 +3675,46 @@ void WalletQmlControllerTests::manualControllerAdmissionSurvivesReentrantOwnerLo
     graph.controller->initialize();
     QVERIFY(graph.until([&] { return graph.controller->initialized(); }));
     const QPointer<WalletQmlController> observed{graph.controller.get()};
-    const auto retire = [&] { graph.controller.reset(); };
+    const auto retire = [&] {
+        if (destroy) graph.controller.reset();
+        else graph.controller->beginShutdown();
+    };
     if (after_borrow) boundary->after_borrow = retire;
     else boundary->after_reserve = retire;
     observed->setSelectedWallet("never-loaded", "sqlite");
-    QVERIFY(!observed);
+    if (destroy) QVERIFY(!observed);
+    else QVERIFY(observed && observed->m_shutting_down);
+    QCOMPARE(loader.load_wallet_calls, 0);
+    QVERIFY(graph.until([&] { return graph.physical_completions == 1 && graph.native.scheduler->pending() == 0; }));
+}
+
+void WalletQmlControllerTests::manualPendingSelectionKeepsNoOwnerReferenceAfterNotification_data()
+{
+    QTest::addColumn<bool>("destroy");
+    QTest::newRow("controller-destroyed") << true;
+    QTest::newRow("quiet-controller-retained") << false;
+}
+void WalletQmlControllerTests::manualPendingSelectionKeepsNoOwnerReferenceAfterNotification()
+{
+    QFETCH(bool, destroy);
+    MockNode node;
+    FakeWalletLoader loader;
+    ConfigureExpectedControllerInitialization(node, loader);
+    ManualControllerGraph graph{node};
+    graph.controller->initialize();
+    QVERIFY(graph.until([&] { return graph.controller->initialized(); }));
+    const QPointer<WalletQmlController> observed{graph.controller.get()};
+    bool retired{false};
+    connect(graph.controller->selection(), &WalletSelectionModel::pendingChanged, graph.controller.get(), [&] {
+        if (retired) return;
+        retired = true;
+        if (destroy) graph.controller.reset();
+        else graph.controller->beginShutdown();
+    });
+    observed->setSelectedWallet("unused-after-pending-notice", "sqlite");
+    QVERIFY(retired);
+    if (destroy) QVERIFY(!observed);
+    else QVERIFY(observed && observed->m_shutting_down);
     QCOMPARE(loader.load_wallet_calls, 0);
     QVERIFY(graph.until([&] { return graph.physical_completions == 1 && graph.native.scheduler->pending() == 0; }));
 }
