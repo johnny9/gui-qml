@@ -5854,6 +5854,10 @@ void WalletQmlModelTests::customFeeRateRespectsRelayMinimum()
     FeeReadServices services;
     services.timer = clock;
     auto [wallet, model] = MakeConfiguredWalletModel([calls](MockWallet& value) {
+        // Automatic target quotes share this fixture's1000 sat/kvB wallet
+        // floor. Returning0 for every target except the selected regtest rate
+        // invents successive observation policies while the timer is running.
+        value.get_minimum_fee_fn = [](const wallet::CCoinControl&) { return CAmount{1000}; };
         value.create_transaction_fn = [calls](const std::vector<wallet::CRecipient>& recipients,
                                               const wallet::CCoinControl& control, bool sign,
                                               int& change_pos, CAmount& fee) -> util::Result<CTransactionRef> {
