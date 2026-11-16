@@ -476,6 +476,20 @@ void SetValidRecipient(WalletQmlModel& model,
         "Aggregate draft must be published before scheduling fee estimates");
 }
 
+// Settle observation prerequisites without advancing the business debounce.
+// These fixtures then own both the captured fee request and its later outcome.
+bool SettleManualFeeInputs(WalletQmlModel& model, const std::shared_ptr<ManualExecutionEnvironment>& environment,
+                          const std::shared_ptr<ManualFeeReceipts>& receipts)
+{
+    for (int budget{0}; budget < 128; ++budget) {
+        receipts->drain(); environment->publishAll();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        if (environment->turnsIdle() && environment->publicationsIdle() && receipts->publicationCount() == 0 &&
+            model.availableSendBalanceKnown() && !model.fees()->policyPending() && model.sendRecipientList()->draftSnapshot()) return true;
+    }
+    return false;
+}
+
 class FakePasswordWallet : public StubWallet
 {
 private:
@@ -4586,16 +4600,7 @@ private Q_SLOTS:
         auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services), false, {}, {}, {}, env->scheduler);
         const auto cleanup = qScopeGuard([&] { model.reset(); receipts->drain(); receipts->publishAll(); env->publishAll(); });
         SetValidRecipient(*model, VALID_MAINNET_ADDRESS, env);
-        const auto settle_observations = [&] {
-            for (int budget{0}; budget < 128; ++budget) {
-                receipts->drain(); env->publishAll();
-                QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
-                if (env->turnsIdle() && env->publicationsIdle() && model->availableSendBalanceKnown() &&
-                    !model->fees()->policyPending() && model->sendRecipientList()->draftSnapshot()) return true;
-            }
-            return false;
-        };
-        QVERIFY(settle_observations());
+        QVERIFY(SettleManualFeeInputs(*model, env, receipts));
         model->scheduleFeeEstimates(); receipts->drain(); env->rejectNext();
         env->advance(std::chrono::milliseconds{250}); QCOMPARE(reads, 0); env->publishAll(); QVERIFY(!model->feeEstimatePending());
         model->scheduleFeeEstimates(); receipts->drain(); env->advance(std::chrono::milliseconds{250});
@@ -5002,18 +5007,27 @@ private Q_SLOTS:
         auto env = std::make_shared<ManualExecutionEnvironment>();
         auto receipts = std::make_shared<ManualFeeReceipts>(env);
         int reads{0}, notifications{0};
-        FeeReadServices services{env->scheduler, env, [&, receipts](const FeeReadInput&) {
-            receipts->readStarted(); ++reads;
+        std::optional<feeestimate::Dependencies> captured_dependencies;
+        FeeReadServices services{env->scheduler, env, [&, receipts](const FeeReadInput& input) {
+            receipts->readStarted(); ++reads; captured_dependencies = input.dependencies;
             if (error) throw std::runtime_error("queued old error");
             FeeReadResult result; result.estimates.insert(6, SendFeePreview{500, 1, 1000, {}, false}); return result;
         }, [receipts](auto publication) { receipts->post(std::move(publication)); }};
-        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services));
+        auto [wallet, model] = MakeWalletModel(nullptr, nullptr, std::move(services), false, {}, {}, {}, env->scheduler);
         const auto cleanup = qScopeGuard([&] { model.reset(); receipts->drain(); receipts->publishAll(); env->publishAll(); });
         connect(model.get(), &WalletQmlModel::estimatedFeeChanged, model.get(), [&] { ++notifications; });
         connect(model.get(), &WalletQmlModel::feeEstimatePendingChanged, model.get(), [&] { ++notifications; });
         SetValidRecipient(*model, VALID_MAINNET_ADDRESS, env);
+        QVERIFY(SettleManualFeeInputs(*model, env, receipts));
         model->scheduleFeeEstimates(); receipts->drain(); env->advance(std::chrono::milliseconds{250});
         const auto original = receipts->startRead(); QVERIFY(original); QCOMPARE(reads, 1); env->publishAll();
+        const auto original_draft = model->sendRecipientList()->draftSnapshot(); QVERIFY(original_draft);
+        QVERIFY(captured_dependencies);
+        QCOMPARE(captured_dependencies->draft, original_draft->revision);
+        QCOMPARE(captured_dependencies->intent, original_draft->intent_revision);
+        QCOMPARE(captured_dependencies->policy, model->fees()->policyRevision());
+        QCOMPARE(captured_dependencies->requirements, model->fees()->observationRevision());
+        QCOMPARE(model->fees()->estimateState(), FeeSelectionModel::Reading);
         QVERIFY(receipts->finishOutcome(*original));
         QCOMPARE(receipts->publicationCount(), size_t{1}); QVERIFY(!env->scheduler->phase(*original));
         if (boundary == 0) {
