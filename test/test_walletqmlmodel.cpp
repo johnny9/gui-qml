@@ -5889,10 +5889,20 @@ void WalletQmlModelTests::customFeeRateRespectsRelayMinimum()
     // policy publication can revise the request after this first deadline.
     // Advance only that still-unread revision; the fully manual fee-clock
     // regression separately proves the exact 249/250-ms dispatch boundary.
-    QVERIFY(QTest::qWaitFor([&] {
+    const bool estimate_complete = QTest::qWaitFor([&] {
         if (valid && calls->Size() == 0 && !model->fees()->policyPending()) clock->advance(std::chrono::milliseconds{250});
         return calls->Size() == (valid ? 4U : 0U) && !model->feeEstimatePending() && !model->fees()->policyPending();
-    }, FEE_ESTIMATE_TIMEOUT_MS));
+    }, FEE_ESTIMATE_TIMEOUT_MS);
+    QStringList effects;
+    for (const auto& call : calls->Snapshot()) {
+        effects.push_back(QStringLiteral("target=%1 sign=%2 rate=%3 recipients=%4")
+            .arg(call.target).arg(call.sign).arg(call.fee_rate.value_or(-1)).arg(qulonglong(call.recipient_count)));
+    }
+    const QString observation = QStringLiteral("effects=%1 pending=%2 policyPending=%3 observation=%4 policy=%5 rate=%6 error=%7 calls=[%8]")
+        .arg(qulonglong(calls->Size())).arg(model->feeEstimatePending()).arg(model->fees()->policyPending())
+        .arg(model->fees()->observationRevision()).arg(model->fees()->policyRevision())
+        .arg(model->customFeeRate()).arg(model->fees()->errorText()).arg(effects.join(QStringLiteral("; ")));
+    QVERIFY2(estimate_complete, qPrintable(observation));
     QCOMPARE(!model->estimatedFee().isEmpty(), valid);
     QCOMPARE(AwaitPreparation(*model), valid);
     QCOMPARE(calls->Size(), valid ? 5U : 0U);
