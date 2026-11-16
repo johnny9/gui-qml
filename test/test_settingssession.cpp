@@ -8,7 +8,22 @@ namespace {
 using namespace effectivesettings;
 Snapshot Original() {
     Snapshot result;result.ready=true;result.revision="original";
-    for(size_t i=0;i<settingsedit::FIELDS;++i){const auto key=static_cast<Key>(i);Value value=Type(key)==Kind::Boolean?Value{true}:Type(key)==Kind::Integer?Value{int64_t{20}}:Value{QStringLiteral("original")};result.fields.push_back({key,Type(key),value,value,value});}
+    for (size_t i{0}; i < settingsedit::FIELDS; ++i) {
+        const auto key = static_cast<Key>(i);
+        const auto kind = Type(key);
+        switch (kind) {
+        case Kind::Boolean:
+            result.fields.push_back({key, kind, true, true, true});
+            break;
+        case Kind::Integer:
+            result.fields.push_back({key, kind, int64_t{20}, int64_t{20}, int64_t{20}});
+            break;
+        case Kind::Text:
+            result.fields.push_back({key, kind, QStringLiteral("original"),
+                QStringLiteral("original"), QStringLiteral("original")});
+            break;
+        }
+    }
     return result;
 }
 settingsedit::Session Editor(Snapshot snapshot=Original()) {
