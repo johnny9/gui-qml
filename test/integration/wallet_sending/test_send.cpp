@@ -24,6 +24,7 @@
 #include <QGuiApplication>
 #include <QInputMethodEvent>
 #include <core_io.h>
+#include <util/string.h>
 #include <qml/models/options_model.h>
 
 #include <algorithm>
@@ -35,6 +36,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <string>
 #include <vector>
 
 class SendIntegrationTests : public QObject
@@ -333,7 +335,8 @@ private Q_SLOTS:
                 const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now() - started).count();
                 native_ms->store(duration, std::memory_order_relaxed);
-                std::fprintf(stdout, "R42_FUNDING_NATIVE_COMPLETE elapsed_ms=%lld\n", static_cast<long long>(duration));
+                const std::string line = "R42_FUNDING_NATIVE_COMPLETE elapsed_ms=" + util::ToString(duration) + "\n";
+                std::fwrite(line.data(), 1, line.size(), stdout);
                 std::fflush(stdout);
             });
             try {
