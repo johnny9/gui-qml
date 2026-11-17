@@ -208,40 +208,10 @@ def prepare_existing_profile_with_explicit_walletdir(tmpdir, wallet_name):
     return datadir, rpc_port, walletdir
 
 
-def run_public_wallet_directory_helper_protocol():
-    """Public Core recognition stays read-only and uses the proposed network."""
-    tmpdir = create_test_directory(prefix="qml_profile_inspector_", dir="/tmp")
-    helper = os.path.join(os.path.dirname(find_gui_binary()), "bitcoin-core-profile-inspector" + (".exe" if os.name == "nt" else ""))
-    assert os.path.isfile(helper), helper
-    results = []
+# Bitcoin-Qt stores the display unit as its own serialized BitcoinUnit type.
+BITCOIN_QT_BTC_UNIT = "DisplayBitcoinUnit=@Variant(\\0\\0\\0\\x7f\\0\\0\\0\\fBitcoinUnit\\0\\0)"
+BITCOIN_QT_SAT_UNIT = "DisplayBitcoinUnit=@Variant(\\0\\0\\0\\x7f\\0\\0\\0\\fBitcoinUnit\\0\\x3)"
 
-    def snapshot(path):
-        files = {}
-        for directory, _, names in os.walk(path):
-            for name in names:
-                filename = os.path.join(directory, name)
-                data = os.stat(filename)
-                with open(filename, "rb") as stream:
-                    digest = hashlib.sha256(stream.read()).hexdigest()
-                files[os.path.relpath(filename, path)] = (digest, data.st_size, data.st_mode, data.st_mtime_ns, data.st_ctime_ns)
-        return files
-
-    def inspect(name, directory, chain, expected, challenge=None):
-        request = {"directory": directory, "chain": chain, "signet_challenge": challenge}
-        # This independent JSON encoder checks the documented canonical wire
-        # tag; wallet recognition itself comes exclusively from public Core.
-        tag = hashlib.sha256(json.dumps(request, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
-        command = [helper, "--protocol", "1", "--request-tag", tag, "--walletdir", directory, "--chain", chain]
-        if challenge is not None:
-            command += ["--signetchallenge", challenge]
-        before = snapshot(tmpdir)
-        child = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15, check=False)
-        value = json.loads(child.stdout)
-        assert child.returncode == 0, (name, child.returncode, value, child.stderr)
-        assert not child.stderr, (name, child.stderr)
-        assert value == {"protocol": 1, "request_tag": tag, "ok": True, "has_wallet_data": expected}, (name, value)
-        assert snapshot(tmpdir) == before, name
-        results.append({"case": name, "exit": child.returncode, "stderr_bytes": len(child.stderr), "has_wallet_data": expected, "target_unchanged": True})
 
 def write_bitcoin_qt_settings(bitcoin_qt, tmpdir, home, chain_args, conf_lines):
     """Run a released Bitcoin-Qt once and return the settings file it wrote."""
@@ -255,7 +225,79 @@ def write_bitcoin_qt_settings(bitcoin_qt, tmpdir, home, chain_args, conf_lines):
     try:
         wait_for_rpc_or_process_exit(process, rpc_port, datadir)
     finally:
-        cleanup_test_directory(tmpdir)
+        stop_bitcoin_qt(process, rpc_port)
+    assert process.returncode == 0, process_output(process, datadir)
+    name = "Bitcoin-Qt-regtest" if chain_args == ["-regtest"] else "Bitcoin-Qt"
+    path = os.path.join(config_home, "Bitcoin", f"{name}.conf")
+    assert os.path.isfile(path), path
+    return path
+
+
+def run_bitcoin_qt_settings_adoption_flow():
+    """A Bitcoin-Qt user's datadir and display unit carry over without loss."""
+    bitcoin_qt = compat_bitcoin_qt_or_skip()
+    if not bitcoin_qt:
+        return 77
+    harness = QmlTestHarness(
+        use_datadir_arg=False,
+        reset_settings=False,
+        start_onboarded=False,
+        extra_args=["-regtest", "-disablewallet"],
+    )
+    tmpdir = harness.tmpdir
+    gui = None
+    try:
+        common = ["server=1", "listen=0", "connect=0", "dnsseed=0", "fixedseeds=0", "listenonion=0",
+                  "rpcbind=127.0.0.1", "rpcallowip=127.0.0.1", f"rpcuser={RPC_USER}", f"rpcpassword={RPC_PASS}"]
+        # The default-chain store holds the data directory; the regtest store the unit.
+        # Pruning avoids the default chain's modal disk-space warning.
+        main_store = write_bitcoin_qt_settings(bitcoin_qt, tmpdir, harness.home_dir, [], common + ["prune=550"])
+        regtest_store = write_bitcoin_qt_settings(bitcoin_qt, tmpdir, harness.home_dir, ["-regtest"],
+                                                  ["[regtest]"] + common)
+
+        # Without user input Bitcoin-Qt saves only its defaults. Change the
+        # saved values in its own format, so adoption differs from our defaults.
+        legacy_datadir = os.path.join(tmpdir, "bitcoin_qt_profile")
+        write_datadir(legacy_datadir, pick_unused_port(), pick_unused_port())
+        with open(main_store, encoding="utf8") as store:
+            main_settings = store.read()
+        assert "strDataDir=" in main_settings and BITCOIN_QT_BTC_UNIT in main_settings, main_settings
+        main_settings = "\n".join(f"strDataDir={legacy_datadir}" if line.startswith("strDataDir=") else line
+                                  for line in main_settings.splitlines()) + "\n"
+        with open(regtest_store, encoding="utf8") as store:
+            regtest_settings = store.read()
+        assert BITCOIN_QT_BTC_UNIT in regtest_settings, regtest_settings
+        regtest_settings = regtest_settings.replace(BITCOIN_QT_BTC_UNIT, BITCOIN_QT_SAT_UNIT)
+
+        # -test-settings-dir selects INI files there; the syntax is Bitcoin-Qt's native Linux format.
+        target = os.path.join(harness.config_home, "Bitcoin")
+        os.makedirs(target, exist_ok=True)
+        for name, text in (("Bitcoin-Qt.ini", main_settings), ("Bitcoin-Qt-regtest.ini", regtest_settings)):
+            with open(os.path.join(target, name), "w", encoding="utf8") as store:
+                store.write(text)
+
+        harness.start()
+        gui = finish_existing_profile_preinit_and_reconnect(harness, legacy_datadir, expect_custom_storage=False)
+        assert_node_shell_visible(gui)
+        gui.click("nodeSettingsButton")
+        gui.wait_for_page("settingsView")
+        gui.wait_for_property("settingsView", "optionsEditable", True)
+        gui.click("settingsSidebar_display")
+        gui.wait_for_property("settingsView", "selectedSectionId", "display")
+        gui.wait_for_property("displayUnitPicker", "currentValue", 3)
+
+        process = harness.process
+        gui.request_quit()
+        process.wait(timeout=30)
+        _, stderr = process.communicate(timeout=5)
+        # An unregistered BitcoinUnit loses the stored value with a Qt warning.
+        check_gui_exit(process.returncode, stderr.decode("utf8", errors="replace"), socket_path=harness.socket_path)
+    except Exception:
+        if gui is not None:
+            dump_qml_tree(gui)
+        raise
+    finally:
+        harness.stop()
 
 
 def assert_saved_connection_settings_visible(gui):
@@ -672,4 +714,5 @@ if __name__ == "__main__":
         scenario("root-wallet-discovery", 4, run_existing_profile_preserves_root_wallet_discovery_flow),
         scenario("explicit-walletdir-discovery", 4, run_existing_profile_detects_explicit_walletdir_flow),
         scenario("onboarded-override-settings", 2, run_qml_onboarded_override_reloads_saved_settings_flow),
+        scenario("bitcoin-qt-settings-adoption", 2, run_bitcoin_qt_settings_adoption_flow),
     ]))
