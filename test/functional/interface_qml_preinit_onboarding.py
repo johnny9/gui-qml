@@ -27,7 +27,17 @@ from qml_test_harness import (
     dump_qml_tree,
     setup_datadir,
 )
+from qml_process_checks import check_gui_exit
+from qml_qt_release_lib import (
+    compat_bitcoin_qt_or_skip,
+    launch_bitcoin_qt,
+    process_output,
+    stop_bitcoin_qt,
+    wait_for_rpc_or_process_exit,
+)
 from qml_wallet_test_lib import (
+    RPC_PASS,
+    RPC_USER,
     find_bitcoind,
     pick_unused_port,
     rpc_call,
@@ -196,6 +206,56 @@ def prepare_existing_profile_with_explicit_walletdir(tmpdir, wallet_name):
         stop_bitcoind(bitcoind, rpc_port)
 
     return datadir, rpc_port, walletdir
+
+
+def run_public_wallet_directory_helper_protocol():
+    """Public Core recognition stays read-only and uses the proposed network."""
+    tmpdir = create_test_directory(prefix="qml_profile_inspector_", dir="/tmp")
+    helper = os.path.join(os.path.dirname(find_gui_binary()), "bitcoin-core-profile-inspector" + (".exe" if os.name == "nt" else ""))
+    assert os.path.isfile(helper), helper
+    results = []
+
+    def snapshot(path):
+        files = {}
+        for directory, _, names in os.walk(path):
+            for name in names:
+                filename = os.path.join(directory, name)
+                data = os.stat(filename)
+                with open(filename, "rb") as stream:
+                    digest = hashlib.sha256(stream.read()).hexdigest()
+                files[os.path.relpath(filename, path)] = (digest, data.st_size, data.st_mode, data.st_mtime_ns, data.st_ctime_ns)
+        return files
+
+    def inspect(name, directory, chain, expected, challenge=None):
+        request = {"directory": directory, "chain": chain, "signet_challenge": challenge}
+        # This independent JSON encoder checks the documented canonical wire
+        # tag; wallet recognition itself comes exclusively from public Core.
+        tag = hashlib.sha256(json.dumps(request, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+        command = [helper, "--protocol", "1", "--request-tag", tag, "--walletdir", directory, "--chain", chain]
+        if challenge is not None:
+            command += ["--signetchallenge", challenge]
+        before = snapshot(tmpdir)
+        child = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15, check=False)
+        value = json.loads(child.stdout)
+        assert child.returncode == 0, (name, child.returncode, value, child.stderr)
+        assert not child.stderr, (name, child.stderr)
+        assert value == {"protocol": 1, "request_tag": tag, "ok": True, "has_wallet_data": expected}, (name, value)
+        assert snapshot(tmpdir) == before, name
+        results.append({"case": name, "exit": child.returncode, "stderr_bytes": len(child.stderr), "has_wallet_data": expected, "target_unchanged": True})
+
+def write_bitcoin_qt_settings(bitcoin_qt, tmpdir, home, chain_args, conf_lines):
+    """Run a released Bitcoin-Qt once and return the settings file it wrote."""
+    rpc_port = pick_unused_port()
+    datadir = os.path.join(tmpdir, "bitcoin_qt_" + (chain_args[0].lstrip("-") if chain_args else "main"))
+    config_home = os.path.join(tmpdir, "bitcoin_qt_config")
+    os.makedirs(datadir, exist_ok=True)
+    with open(os.path.join(datadir, "bitcoin.conf"), "w", encoding="utf8") as conf:
+        conf.write("\n".join(conf_lines + [f"rpcport={rpc_port}"]) + "\n")
+    process = launch_bitcoin_qt(bitcoin_qt, datadir, datadir, config_home=config_home, home=home, extra_args=chain_args)
+    try:
+        wait_for_rpc_or_process_exit(process, rpc_port, datadir)
+    finally:
+        cleanup_test_directory(tmpdir)
 
 
 def assert_saved_connection_settings_visible(gui):
@@ -488,10 +548,125 @@ def run_qml_onboarded_override_reloads_saved_settings_flow():
         cleanup_test_directory(tmpdir)
 
 
+def run_native_startup_failure_reopens_saved_setup_flow():
+    """The actual Core DNS failure must not make partial setup permanent."""
+    from qml_process_checks import check_gui_exit, unexpected_gui_stderr
+    tmpdir = create_test_directory(prefix="qml_setup_recovery_", dir="/tmp")
+    datadir = setup_datadir(tmpdir)
+    write_settings_json(datadir, {"qml_onboarded": True, "proxy": "no-such-host.invalid:9050", "prune": 550})
+    failed = QmlTestHarness(datadir=datadir, tmpdir=tmpdir, reset_settings=False,
+                           start_onboarded=False, extra_args=["-regtest", "-disablewallet", "-lang=en"])
+    recovered = None
+    try:
+        failed.start()
+        failed.driver.wait_for_property("nodeRuntimeDialog", "opened", True, timeout_ms=30000)
+        assert "Invalid -proxy address or hostname" in failed.driver.get_property("nodeRuntimeDialogMessage", "text")
+        try:
+            failed.driver.click("nodeRuntimeDialogButtonOk")
+        except ConnectionError:
+            # Failure shutdown may close the bridge before the click reply.
+            pass
+        failed.process.wait(timeout=20)
+        settings = read_settings_json(datadir)
+        assert settings.get("qml_onboarded") is False, settings
+        assert settings.get("proxy") == "no-such-host.invalid:9050", settings
+        failed.stop(cleanup=False)
+        stdout, stderr = failed.process.communicate()
+        print("Original failure stdout:\n" + stdout.decode("utf8", errors="replace"), flush=True)
+        stderr = stderr.decode("utf8", errors="replace")
+        print("Original failure stderr:\n" + stderr, flush=True)
+        assert failed.process.returncode == 1, (failed.process.returncode, stderr)
+        expected = "Invalid -proxy address or hostname: 'no-such-host.invalid:9050'"
+        unexpected = unexpected_gui_stderr(stderr, socket_path=failed.socket_path)
+        assert all(line in (expected, "Error: " + expected) for line in unexpected), unexpected
+        print("Retained native startup failure: exit=1; marker=false; proxy intent unchanged", flush=True)
+
+        recovered = QmlTestHarness(datadir=datadir, tmpdir=tmpdir, reset_settings=False,
+                                  start_onboarded=False, extra_args=["-regtest", "-disablewallet", "-lang=en"])
+        recovered.start()
+        gui = recovered.driver
+        click_existing_profile_to_connection(gui, datadir)
+        gui.click("connectionSettingsButton")
+        gui.wait_for_page("connectionSettingsPage")
+        gui.click("proxySettingsRow")
+        gui.wait_for_page("proxySettingsPage")
+        gui.wait_for_property("proxyEnableSwitch", "checked", True)
+        gui.click("proxyEnableSwitch")
+        gui.wait_for_property("proxyEnableSwitch", "checked", False)
+        gui.wait_for_property("proxySettingsPage", "proxyDraft.pending", False)
+        gui.wait_for_property("proxySettingsSaveButton", "enabled", True)
+        gui.click("proxySettingsSaveButton")
+        gui.wait_for_page("connectionSettingsPage")
+        # A visible underlying page during the stack transition does not prove
+        # the asynchronous draft was applied. Observe its authoritative model.
+        gui.wait_for_property("connectionSettingsPage", "settingsModel.proxyEnabled", False)
+        gui.wait_for_property("connectionSettingsPage", "coreSettingsModel.pending", False)
+        gui.click("onboardingConnectionSettingsCloseButton")
+        gui.wait_for_property("onboardingConnectionSettingsPopup", "visible", False)
+        click_onboarding_button(gui, "onboardingConnectionButton")
+        gui = recovered.wait_for_main_window_reconnect()
+        assert_node_shell_visible(gui)
+        settings = read_settings_json(datadir)
+        assert settings.get("qml_onboarded") is True, settings
+        assert settings.get("proxy") is False, settings
+        assert settings.get("proxy-prev") == "no-such-host.invalid:9050", settings
+        assert settings.get("prune") == 550, settings
+        recovered.stop(cleanup=False)
+        _, stderr = recovered.process.communicate()
+        check_gui_exit(recovered.process.returncode, stderr.decode("utf8", errors="replace"), socket_path=recovered.socket_path)
+        print("Recovered original saved setup: actual Core ready; marker=true; exact550MiB retained; exit=0", flush=True)
+    except Exception:
+        print("Retained actual setup settings: " + repr(read_settings_json(datadir)), flush=True)
+        for label, harness in (("original", failed), ("recovery", recovered)):
+            if harness is None:
+                continue
+            if harness.driver is not None:
+                dump_qml_tree(harness.driver)
+            harness.stop(cleanup=False)
+            stdout, stderr = harness.process.communicate()
+            print(f"{label} process diagnostic exit={harness.process.returncode}\n" + stdout.decode("utf8", errors="replace") + stderr.decode("utf8", errors="replace"), flush=True)
+        raise
+    finally:
+        failed.stop(cleanup=False)
+        if recovered is not None:
+            recovered.stop(cleanup=False)
+        cleanup_test_directory(tmpdir)
+
+
+
+def run_reset_retains_original_backup_through_finish():
+    """A single reset handoff must retain the actual pre-reset Core settings."""
+    from qml_process_checks import check_gui_exit
+    tmpdir = create_test_directory(prefix="qml_reset_receipt_", dir="/tmp")
+    datadir = setup_datadir(tmpdir)
+    original = {"qml_onboarded": True, "prune": 953, "dbcache": 512, "wallet": []}
+    write_settings_json(datadir, original)
+    harness = QmlTestHarness(datadir=datadir, tmpdir=tmpdir, reset_settings=True,
+                             start_onboarded=False, extra_args=["-regtest", "-disablewallet", "-lang=en"])
+    try:
+        harness.start()
+        click_existing_profile_to_connection(harness.driver, datadir, expect_custom_storage=False)
+        click_onboarding_button(harness.driver, "onboardingConnectionButton")
+        gui = harness.wait_for_main_window_reconnect()
+        assert_node_shell_visible(gui)
+        with open(os.path.join(datadir, "regtest", "settings.json.bak"), encoding="utf8") as backup:
+            actual = {key: value for key, value in json.load(backup).items() if key != "_warning_"}
+        assert actual == original, (actual, original)
+        assert read_settings_json(datadir).get("qml_onboarded") is True
+        harness.stop(cleanup=False)
+        _, stderr = harness.process.communicate()
+        check_gui_exit(harness.process.returncode, stderr.decode("utf8", errors="replace"), socket_path=harness.socket_path)
+        print("Reset receipt: original backup retained; marker=true; process exit=0; stderr inspected", flush=True)
+    finally:
+        harness.stop(cleanup=False)
+        cleanup_test_directory(tmpdir)
+
 if __name__ == "__main__":
     raise SystemExit(run_scenarios('Pre-init onboarding engine and persisted configuration boundaries', [
         scenario("wallet-onboarding", 4, run_wallet_enabled_flow),
         scenario("node-onboarding", 2, run_wallet_disabled_flow),
+        scenario("reset-retains-original-backup", 2, run_reset_retains_original_backup_through_finish),
+        scenario("native-startup-failure-recovery", 2, run_native_startup_failure_reopens_saved_setup_flow),
         scenario("existing-profile-onboarding", 2, run_existing_profile_full_onboarding_flow),
         scenario("configured-datadir-source", 2, run_configured_datadir_preserves_config_source_flow),
         scenario("root-wallet-discovery", 4, run_existing_profile_preserves_root_wallet_discovery_flow),
