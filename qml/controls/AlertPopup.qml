@@ -45,6 +45,14 @@ DialogPopup {
     // Answered by Return outside a button; defaults to the only Normal action,
     // so Return never confirms a destructive action.
     property AlertAction returnAction: null
+    // Bind to show the alert from state, such as a controller's prompt:
+    //     shown: review.prompt === TransactionReviewController.Password
+    // A bound alert opens and closes only with this property. Where it would
+    // close itself (an action that closes it, Escape) it emits
+    // closeRequested() instead; the owner answers and its state closes it.
+    property var shown: undefined
+    readonly property bool bound: shown !== undefined
+    signal closeRequested()
 
     property var visibleActions: [defaultAction]
     readonly property real minimumActionWidth: {
@@ -90,9 +98,23 @@ DialogPopup {
         }
     }
 
+    function followShown() {
+        if (!bound) return
+        if (shown) {
+            if (!visible) open()
+        } else if (visible) {
+            close()
+        }
+    }
+
+    function requestClose() {
+        if (bound) closeRequested()
+        else close()
+    }
+
     function trigger(action) {
         if (!action.enabled) return
-        if (action.closesPopup) close()
+        if (action.closesPopup) requestClose()
         action.triggered()
         // A disabled action can leave focus on the popup shell, outside the
         // content's key handlers. Keep Escape and Return inside the content.
@@ -143,11 +165,15 @@ DialogPopup {
         if (action) {
             trigger(action)
         } else if (dismissible) {
-            close()
+            requestClose()
         }
     }
 
-    Component.onCompleted: refreshActions()
+    Component.onCompleted: {
+        refreshActions()
+        followShown()
+    }
+    onShownChanged: followShown()
     onAboutToShow: refreshActions()
     onActionListChanged: refreshActions()
 

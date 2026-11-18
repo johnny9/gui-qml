@@ -24,6 +24,7 @@ Pane {
     property string backButtonAccessibleName: backButtonText.length > 0 ? backButtonText : qsTr("Back")
     property string backButtonIconObjectName: ""
     property bool showCloseButton: false
+    property bool closeEnabled: true
     property string closeButtonObjectName: ""
     property int closeButtonSize: CloseButton.Medium
     property string rightSectionObjectName: ""
@@ -87,6 +88,7 @@ Pane {
                     id: closeButtonItem
                     objectName: root.closeButtonObjectName
                     visible: root.showCloseButton
+                    enabled: root.closeEnabled
                     buttonSize: root.closeButtonSize
                     Layout.alignment: Qt.AlignVCenter
                     onClicked: root.closeClicked()
