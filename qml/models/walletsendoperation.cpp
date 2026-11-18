@@ -201,7 +201,7 @@ bool WalletSendOperation::start(std::optional<QString> passphrase)
     request.assessed_complete = review->canBroadcast();
     request.proof = review->feeProof(); request.approved_fee = review->reviewedFee();
     if (passphrase) {
-        auto captured = secretinput::Capture(wallet->m_opening->scheduler(), *passphrase);
+        auto captured = secretinput::Capture(wallet->m_opening, *passphrase);
         if (!captured) {
             fail(State::Failed, WalletQmlModel::tr("The password could not be used. The transaction was not sent."));
             return true;
@@ -310,7 +310,7 @@ void WalletSendOperation::unlock(const QString& passphrase)
         return;
     }
     const QString unusable = WalletQmlModel::tr("The password could not be used. The transaction was not sent.");
-    auto captured = secretinput::Capture(wallet->m_opening ? wallet->m_opening->scheduler() : nullptr, passphrase);
+    auto captured = secretinput::Capture(wallet->m_opening, passphrase);
     if (!captured || !m_work->providePassphrase(m_attempt_id, m_review_id, std::move(captured.input))) {
         publish(State::NeedsUnlock, unusable);
         wallet->setTransactionStatus(unusable, true);

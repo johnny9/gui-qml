@@ -20,7 +20,7 @@ std::optional<int64_t> RequestId(const QString& id)
 WalletReceiveModel::WalletReceiveModel(uint64_t view, Ports ports, QObject* parent)
     : QObject(parent), m_view(view), m_ports(std::move(ports)), m_reservation(view, m_ports.reservation)
 {
-    m_ports.editor.execution.post = presentation::ReliablePost(std::move(m_ports.editor.execution.post));
+    m_ports.editor.post = presentation::ReliablePost(std::move(m_ports.editor.post));
     m_editor = makeEditor(0);
     if (m_editor) m_editor->setParent(this);
     connect(&m_reservation, &ReceiveReservationModel::changed, this, [this] {
@@ -148,7 +148,7 @@ bool WalletReceiveModel::useTemplate(const QString& id)
     Replacement target; target.kind = Target::Template; target.reading = true;
     if (!begin(std::move(target))) return false;
     const auto token = m_pending->token; const QPointer<WalletReceiveModel> observer{this};
-    const auto post = m_ports.editor.execution.post;
+    const auto post = m_ports.editor.post;
     const auto complete = [observer, post, token](requestedit::Source source) {
         post([observer, token, source = std::move(source)] {
             if (!observer || !observer->m_pending || observer->m_pending->token != token) return;
@@ -219,7 +219,7 @@ void WalletReceiveModel::readOpenRequest()
     m_open_waiting = false;
     m_open_refresh_pending = false;
     const auto id = m_open_id; const QPointer<RequestOpenOperation> operation{m_open};
-    const QPointer<WalletReceiveModel> observer{this}; const auto post = m_ports.editor.execution.post;
+    const QPointer<WalletReceiveModel> observer{this}; const auto post = m_ports.editor.post;
     const auto complete = [observer, post, id, operation](requestedit::Source source) {
         post([observer, id, operation, source = std::move(source)] {
             if (!observer || observer->m_closed || !operation || observer->m_open != operation) return;
@@ -333,7 +333,7 @@ void WalletReceiveModel::observeReservation()
     if (!m_ports.editor.read) return;
     m_observing = true;
     const auto intent = m_reservation.intent(); const QPointer<WalletReceiveModel> observer{this};
-    const auto post = m_ports.editor.execution.post;
+    const auto post = m_ports.editor.post;
     const auto complete = [observer, intent, post](requestedit::Source source) {
         post([observer, intent, source = std::move(source)] {
             if (!observer || observer->m_closed) return;

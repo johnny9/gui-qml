@@ -39,6 +39,28 @@ QML page
     └─ owns operations                 the requests its page starts
 ```
 
+## Execution and shutdown
+
+The application owns one `execution::Executor`. Each owner uses its own
+`SerialQueue`s on the shared workers. Core runs ordinary node and wallet
+work. Priority runs node interruption, shutdown polling, and an explicit
+console stop. Rpc runs ordinary console commands. Utility handles outcomes,
+file work, and cleanup, with a separate worker for signer discovery.
+
+`QmlInitExecutor` owns one thread for `appInitMain()`, its subscription
+cleanup, and `appShutdown()`. This leaves Core available for accepted
+settings writes during initialization. The payment-link transport owns one
+Qt thread for its local server, sockets, and timers. Its request owner uses
+shared Utility.
+
+On quit, the application closes admission and cancels waiting prompts.
+It waits for settings and startup work and joins the payment-link thread
+before interrupting the node on Priority. It then drains the remaining
+features before running `appShutdown()` and joining the node lifecycle
+thread. After destroying the QML engine and models, it flushes deferred
+deletions, joins the shared executor, and destroys the native interfaces
+on a final thread. Qt continues processing events during the final joins.
+
 ## Rules
 
 1. **Dependencies point one way:** view → controller → interface ← model.

@@ -5,9 +5,10 @@
 #include <qml/models/psbtfeeservices.h>
 #include <qml/psbtpolicy.h>
 #include <qml/psbtwork.h>
+#include <qml/walletopening.h>
 #include <test/mocks/psbtfeefixture.h>
 #include <test/mocks/mocknode.h>
-#include <test/mocks/manualexecutionenvironment.h>
+#include <test/mocks/manualstartupexecution.h>
 #include <test/mocks/feepreviewchain.h>
 #include <test/qt_test_registry.h>
 
@@ -16,6 +17,7 @@
 #include <script/script.h>
 #include <script/solver.h>
 
+#include <QScopeGuard>
 #include <QtTest/QtTest>
 
 #include <limits>
@@ -98,22 +100,155 @@ class PsbtFeeTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
+    void malformedRpcReplySettlesAsFailure_data()
+    {
+        QTest::addColumn<bool>("close_outcomes");
+        QTest::newRow("open") << false;
+        QTest::newRow("closed-after-admission") << true;
+    }
     void malformedRpcReplySettlesAsFailure()
     {
+        QFETCH(bool, close_outcomes);
         MockNode node;
         node.get_unspent_output_fn = [](const COutPoint&) { return std::optional<Coin>{}; };
         node.execute_rpc_fn = [](const std::string&, const UniValue&, const std::string&) { return UniValue{true}; };
         const auto document = std::make_shared<const PartiallySignedTransaction>(Witness(CScript{} << OP_TRUE));
         const auto seed = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(*document));
-        ManualExecutionEnvironment environment;
+        std::function<void()> publish;
+        ManualStartupExecution worker;
+        const auto core = std::make_shared<execution::SerialQueue>(worker.executor().makeQueue(execution::Lane::Core));
+        const auto utility = std::make_shared<execution::SerialQueue>(worker.executor().makeQueue(execution::Lane::Utility));
+        const auto cleanup = std::make_shared<execution::ValueCleanupQueue>(utility);
         bool published{false}, failed{false};
-        psbtfee::Services services{environment.scheduler, psbtfee::NodeLookup(&node),
-            [&environment](auto publication) { environment.post(std::move(publication)); }};
-        QVERIFY(psbtfee::Request(services, document, seed, [&](psbtfee::Resolution result) {
-            published = true; failed = result.failed; QVERIFY(!result.proof);
-        }));
-        environment.drain(); QVERIFY(!published);
-        environment.publishAll(); QVERIFY(published); QVERIFY(failed); QVERIFY(environment.quiescent());
+        psbtfee::Services services{psbtfee::NodeLookup(&node),
+            [&publish](auto publication) { publish = std::move(publication); },
+            {}, core, utility, [cleanup](auto release) {
+                return cleanup->hold(std::move(release));
+            }};
+        std::shared_ptr<psbtfee::FeeRequest> request;
+        request = std::make_shared<psbtfee::FeeRequest>([&] {
+            services.post([&] {
+                published = true;
+                const auto result = request->result();
+                QVERIFY(result);
+                failed = bool(result->error);
+                QVERIFY(!result->value);
+            });
+        });
+        QVERIFY(psbtfee::Request(services, document, seed, request));
+        QVERIFY(!request->result());
+        if (close_outcomes) utility->close();
+        QVERIFY(worker.step(execution::Lane::Core));
+        QVERIFY(!request->result());
+        QVERIFY(!published);
+        while (!request->result()) QVERIFY(worker.step(execution::Lane::Utility));
+        QVERIFY(request->result());
+        QVERIFY(!published);
+        QVERIFY(publish);
+        std::exchange(publish, {})();
+        QVERIFY(published);
+        QVERIFY(failed);
+        request.reset();
+        bool drained{false};
+        cleanup->close([&] { drained = true; });
+        worker.drain();
+        QVERIFY(drained);
+        QVERIFY(worker.quiescent());
+    }
+
+    void walletFeeProofDrainsWithGuiPublicationHeld_data()
+    {
+        QTest::addColumn<bool>("close_before_read");
+        QTest::newRow("fee-computed") << false;
+        QTest::newRow("closed-before-core") << true;
+    }
+
+    void walletFeeProofDrainsWithGuiPublicationHeld()
+    {
+        QFETCH(bool, close_before_read);
+        using execution::Lane;
+        std::function<void()> publish;
+        ManualStartupExecution worker;
+        const auto core = std::make_shared<execution::SerialQueue>(worker.executor().makeQueue(Lane::Core));
+        const auto utility = std::make_shared<execution::SerialQueue>(worker.executor().makeQueue(Lane::Utility));
+        auto opening = std::make_shared<walletopening::Session>(
+            std::make_shared<std::atomic_bool>(false), [] {}, walletopening::Session::Preferences{},
+            std::chrono::steady_clock::now, nullptr, walletopening::NativeEvents{},
+            walletopening::Session::Queues{utility, [core, utility](auto done) {
+                core->close();
+                core->whenDrained([utility, done = std::move(done)] {
+                    utility->close();
+                    utility->whenDrained(done);
+                });
+            }, core, utility});
+        bool stopped{false};
+        std::shared_ptr<psbtfee::FeeRequest> request;
+        const auto cleanup = qScopeGuard([&] {
+            request.reset();
+            opening->stop(false, [&] { stopped = true; });
+            worker.drain();
+            QVERIFY(stopped);
+        });
+
+        const auto document = std::make_shared<const PartiallySignedTransaction>(Witness(CScript{} << OP_TRUE));
+        const auto seed = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(*document));
+        QVERIFY(!seed->amount);
+        const auto outpoint = document->inputs.front().GetOutPoint();
+        std::vector<COutPoint> looked_up;
+        psbtfee::Services services{[&](const COutPoint& requested) -> std::optional<CTxOut> {
+            looked_up.push_back(requested);
+            return CTxOut{2000, CScript{} << OP_TRUE};
+        }, [&](auto publication) { publish = std::move(publication); }};
+        std::weak_ptr<psbtfee::FeeRequest> publication;
+        int notices{0}, published{0};
+        request = std::make_shared<psbtfee::FeeRequest>([&] {
+            ++notices;
+            services.post([&] {
+                if (const auto pending = publication.lock(); pending && opening->observationOpen()) ++published;
+            });
+        });
+        publication = request;
+        QVERIFY(psbtfee::Request(services, document, seed, request, opening));
+        if (close_before_read) opening->close();
+        QVERIFY(looked_up.empty());
+        QVERIFY(!request->result());
+        QVERIFY(!worker.step(Lane::Utility));
+        QVERIFY(worker.step(Lane::Core));
+        QCOMPARE(looked_up, close_before_read ? std::vector<COutPoint>{} : std::vector<COutPoint>{outpoint});
+        QVERIFY(!request->result());
+        QCOMPARE(notices, 0);
+        while (notices == 0) QVERIFY(worker.step(Lane::Utility));
+        QCOMPARE(notices, 1);
+        std::shared_ptr<const psbtfee::Analysis> proof;
+        {
+            const auto result = request->result();
+            QVERIFY(result);
+            if (close_before_read) {
+                const auto failure = execution::NotStartedCause(result->error);
+                QVERIFY(failure);
+                QVERIFY(*failure == execution::NotStarted::Cause::Cancelled);
+            } else {
+                QVERIFY(result->value && result->value->proof);
+                proof = result->value->proof;
+                QCOMPARE(proof->amount, std::optional<CAmount>{500});
+            }
+        }
+        request.reset();
+        opening->stop(false, [&] { stopped = true; });
+        worker.drain();
+        if (proof) {
+            QVERIFY(!stopped);
+            QCOMPARE(proof->amount, std::optional<CAmount>{500});
+            proof.reset();
+            worker.drain();
+        }
+        QVERIFY(stopped);
+        QVERIFY(publication.expired());
+        QCOMPARE(published, 0);
+        QVERIFY(publish);
+        std::exchange(publish, {})();
+        QCOMPARE(published, 0);
+        QVERIFY(worker.quiescent());
     }
 
     void mempoolLookupUsesPublicNodeInterface_data()
@@ -383,21 +518,38 @@ private Q_SLOTS:
         QCOMPARE(facts.within_fee_cap, scenario != 16);
         if (scenario == 16) QVERIFY(psbtpolicy::Evaluate(facts).explanation.contains("maximum"));
     }
+    void missingServicePortsRejectAdmission_data()
+    {
+        QTest::addColumn<QString>("missing");
+        for (const auto* port : {"lookup", "post", "core", "utility", "cleanup"})
+            QTest::newRow(port) << QString::fromLatin1(port);
+    }
+
     void missingServicePortsRejectAdmission()
     {
-        ManualExecutionEnvironment environment;
+        QFETCH(QString, missing);
+        ManualStartupExecution worker;
         const auto document = std::make_shared<const PartiallySignedTransaction>(Amounts({2000}, {1500}));
         const auto seed = std::make_shared<const psbtfee::Analysis>(psbtfee::Analyze(*document));
         bool published{false};
         psbtfee::Services services;
-        auto publish = [&](psbtfee::Resolution) { published = true; };
-        QVERIFY(!psbtfee::Request(services, document, seed, publish));
-        services.scheduler = environment.scheduler;
-        QVERIFY(!psbtfee::Request(services, document, seed, publish));
         services.lookup = [](const COutPoint&) { return std::optional<CTxOut>{}; };
-        QVERIFY(!psbtfee::Request(services, document, seed, publish));
+        services.post = [](auto callback) { callback(); };
+        services.core = std::make_shared<execution::SerialQueue>(worker.executor().makeQueue(execution::Lane::Core));
+        services.utility = std::make_shared<execution::SerialQueue>(worker.executor().makeQueue(execution::Lane::Utility));
+        const auto cleanup = std::make_shared<execution::ValueCleanupQueue>(services.utility);
+        services.value_cleanup = [cleanup](auto release) { return cleanup->hold(std::move(release)); };
+        if (missing == "lookup") services.lookup = {};
+        if (missing == "post") services.post = {};
+        if (missing == "core") services.core.reset();
+        if (missing == "utility") services.utility.reset();
+        if (missing == "cleanup") services.value_cleanup = {};
+
+        const auto request = std::make_shared<psbtfee::FeeRequest>([&] { published = true; });
+        QVERIFY(!psbtfee::Request(services, document, seed, request));
+        QVERIFY(!request->result());
         QVERIFY(!published);
-        QVERIFY(environment.quiescent());
+        QVERIFY(worker.quiescent());
     }
 
     void reviewedFeeMustBePresentAndExact()

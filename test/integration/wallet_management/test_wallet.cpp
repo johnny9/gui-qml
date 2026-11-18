@@ -8,6 +8,8 @@
 #include <test/mocks/provisioningtest.h>
 #include <test/integration/runner/test_cases.h>
 #include <test/integration/fixture/test_wallet.h>
+#include <qml/executor.h>
+#include <qml/models/nodemodel.h>
 #include <qml/models/walletbackupcontroller.h>
 #include <qml/models/walletprovisioningcheck.h>
 #include <util/moneystr.h>
@@ -36,6 +38,7 @@
 #include <atomic>
 #include <chrono>
 #include <exception>
+#include <future>
 #include <memory>
 #include <system_error>
 #include <optional>
@@ -168,6 +171,196 @@ public:
     explicit WalletIntegrationTests(BitcoinQmlApplication& app) : m_app{app} {}
 
 private Q_SLOTS:
+    void walletOpeningsHaveIndependentQueues()
+    {
+        auto* first = qmltest::CreateWallet(m_app, "first-queue");
+        auto* second = qmltest::CreateWallet(m_app, "second-queue");
+        QVERIFY(first);
+        QVERIFY(second);
+        const auto first_opening = first->opening();
+        const auto second_opening = second->opening();
+        QVERIFY(first_opening);
+        QVERIFY(second_opening);
+        QVERIFY(first_opening->coreQueue());
+        QVERIFY(second_opening->coreQueue());
+        QVERIFY(first_opening->coreQueue() != second_opening->coreQueue());
+        QVERIFY(first_opening->utilityQueue());
+        QVERIFY(second_opening->utilityQueue());
+        QVERIFY(first_opening->utilityQueue() != second_opening->utilityQueue());
+        QTRY_VERIFY(!first->receiveRequestReconciliationPending());
+        QTRY_VERIFY(first->balanceKnown());
+
+        // Settle the first opening's queued reads before holding Core on
+        // the second opening. Avoid processing Qt timers in between.
+        const auto settled = std::make_shared<QSemaphore>();
+        QVERIFY(first_opening->read([](interfaces::Wallet&) { return true; },
+            [settled](bool) { settled->release(); }));
+        QVERIFY(settled->tryAcquire(1, 5000));
+
+        struct Gate { QSemaphore entered, release; };
+        const auto gate = std::make_shared<Gate>();
+        const auto release_on_exit = qScopeGuard([gate] { gate->release.release(); });
+        const auto action = second_opening->startAction();
+        QVERIFY(action);
+        QVERIFY(second_opening->perform(action, [gate](interfaces::Wallet& wallet) {
+            gate->entered.release();
+            gate->release.acquire();
+            return wallet.getWalletName();
+        }, [](std::string) {}));
+        QVERIFY(gate->entered.tryAcquire(1, 5000));
+
+        QSignalSpy stopped{first, &WalletQmlModel::shutdownFinished};
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController");
+        QVERIFY(controller);
+        // The user can close the idle wallet while the other opening's
+        // action is still running on Core.
+        controller->closeWallet(first->name());
+        QTRY_COMPARE(stopped.size(), 1);
+        gate->release.release();
+        auto receipt = std::make_shared<std::promise<std::string>>();
+        auto result = receipt->get_future();
+        QVERIFY(second_opening->read([](interfaces::Wallet& wallet) { return wallet.getWalletName(); },
+                                     [receipt](std::string name) { receipt->set_value(std::move(name)); }));
+        using namespace std::chrono_literals;
+        QTRY_VERIFY(result.wait_for(0ms) == std::future_status::ready);
+        QCOMPARE(QString::fromStdString(result.get()), QStringLiteral("second-queue"));
+    }
+
+    void walletCloseLetsAcceptedWorkFinishBeforeNativeUnload()
+    {
+        const QString name = QStringLiteral("close-after-work");
+        auto* wallet = qmltest::CreateWallet(m_app, name);
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController");
+        auto* node = qmltest::Model<NodeModel>(m_app, "nodeModel");
+        QVERIFY(wallet);
+        QVERIFY(controller);
+        QVERIFY(node);
+        const auto opening = wallet->opening();
+        QVERIFY(opening);
+        QTRY_VERIFY(!wallet->receiveRequestReconciliationPending());
+
+        struct Gate { QSemaphore entered, release; };
+        const auto gate = std::make_shared<Gate>();
+        const auto release_on_exit = qScopeGuard([gate] { gate->release.release(); });
+        const auto completed = std::make_shared<std::promise<std::string>>();
+        auto wallet_used = completed->get_future();
+        {
+            const auto action = opening->startAction();
+            QVERIFY(action);
+            QVERIFY(opening->perform(action, [gate](interfaces::Wallet& original) {
+                gate->entered.release();
+                gate->release.acquire();
+                return original.getWalletName();
+            }, [completed](std::string result) { completed->set_value(std::move(result)); }));
+        }
+        QTRY_VERIFY(gate->entered.available() > 0);
+
+        QSignalSpy stopped{wallet, &WalletQmlModel::shutdownFinished};
+        controller->closeWallet(name);
+        const auto receipt = std::make_shared<std::promise<bool>>();
+        auto loaded = receipt->get_future();
+        QVERIFY(node->valueRetirement()([receipt, core = &m_app.node(), name = name.toStdString()] {
+            try {
+                const auto wallets = core->executeRpc("listwallets", UniValue{UniValue::VARR}, "");
+                receipt->set_value(std::ranges::any_of(wallets.getValues(), [&name](const auto& value) { return value.get_str() == name; }));
+            } catch (...) {
+                receipt->set_exception(std::current_exception());
+            }
+        }));
+        // This worker has run any previously posted native cleanup. The
+        // closing opening must still exist in Core until its own work settles.
+        using namespace std::chrono_literals;
+        QTRY_VERIFY(loaded.wait_for(0ms) == std::future_status::ready);
+        QVERIFY(loaded.get());
+        QCOMPARE(stopped.size(), 0);
+
+        gate->release.release();
+        QTRY_COMPARE(stopped.size(), 1);
+        QCOMPARE(wallet_used.wait_for(0ms), std::future_status::ready);
+        QCOMPARE(wallet_used.get(), name.toStdString());
+        QCOMPARE(qmltest::Rpc(m_app, "listwallets").size(), 0U);
+    }
+
+    void walletCloseLetsAnInFlightReadDeliverItsOutcome()
+    {
+        const QString name = QStringLiteral("close-during-read");
+        auto* wallet = qmltest::CreateWallet(m_app, name);
+        QVERIFY(wallet);
+        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController");
+        QVERIFY(controller);
+        const auto opening = wallet->opening();
+        QVERIFY(opening);
+        QTRY_VERIFY(!wallet->receiveRequestReconciliationPending());
+
+        struct Gate { QSemaphore entered, release; std::atomic_bool finished{false}; };
+        const auto gate = std::make_shared<Gate>();
+        const auto unblock = qScopeGuard([gate] { gate->release.release(); });
+        const auto receipt = std::make_shared<std::promise<std::string>>();
+        auto result = receipt->get_future();
+        QVERIFY(opening->read([gate](interfaces::Wallet& original) {
+            gate->entered.release();
+            gate->release.acquire();
+            auto name = original.getWalletName();
+            gate->finished = true;
+            return name;
+        }, [receipt](std::string name) { receipt->set_value(std::move(name)); },
+        [receipt](std::exception_ptr) { receipt->set_value({}); }));
+        QTRY_VERIFY(gate->entered.available() > 0);
+
+        QVERIFY(opening->utilityQueue());
+        const auto outcome_gate = std::make_shared<Gate>();
+        const auto unblock_outcome = qScopeGuard([outcome_gate] { outcome_gate->release.release(); });
+        QVERIFY(opening->utilityQueue()->post([outcome_gate] {
+            outcome_gate->entered.release();
+            outcome_gate->release.acquire();
+        }));
+        QVERIFY(outcome_gate->entered.tryAcquire(1, 5000));
+        QSignalSpy stopped{wallet, &WalletQmlModel::shutdownFinished};
+        controller->closeWallet(name);
+        QTRY_VERIFY(!opening->available());
+        QCOMPARE(stopped.size(), 0);
+        using namespace std::chrono_literals;
+        QCOMPARE(result.wait_for(0ms), std::future_status::timeout);
+
+        gate->release.release();
+        QTRY_VERIFY(gate->finished.load());
+        QCOMPARE(stopped.size(), 0);
+        QCOMPARE(result.wait_for(0ms), std::future_status::timeout);
+        outcome_gate->release.release();
+        QTRY_COMPARE(stopped.size(), 1);
+        QCOMPARE(result.wait_for(0ms), std::future_status::ready);
+        QCOMPARE(result.get(), name.toStdString());
+    }
+
+    void walletCatalogAndNodeQueriesShareTheCoreWorker()
+    {
+        auto* node = qmltest::Model<NodeModel>(m_app, "nodeModel");
+        auto* wallet = qmltest::Model<WalletQmlController>(m_app, "walletController");
+        QVERIFY(node);
+        QVERIFY(wallet);
+
+        const auto worker = [](const auto& post) {
+            auto receipt = std::make_shared<std::promise<std::thread::id>>();
+            auto result = receipt->get_future();
+            const auto accepted = post(execution::MakeTask(
+                [] { return std::this_thread::get_id(); },
+                [receipt](std::thread::id id) { receipt->set_value(id); }, {}));
+            return accepted ? std::move(result) : std::future<std::thread::id>{};
+        };
+        const auto post_node = node->postNative(execution::Lane::Core);
+        QVERIFY(post_node);
+        auto node_worker = worker(post_node);
+        auto wallet_worker = worker([wallet](auto task) { return wallet->postNative(std::move(task)); });
+        QVERIFY(node_worker.valid());
+        QVERIFY(wallet_worker.valid());
+        using namespace std::chrono_literals;
+        QTRY_VERIFY(node_worker.wait_for(0ms) == std::future_status::ready);
+        QTRY_VERIFY(wallet_worker.wait_for(0ms) == std::future_status::ready);
+        const auto node_thread = node_worker.get();
+        QVERIFY(node_thread != std::this_thread::get_id());
+        QVERIFY(node_thread == wallet_worker.get());
+    }
+
     void restoredModernNamesKeepTheirExactDatabaseIdentity_data()
     {
         QTest::addColumn<QString>("target");

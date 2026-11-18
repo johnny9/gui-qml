@@ -74,15 +74,16 @@ public:
     bool acceptingOperations() const { return !m_shutting_down && m_initialized && !walletLoadInProgress() && !m_admitting_command && !m_publishing_command; }
 
     struct Services {
-        // One original controller admission domain, shared by its wallet openings.
-        // The supplied shutdown callback drains this controller's accepted work.
-        std::shared_ptr<execution::Scheduler> scheduler;
+        // The application supplies the shared executor for the catalog queues.
         presentation::Post post; // Enqueue on GUI; never invoke a Native observer inline.
         std::function<void(std::function<void()>)> shutdown;
+        std::function<WalletQmlModel::Services(bool detached)> make_wallet_services{};
+        std::shared_ptr<execution::Executor> owned_executor{}; // Standalone controller only.
+        execution::Executor* executor{nullptr};
+        WalletProvisioningCheck::Queues catalog_queues{};
     };
     explicit WalletQmlController(interfaces::Node& node, QObject *parent = nullptr);
     WalletQmlController(interfaces::Node& node, Services services, QObject* parent = nullptr);
-    WalletQmlController(interfaces::Node& node, execution::Options limits, QObject* parent = nullptr);
     WalletQmlController(interfaces::Node& node, walletopening::Session::Preferences preferences, QObject* parent = nullptr);
     WalletQmlController(interfaces::Node& node, walletopening::Session::Preferences preferences,
                         walletopening::FeePolicy fee_policy, QObject* parent = nullptr);
@@ -106,7 +107,8 @@ public:
     Q_INVOKABLE void requestOpenReceive(WalletQmlModel* wallet);
     Q_INVOKABLE void requestClosePaymentRequestDetail(WalletQmlModel* wallet);
 
-    std::shared_ptr<execution::Scheduler> backgroundScheduler() const { return m_services.scheduler; }
+    // C++ catalog work uses the Core queue and delivers its outcome on Utility.
+    execution::SubmitResult postNative(std::shared_ptr<execution::Task> task) const;
     WalletQmlModel* selectedWallet() const;
     QAbstractItemModel* openWalletModel() const { return m_shutting_down ? nullptr : m_registry->openWalletModel(); }
     Q_INVOKABLE int rowForWallet(WalletQmlModel* wallet) const {
@@ -128,6 +130,8 @@ public:
     bool noWalletsFound() const { return m_no_wallets_found; }
     void setNoWalletsFound(bool no_wallets_found);
     bool walletLoadInProgress() const { return m_wallet_load_in_progress || m_creation_admission->creationPending(); }
+
+    std::shared_ptr<backup::InstallCoordinator> backupInstallCoordinator() const { return m_backup_installs; }
 
 Q_SIGNALS:
     void walletsDrained();
@@ -192,6 +196,7 @@ private:
         bool error_needs_passphrase{false};
     };
     using Command = execution::OwnedCommand<CommandResult>;
+    walletcreation::Services commandServices() const;
     bool submitWalletCommand(std::function<CommandResult(std::unique_ptr<interfaces::Wallet>&)> effect,
         std::function<void(const CommandResult&)> done, std::function<void(std::exception_ptr)> failed,
         bool open_intent = false);
@@ -280,6 +285,7 @@ private:
     psbtpolicy::Read m_psbt_policy;
     psbtfee::Services psbtServices() const { psbtfee::Services services; services.policy = m_psbt_policy; return services; }
     Services m_services;
+    WalletQmlModel::Services walletServices(bool detached = false) const;
     WalletQmlModel* m_empty_wallet;
     WalletSelectionModel* m_selection{nullptr};
     WalletNamesController* m_names{nullptr};
