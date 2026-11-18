@@ -11,12 +11,14 @@ import "../controls"
 Item {
     id: root
 
-    property var wallet
+    property int approvalState: WalletQmlModel.ApprovalInitial
+    property string errorMessage: ""
+    property string reviewMessage: ""
+    property bool signerNotFound: false
     property string buttonObjectName: ""
     property string statusObjectName: ""
     readonly property string reviewState: {
-        if (!wallet) return "initial"
-        switch (wallet.signerApprovalState) {
+        switch (root.approvalState) {
         case WalletQmlModel.ApprovalWaiting: return "waiting"
         case WalletQmlModel.ApprovalOtherReview: return "busy"
         case WalletQmlModel.ApprovalSigned: return "signed"
@@ -27,13 +29,12 @@ Item {
         default: return "initial"
         }
     }
-    readonly property string errorMessage: wallet ? wallet.signerApprovalError : ""
     property bool canSend: true
 
     readonly property string statusText: {
         if (reviewState === "partiallySigned") {
-            return root.wallet && root.wallet.currentTransactionReviewMessage.length > 0
-                ? root.wallet.currentTransactionReviewMessage
+            return root.reviewMessage.length > 0
+                ? root.reviewMessage
                 : qsTr("Signed on external signer. More signatures are required.")
         }
         if ((reviewState === "error" || reviewState === "uncertain" || reviewState === "unverified")) return errorMessage
@@ -54,18 +55,19 @@ Item {
         if (reviewState === "waiting") return qsTr("Waiting for approval…")
         if (reviewState === "busy") return qsTr("External signer busy")
         if (reviewState === "unverified") return qsTr("Unverified signer result")
-        if (reviewState === "error" && root.wallet && root.wallet.signerApprovalSignerNotFound) return qsTr("Retry after connecting signer")
+        if (reviewState === "error" && root.signerNotFound) return qsTr("Retry after connecting signer")
         if ((reviewState === "error" || reviewState === "uncertain")) return qsTr("Retry external signer")
         return qsTr("Approve on external signer")
     }
 
     signal sendRequested()
+    signal approvalRequested()
 
     Layout.fillWidth: true
     implicitHeight: actionsColumn.height
 
     function beginApproval() {
-        if (wallet && reviewState !== "waiting" && reviewState !== "busy") wallet.approveExternalSignerTransaction()
+        if (reviewState !== "waiting" && reviewState !== "busy") root.approvalRequested()
     }
 
     ColumnLayout {
