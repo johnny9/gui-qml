@@ -8,6 +8,8 @@ import "../../qml/components"
 import "../../qml/controls"
 
 TestCase {
+    id: testCase
+
     function init() {
         testSetup.failOnWarnings()
     }
@@ -19,6 +21,8 @@ TestCase {
 
     property string submittedPassphrase: ""
     property int submittedCount: 0
+    // Stands in for the model error a caller binds to errorText.
+    property string promptError: ""
 
     Component {
         id: popupComponent
@@ -30,6 +34,8 @@ TestCase {
             passphraseFieldObjectName: "testPassphraseField"
             cancelButtonObjectName: "testPassphraseCancelButton"
             confirmButtonObjectName: "testPassphraseConfirmButton"
+            errorTextObjectName: "testPassphraseErrorText"
+            errorText: testCase.promptError
         }
     }
 
@@ -62,6 +68,7 @@ TestCase {
     function createPopup() {
         submittedPassphrase = ""
         submittedCount = 0
+        promptError = ""
 
         const popup = createTemporaryObject(popupComponent, this)
         verify(popup !== null)
@@ -234,6 +241,41 @@ TestCase {
         } finally {
             Theme.motion.mode = motion
         }
+    }
+
+    function test_editing_password_clears_shown_error() {
+        const popup = createPopup()
+        const field = findObjectByName(popup, "testPassphraseField")
+        const error = findObjectByName(popup, "testPassphraseErrorText")
+        verify(field !== null)
+        verify(error !== null)
+        tryCompare(field, "activeFocus", true)
+
+        promptError = "The wallet password you entered was incorrect."
+        tryCompare(error, "visible", true)
+        compare(error.text, promptError)
+
+        // Editing the password answers the error.
+        keyClick(Qt.Key_S)
+        compare(field.text.length, 1)
+        tryCompare(error, "visible", false)
+        compare(error.text, "")
+        compare(popup.errorText, promptError)
+
+        // A repeated failure reports the same text and shows it again.
+        keyClick(Qt.Key_Return)
+        compare(submittedCount, 1)
+        tryCompare(error, "visible", true)
+        compare(error.text, promptError)
+
+        // So does a different error after an edit.
+        field.forceActiveFocus()
+        tryCompare(field, "activeFocus", true)
+        keyClick(Qt.Key_T)
+        tryCompare(error, "visible", false)
+        promptError = "Wallet password required."
+        tryCompare(error, "visible", true)
+        compare(error.text, promptError)
     }
 
     Component {

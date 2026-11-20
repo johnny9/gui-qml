@@ -34,7 +34,14 @@ DialogPopup {
     property string errorTextObjectName: "alertErrorText"
     property var errorDetailsModel: null
     property bool showErrorDetails: false
-    onErrorTextChanged: showErrorDetails = false
+    // Hides the error once the user has answered it, such as by editing the
+    // field it is about. A new error shows again.
+    property bool errorDismissed: false
+    readonly property string shownErrorText: errorDismissed ? "" : errorText
+    onErrorTextChanged: {
+        showErrorDetails = false
+        errorDismissed = false
+    }
     // Extra controls between the message and the actions, such as a field.
     property alias content: contentColumn.data
     default property alias actions: actionStore.data
@@ -280,7 +287,7 @@ DialogPopup {
                 objectName: root.errorTextObjectName
                 Layout.fillWidth: true
                 visible: text.length > 0
-                text: root.errorText
+                text: root.shownErrorText
                 color: Theme.color.danger
                 textStyle: Theme.text.description
                 wrapMode: Text.WordWrap
@@ -289,7 +296,7 @@ DialogPopup {
 
             TextButton {
                 objectName: root.errorTextObjectName + "DetailsButton"
-                visible: root.errorText.length > 0 && root.errorDetailsModel !== null
+                visible: root.shownErrorText.length > 0 && root.errorDetailsModel !== null
                 text: root.showErrorDetails ? qsTr("Hide details") : qsTr("Show details")
                 onClicked: root.showErrorDetails = !root.showErrorDetails
             }
@@ -299,7 +306,7 @@ DialogPopup {
                 objectName: root.errorTextObjectName + "Details"
                 Layout.fillWidth: true
                 Layout.preferredHeight: visible ? 120 : 0
-                visible: root.showErrorDetails && root.errorText.length > 0 && root.errorDetailsModel !== null
+                visible: root.showErrorDetails && root.shownErrorText.length > 0 && root.errorDetailsModel !== null
                 model: root.errorDetailsModel
                 clip: true
                 reuseItems: true
