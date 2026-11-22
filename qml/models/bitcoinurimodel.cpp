@@ -68,7 +68,7 @@ BitcoinUriModel::BitcoinUriModel(QObject* parent)
 }
 BitcoinUriModel::~BitcoinUriModel()
 {
-    closeAdmission();
+    close();
 }
 void BitcoinUriModel::setServices(presentation::Post post, execution::Executor* executor)
 {
@@ -83,7 +83,7 @@ void BitcoinUriModel::setServices(presentation::Post post, execution::Executor* 
     (void)executor;
 #endif
 }
-void BitcoinUriModel::closeAdmission()
+void BitcoinUriModel::close()
 {
     if (std::exchange(m_closed, true)) return;
     *m_admission = true;

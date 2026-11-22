@@ -2011,7 +2011,7 @@ void WalletQmlControllerTests::loadErrorKeepsItsOriginalTextAndFencesSupersededP
     }, [&controller](const auto& result) { controller.setWalletLoadError(result.error); }, [](auto) {}));
     QVERIFY(AwaitWalletOperation(controller));
     QCOMPARE(LoadError(controller), QStringLiteral("Successor failure"));
-    controller.closeAdmission(); QVERIFY(LoadError(controller).isEmpty());
+    controller.close(); QVERIFY(LoadError(controller).isEmpty());
 }
 
 void WalletQmlControllerTests::migrationOperationKeepsItsBoundedMessageAndFullDetails()
@@ -2079,7 +2079,7 @@ void WalletQmlControllerTests::manualShutdownFencesInventoryBeforeBoundedRetirem
     QVERIFY(original->opening()->read([probe](interfaces::Wallet&) { if (QThread::currentThread() == qApp->thread()) probe->on_gui = true; ++probe->effects; return true; }, [probe](bool) { ++probe->outcomes; }, {}, execution::WorkClass::Action));
     QSignalSpy closed(controller.get(), &WalletQmlController::walletLoadStateChanged);
     QSignalSpy drained(controller.get(), &WalletQmlController::walletsDrained);
-    controller->closeAdmission();
+    controller->close();
     for (auto* object : wallets) { auto* wallet = qobject_cast<WalletQmlModel*>(object); QVERIFY(!wallet->available()); QVERIFY(!wallet->opening()->startAction()); }
     for (const auto& form : forms) { QVERIFY(!form->ready()); const auto before = form->name(); form->setName("late change"); QCOMPARE(form->name(), before); }
     const auto late = loader.captured_load_wallet_fn; late(std::make_unique<FakeWallet>("late-wallet", nullptr));
@@ -4217,7 +4217,7 @@ void WalletQmlControllerTests::provisioningChecksOwnManualPhases()
     if (scenario == 1) { check.setName("different"); check.setXpub("garbage"); }
     if (scenario == 3) {
         QSignalSpy changes{&check, &WalletProvisioningCheck::changed};
-        check.closeAdmission(); QCOMPARE(changes.size(), 0);
+        check.close(); QCOMPARE(changes.size(), 0);
         drain(publications); QCOMPARE(changes.size(), 0);
     } else {
         drain(work); drain(publications);
@@ -4225,7 +4225,7 @@ void WalletQmlControllerTests::provisioningChecksOwnManualPhases()
         else if (scenario == 1) { QVERIFY(check.ready()); QVERIFY(check.nameError().isEmpty()); QVERIFY(!check.xpubValid()); QCOMPARE(check.name(), QStringLiteral("different")); }
         else { QVERIFY(check.ready()); QCOMPARE(check.nameError(), QStringLiteral("A wallet with this name already exists")); QVERIFY(check.xpubValid()); }
     }
-    check.closeAdmission(); drain(work); drain(publications); QVERIFY(work.empty()); QVERIFY(publications.empty());
+    check.close(); drain(work); drain(publications); QVERIFY(work.empty()); QVERIFY(publications.empty());
 }
 
 void WalletQmlControllerTests::provisioningChecksUseCatalogQueuesAfterSchedulerCloses()
@@ -4574,7 +4574,7 @@ void WalletQmlControllerTests::walletCreationRetiresCredentialsAndAClosedResultO
     QVERIFY(operation && operation->acceptedForDelivery());
     QVERIFY(probe->creating.tryAcquire(1, 5000));
     QVERIFY(probe->exact_secret.load());
-    operation->closeAdmission();
+    operation->close();
     controller.beginShutdown();
     probe->finish_creation.release();
     QTRY_VERIFY(probe->disposing.available() == 1);
@@ -5182,7 +5182,7 @@ void WalletQmlControllerTests::signerDiscoveryRejectsPublicationAfterQuietClose(
     QVERIFY(env.step(execution::Lane::Utility, execution::UtilityWorker::Signer));
     while (env.step(execution::Lane::Utility)) {}
     QCOMPARE(gui.size(), size_t{1});
-    controller.closeAdmission();
+    controller.close();
     QSignalSpy changed{controller.creation(), &WalletCreationController::signersChanged};
     while (!gui.empty()) { gui.front()(); gui.pop_front(); }
     QCOMPARE(changed.count(), 0);
@@ -5320,7 +5320,7 @@ void WalletQmlControllerTests::capturedSecretSurvivesQueueDelayAndQuietClose()
         auto original = operation->m_owner; QVERIFY(original);
         // Creation now has an explicit validation phase. Hold the accepted
         // Core mutation, not its earlier cancellable validation read.
-        source.fill(QLatin1Char('z')); controller.closeAdmission(); QCOMPARE(loader.create_wallet_calls, 0);
+        source.fill(QLatin1Char('z')); controller.close(); QCOMPARE(loader.create_wallet_calls, 0);
         QVERIFY(graph.until([&] { return walletcreation::Terminal(original->snapshot().phase); }));
         QVERIFY(exact); QVERIFY(native); QCOMPARE(loader.create_wallet_calls, 1);
         QCOMPARE(original->errorText(), QStringLiteral("Captured creation reached Native"));
@@ -5343,7 +5343,7 @@ void WalletQmlControllerTests::capturedSecretSurvivesQueueDelayAndQuietClose()
     auto* operation = controller.creation()->operation(); QVERIFY(operation);
     auto original = operation->m_owner; QVERIFY(original);
     QTRY_VERIFY(probe->entered.available() > 0);
-    source.fill(QLatin1Char('z')); controller.closeAdmission(); QCOMPARE(loader.migrate_wallet_calls, 1);
+    source.fill(QLatin1Char('z')); controller.close(); QCOMPARE(loader.migrate_wallet_calls, 1);
     probe->release.release(); QTRY_VERIFY(walletcreation::Terminal(original->snapshot().phase));
     QVERIFY(probe->exact.load()); QVERIFY(probe->native.load()); QVERIFY(probe->native.load() != QThread::currentThread());
     QCOMPARE(loader.migrate_wallet_calls, 1); QVERIFY(original->errorText().contains(QStringLiteral("reached Native"))); original.reset();
@@ -6231,7 +6231,7 @@ struct ManualWalletNames {
 
     ~ManualWalletNames()
     {
-        names.closeAdmission();
+        names.close();
         while (step(utility)) {}
     }
 

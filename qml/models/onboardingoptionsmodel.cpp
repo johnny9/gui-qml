@@ -108,13 +108,13 @@ OnboardingOptionsModel::OnboardingOptionsModel(std::vector<std::string> argv, bo
         },[observer](std::exception_ptr){if(!observer||observer->m_stopping)return;observer->m_preview_in_flight=false;
             observer->setPreviewError(tr("The startup settings could not be read."));if(observer&&!observer->m_stopping)observer->setPreviewPending(false);});
 }
-void OnboardingOptionsModel::closeAdmission()
+void OnboardingOptionsModel::close()
 {
     if(std::exchange(m_stopping,true))return;
     ++m_preview_request_id;++m_storage_request_id;++m_storage_projection_revision;++m_path_revision;
     m_work->close();m_argv.reset();
     if(m_flow&&!m_preparing){m_flow->close();m_flow.reset();}
-    m_core_settings.closeAdmission();
+    m_core_settings.close();
     if (!m_preparing) joinOwnedExecutor();
 }
 
@@ -181,7 +181,7 @@ void OnboardingOptionsModel::finishDrain()
 void OnboardingOptionsModel::beginShutdown()
 {
     if(std::exchange(m_shutdown_requested,true))return;
-    closeAdmission();
+    close();
     if (m_flow) {m_flow->close();m_flow.reset();}
     drainReaders();
     joinOwnedExecutor();
@@ -203,7 +203,7 @@ void OnboardingOptionsModel::setPreviewPending(bool pending)
 
 OnboardingOptionsModel::~OnboardingOptionsModel()
 {
-    closeAdmission();
+    close();
     m_flow.reset();
     joinOwnedExecutor();
 }
@@ -358,7 +358,7 @@ void OnboardingOptionsModel::prepareNode(ArgsManager& args,std::function<bool()>
         admitted=m_flow->finishAndPrepare(m_flow_revision,applyRequest(),m_profile_ports,effect);
     }
     m_stopping=true;++m_preview_request_id;++m_storage_request_id;++m_storage_projection_revision;++m_path_revision;
-    m_work->close();m_argv.reset();m_core_settings.closeAdmission();if(!observer)return;
+    m_work->close();m_argv.reset();m_core_settings.close();if(!observer)return;
     if(!admitted){
         m_preparation_state->store(PreparationFailed);
         if(m_flow){m_flow->close();m_flow.reset();}
@@ -400,7 +400,7 @@ void OnboardingOptionsModel::prepareNodeAsync(ArgsManager& args,onboarding::Asyn
         admitted=m_flow->finishAndPrepareAsync(m_flow_revision,applyRequest(),m_profile_ports,std::move(preparation));
     }
     m_stopping=true;++m_preview_request_id;++m_storage_request_id;++m_storage_projection_revision;++m_path_revision;
-    m_work->close();m_argv.reset();m_core_settings.closeAdmission();if(!observer)return;
+    m_work->close();m_argv.reset();m_core_settings.close();if(!observer)return;
     if(!admitted){
         m_preparation_state->store(PreparationFailed);
         if(m_flow){m_flow->close();m_flow.reset();}

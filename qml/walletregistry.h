@@ -42,7 +42,7 @@ public:
     int rowForWallet(WalletQmlModel* wallet) const;
     bool valid() const { return bool(m_state); }
     std::shared_ptr<WalletNameRegistry> nameRegistry() const;
-    void closeAdmission();
+    void close();
 private:
     struct State;
     std::shared_ptr<State> m_state;
@@ -181,7 +181,7 @@ public:
     void retainResult(WalletQmlModel* wallet, const std::shared_ptr<ResultLifetime>& lifetime);
     void rememberInformation(WalletQmlModel* wallet, WalletInformation information);
     void insert(WalletQmlModel* wallet, const QString& name);
-    void closeAdmission();
+    void close();
     bool adoptRetirement(WalletQmlModel* model, bool remove);
     void detachPresentation();
     void detachController();

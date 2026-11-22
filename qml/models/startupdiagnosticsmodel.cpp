@@ -220,7 +220,7 @@ bool StartupDiagnosticsModel::resetInput() {
     return observer && bool(input);
 }
 void StartupDiagnosticsModel::retryPublication() { publish(); }
-void StartupDiagnosticsModel::closeAdmission() { retire(true); }
+void StartupDiagnosticsModel::close() { retire(true); }
 void StartupDiagnosticsModel::retire(bool notify) {
     if (m_closed) return;
     ++m_generation;

@@ -106,7 +106,7 @@ private Q_SLOTS:
         auto owner = NewOwner(commands.executor());
         auto service = Service::Create(owner); QVERIFY(service);
         QVERIFY(commands.quiescent());
-        service->closeAdmission();
+        service->close();
         QVERIFY(commands.quiescent()); QVERIFY(!service->retired());
         QVERIFY(!service->start(QStringLiteral("/unused"), QStringLiteral("regtest"), {}, {}));
         QVERIFY(owner->admit({Request(1)}, {})); commands.drain();

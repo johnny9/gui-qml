@@ -80,7 +80,7 @@ private Q_SLOTS:
         const auto action = [&] {
             if (acted) return;
             acted = true; const QString before = Complete(*f.model);
-            if (reopen) QVERIFY(f.model->resetInput()); else f.model->closeAdmission();
+            if (reopen) QVERIFY(f.model->resetInput()); else f.model->close();
             coherent &= Complete(*f.model) == before;
         };
         if (about) connect(f.model.get(), &QAbstractItemModel::modelAboutToBeReset, this, action);
@@ -204,7 +204,7 @@ private Q_SLOTS:
         if (phase == 0) connect(f.model.get(), &QAbstractItemModel::modelAboutToBeReset, this, destroy);
         if (phase == 1) connect(f.model.get(), &QAbstractItemModel::modelReset, this, destroy);
         if (phase == 2) connect(f.model.get(), &StartupDiagnosticsModel::changed, this, destroy);
-        if (close) f.model->closeAdmission(); else QVERIFY(!f.model->resetInput());
+        if (close) f.model->close(); else QVERIFY(!f.model->resetInput());
         QVERIFY(!f.model); QCOMPARE(changed.size(), phase == 2 ? 1 : 0); QCOMPARE(finished.size(), 0);
         f.finish(); QVERIFY(f.worker.quiescent());
     }
@@ -238,7 +238,7 @@ private Q_SLOTS:
         connect(f.model.get(), &QAbstractItemModel::modelReset, this, [&] { --reset_depth; });
         connect(f.model.get(), &StartupDiagnosticsModel::changed, this, [&] { ++changed; balanced &= reset_depth == 0; });
         connect(f.model.get(), &StartupDiagnosticsModel::finished, this, [&] { ++finished; });
-        const auto close = [&] { if (!closed) { closed = true; f.model->closeAdmission(); } };
+        const auto close = [&] { if (!closed) { closed = true; f.model->close(); } };
         if (phase == 1) connect(f.model.get(), &QAbstractItemModel::modelAboutToBeReset, this, close);
         if (phase == 2) connect(f.model.get(), &QAbstractItemModel::modelReset, this, close);
         if (phase == 3) connect(f.model.get(), &StartupDiagnosticsModel::changed, this, close);
@@ -273,12 +273,12 @@ private Q_SLOTS:
         if (phase == 0) connect(f.model.get(), &QAbstractItemModel::modelAboutToBeReset, this, restart);
         if (phase == 1) connect(f.model.get(), &QAbstractItemModel::modelReset, this, restart);
         if (phase == 2) connect(f.model.get(), &StartupDiagnosticsModel::changed, this, restart);
-        f.model->closeAdmission();
+        f.model->close();
         QVERIFY(restarted); QVERIFY(admitted); QVERIFY(f.model->busy());
         f.finish();
         QVERIFY(!f.model->busy()); QCOMPARE(Complete(*f.model), QStringLiteral("New lifecycle diagnostic"));
         QObject::disconnect(f.model.get(), nullptr, this, nullptr);
-        f.model->closeAdmission(); f.worker.drain(); QVERIFY(f.worker.quiescent());
+        f.model->close(); f.worker.drain(); QVERIFY(f.worker.quiescent());
     }
     void startupFacadeTracksDiagnosticOutcome_data() {
         QTest::addColumn<int>("outcome");
@@ -311,7 +311,7 @@ private Q_SLOTS:
             f.worker.drain();
             QVERIFY(models.startupErrorPending()); // Publication belongs to GUI.
             if (outcome == 2) {
-                f.model->closeAdmission();
+                f.model->close();
                 QCOMPARE(models.startupErrorDetails(), f.model.get());
                 QCOMPARE(models.startupError(), QStringLiteral("Original startup fallback"));
             }
@@ -385,7 +385,7 @@ private Q_SLOTS:
         }
         QCOMPARE(Complete(*details.model), original);
 
-        details.model->closeAdmission();
+        details.model->close();
         f.services.close();
         QObject receiver;
         bool drained{false};
@@ -415,7 +415,7 @@ private Q_SLOTS:
         QVERIFY(model.project(true));
         f.worker.drain();
         QVERIFY(!f.publications.empty());
-        model.closeAdmission();
+        model.close();
         QVERIFY(model.resetInput());
         QVERIFY(model.append("new fatal detail", false));
         QVERIFY(model.project(false, {}, {}, "Fatal error"));
@@ -425,7 +425,7 @@ private Q_SLOTS:
         f.worker.drain();
         f.publish();
         QCOMPARE(Complete(model), QString{"Fatal error\n\nnew fatal detail"});
-        model.closeAdmission();
+        model.close();
         f.services.close();
         f.worker.drain();
         QVERIFY(f.worker.quiescent());
@@ -435,7 +435,7 @@ private Q_SLOTS:
         Fixture f; QVERIFY(f.model->append("important warning", true)); f.worker.reject_utility = true;
         QVERIFY(!f.model->project(true)); QVERIFY(!f.model->busy()); QVERIFY(!f.model->error().isEmpty()); f.finish();
         QVERIFY(f.model->resetInput()); QVERIFY(f.model->append("closed", true)); QVERIFY(f.model->project(true));
-        f.model->closeAdmission(); f.finish(); QVERIFY(f.model->summary().isEmpty());
+        f.model->close(); f.finish(); QVERIFY(f.model->summary().isEmpty());
         QVERIFY(!f.model->append("late", false));
     }
     void observerDestructionAndResetSignalsCannotPublishAfterClose() {
@@ -501,7 +501,7 @@ private Q_SLOTS:
         QCOMPARE(startupdiagnostics::FinalExitStatus(EXIT_SUCCESS, true), EXIT_FAILURE);
         QCOMPARE(startupdiagnostics::FinalExitStatus(17, true), 17);
         // Ordinary explicit intent refusal is not itself a diagnostic-loss receipt.
-        Fixture f; f.model->closeAdmission(); QVERIFY(!f.model->append("not admitted", false));
+        Fixture f; f.model->close(); QVERIFY(!f.model->append("not admitted", false));
         QCOMPARE(startupdiagnostics::FinalExitStatus(EXIT_SUCCESS, false), EXIT_SUCCESS);
     }
     void realDomainThreadPreservesGuiHeartbeatAndExactTail() {
@@ -514,7 +514,7 @@ private Q_SLOTS:
         QSemaphore entered, release;
         std::atomic<QThread*> worker_thread{nullptr};
         const auto cleanup = qScopeGuard([&] {
-            model.closeAdmission();
+            model.close();
             release.release();
             worker.stopAndJoin();
         });
@@ -531,7 +531,7 @@ private Q_SLOTS:
         QTRY_VERIFY_WITH_TIMEOUT(heartbeat, 5000); QVERIFY(model.busy());
         release.release();
         QTRY_VERIFY_WITH_TIMEOUT(!model.busy(), 5000); QCOMPARE(Complete(model), text);
-        model.closeAdmission();
+        model.close();
         QTRY_COMPARE(services.pendingRetirements(), size_t{0});
     }
 };

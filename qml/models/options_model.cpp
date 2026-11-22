@@ -418,7 +418,7 @@ SettingsEditorModel* OptionsQmlModel::createSettingsEditor()
 }
 OptionsQmlModel::~OptionsQmlModel()
 {
-    closeAdmission();
+    close();
 }
 
 void OptionsQmlModel::whenLinksDrained(std::function<void()> done)
@@ -433,12 +433,12 @@ void OptionsQmlModel::whenLinksDrained(std::function<void()> done)
     });
 }
 
-void OptionsQmlModel::closeAdmission()
+void OptionsQmlModel::close()
 {
     if (std::exchange(m_stopping, true)) return;
     m_preference_watch.stop();
     m_pending=false; m_forwarded_signer_pending=false; m_validation_pending=false;m_signer_validation_pending=false; ++m_signer_validation_revision;
-    m_work->close();m_links.reset();m_core_settings.closeAdmission();
+    m_work->close();m_links.reset();m_core_settings.close();
     if (m_owned_executor) {
         m_join_pending = true;
         auto join = JoinThreadAfterDrain([executor = std::move(m_owned_executor)] { executor->stopAndJoin(); }, this, [this] {
@@ -466,7 +466,7 @@ void OptionsQmlModel::beginShutdown()
 {
     if (std::exchange(m_shutdown_started, true)) return;
     const QPointer<OptionsQmlModel> observer{this};
-    closeAdmission();
+    close();
     if (!observer || m_join_pending) return;
     const auto remaining = std::make_shared<int>(m_link_queue ? 3 : 2);
     const auto finish = [observer, remaining] {

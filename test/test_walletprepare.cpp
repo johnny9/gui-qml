@@ -220,7 +220,7 @@ private Q_SLOTS:
         });
         source.fill(QChar{'y'});QCOMPARE(wallet->unlocks,0);QCOMPARE(wallet->creates,0);
         if(scenario==2){QVERIFY(!admitted);commands.drain();QCOMPARE(wallet->unlocks,0);QCOMPARE(wallet->creates,0);}
-        else{QVERIFY(admitted);if(scenario==1)opening->closeAdmission();QVERIFY(commands.step(execution::Lane::Core));
+        else{QVERIFY(admitted);if(scenario==1)opening->close();QVERIFY(commands.step(execution::Lane::Core));
             QCOMPARE(wallet->unlocks,1);QCOMPARE(wallet->creates,1);QCOMPARE(wallet->locks,1);QVERIFY(wallet->locked);QVERIFY(!operation->result());
             QVERIFY(commands.step(execution::Lane::Utility));QVERIFY(operation->result()->value);QCOMPARE(operation->result()->value->error,walletprepare::Error::None);QVERIFY(operation->result()->value->review);}
         captured.input.reset();operation.reset();output.reset();action.reset();opening->stop(false, {});commands.drain();QVERIFY(commands.quiescent());
@@ -391,7 +391,7 @@ private Q_SLOTS:
         QCOMPARE(wallet->creates, 0); QVERIFY(!operation->result());
         QVERIFY(commands.step(execution::Lane::Core));
         QCOMPARE(wallet->creates, 1); QVERIFY(!operation->result());
-        opening->closeAdmission();
+        opening->close();
         QVERIFY(!opening->startAction());
         QVERIFY(commands.step(execution::Lane::Utility));
         QCOMPARE(notices, 1);

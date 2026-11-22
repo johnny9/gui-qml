@@ -144,7 +144,7 @@ void CoreSettingsModelTests::manualDecisionOutcomeAndPresentation()
     QVERIFY(transport.step(execution::Lane::Utility));QVERIFY(!model.values().listen);QVERIFY(!before);QVERIFY(!after);
     QVERIFY(Publish(gui));QVERIFY(before);QVERIFY(after);QVERIFY(model.values().listen);QVERIFY(model.isTouched("listen"));
     QCOMPARE(model.operationId(),ticket);QCOMPARE(model.operationState(),CoreSettingsModel::Applied);
-    model.closeAdmission();transport.drain();QVERIFY(transport.quiescent());
+    model.close();transport.drain();QVERIFY(transport.quiescent());
 }
 void CoreSettingsModelTests::followupPreviewPreservesOriginalOutcomeTicket()
 {
@@ -160,7 +160,7 @@ void CoreSettingsModelTests::followupPreviewPreservesOriginalOutcomeTicket()
     int original_outcomes{0};
     for(const auto& row:outcomes)if(row[0].toULongLong()==original){++original_outcomes;QCOMPARE(row[1].value<CoreSettingsModel::OperationState>(),CoreSettingsModel::Applied);}
     QCOMPARE(original_outcomes,1);
-    model.closeAdmission();transport.drain();QVERIFY(transport.quiescent());
+    model.close();transport.drain();QVERIFY(transport.quiescent());
 }
 void CoreSettingsModelTests::acceptedEffectContinuesAfterGlobalClose()
 {
@@ -176,7 +176,7 @@ void CoreSettingsModelTests::acceptedEffectContinuesAfterGlobalClose()
     QVERIFY(model.changeNatpmp(true));
     // The accepted decision is still queued when shutdown closes admission.
     QVERIFY(transport.hasWork(execution::Lane::Utility));
-    model.closeAdmission();
+    model.close();
     bool drained{false};
     model.whenEffectsDrained([&] { drained = true; });
     QVERIFY(!drained);
@@ -197,7 +197,7 @@ void CoreSettingsModelTests::oldPreviewCannotReplaceNewUserIntent()
     QVERIFY(model.applyPreviewValuesPreservingTouched(old_preview,{},[&](bool value){adopted=value;},true,original));
     QVERIFY(Settle(transport,gui));QVERIFY(!adopted);QVERIFY(model.values().listen);QVERIFY(!model.values().server);QVERIFY(model.isTouched("listen"));
     QCOMPARE(model.operationState(),CoreSettingsModel::Stale);
-    model.closeAdmission();transport.drain();QVERIFY(transport.quiescent());
+    model.close();transport.drain();QVERIFY(transport.quiescent());
 }
 void CoreSettingsModelTests::queuedDecisionsOwnEffectsBeforeOutcomeDelivery()
 {
@@ -220,7 +220,7 @@ void CoreSettingsModelTests::queuedDecisionsOwnEffectsBeforeOutcomeDelivery()
     QVERIFY(transport.step(execution::Lane::Utility));
     QCOMPARE(*effects,0);QVERIFY(Settle(transport,gui));QVERIFY(!preview_applied);
     QCOMPARE(*effects,3);QVERIFY(!actual->listen);QVERIFY(actual->natpmp);QVERIFY(!model.values().listen);QVERIFY(model.values().natpmp);
-    model.closeAdmission();transport.drain();QVERIFY(transport.quiescent());
+    model.close();transport.drain();QVERIFY(transport.quiescent());
 }
 void CoreSettingsModelTests::queuedDuplicateRetriesFailedOriginalWithoutLosingOtherKeys()
 {
@@ -246,7 +246,7 @@ void CoreSettingsModelTests::queuedDuplicateRetriesFailedOriginalWithoutLosingOt
     QCOMPARE(*effects,3);QVERIFY(actual->listen);QVERIFY(actual->natpmp);
     QVERIFY(model.values().listen);QVERIFY(model.values().natpmp);
     QCOMPARE(model.operationId(),retry);QCOMPARE(model.operationState(),CoreSettingsModel::Applied);
-    model.closeAdmission();transport.drain();QVERIFY(transport.quiescent());
+    model.close();transport.drain();QVERIFY(transport.quiescent());
 }
 void CoreSettingsModelTests::heldTypingCoalesces()
 {
@@ -263,7 +263,7 @@ void CoreSettingsModelTests::heldTypingCoalesces()
     // the successor decision before the independent GUI follow-up turn.
     QVERIFY(transport.quiescent());QCOMPARE(gui.size(),size_t{1});
     QVERIFY(Settle(transport,gui));QVERIFY(draft->canApply());QVERIFY(draft->proxyError().isEmpty());
-    model.closeAdmission();transport.drain();QVERIFY(transport.quiescent());
+    model.close();transport.drain();QVERIFY(transport.quiescent());
 }
 
 void CoreSettingsModelTests::ownedWorkRetriesOutcomeAndDrainWithoutReplayingEffect()
@@ -320,7 +320,7 @@ void CoreSettingsModelTests::proxyDraftKeepsOriginalLiteralAndAtomicPair()
     QVERIFY(model.values().proxy_enabled);QVERIFY(model.values().tor_enabled);
     QCOMPARE(model.values().proxy_address,QStringLiteral("127.0.0.1:9050"));QCOMPARE(model.values().tor_address,QStringLiteral("[::1]:9050"));
     QCOMPARE(draft->proxyAddress(),QStringLiteral("192.0.2.9:9050"));
-    model.closeAdmission();transport.drain();QVERIFY(transport.quiescent());
+    model.close();transport.drain();QVERIFY(transport.quiescent());
 }
 void CoreSettingsModelTests::realThreadDecisionAndEffectStayOffGui()
 {
@@ -331,7 +331,7 @@ void CoreSettingsModelTests::realThreadDecisionAndEffectStayOffGui()
     const auto* gui = QThread::currentThread();
     std::atomic<bool> decision_native{false}, effect_native{false};
     const auto cleanup = qScopeGuard([&] {
-        model.closeAdmission();
+        model.close();
         executor.stopAndJoin();
     });
     model.configureServices(presentation::QueuedPost(), &executor);
@@ -435,7 +435,7 @@ void CoreSettingsModelTests::manualTypedEntryValues()
     }
     QVERIFY(QmlCoreSettings::ValuesEqual(model.values(), effect.persisted));
     QCOMPARE(entry->status(), status); QVERIFY(model.error().isEmpty());
-    model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    model.close(); transport.drain(); QVERIFY(transport.quiescent());
 }
 
 void CoreSettingsModelTests::manualEntryEnabledGroups_data()
@@ -470,7 +470,7 @@ void CoreSettingsModelTests::manualEntryEnabledGroups()
         QCOMPARE(effect.calls, 2); QCOMPARE(effect.writes, 2);
     }
     QVERIFY(QmlCoreSettings::ValuesEqual(model.values(), effect.persisted));
-    model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    model.close(); transport.drain(); QVERIFY(transport.quiescent());
 }
 
 void CoreSettingsModelTests::manualTouchedPreviewAndContextOwnership()
@@ -508,7 +508,7 @@ void CoreSettingsModelTests::manualTouchedPreviewAndContextOwnership()
     QCOMPARE(completions, 3); QVERIFY(!adopted); QCOMPARE(model.operationState(), CoreSettingsModel::Stale);
     QVERIFY(QmlCoreSettings::ValuesEqual(model.values(), incoming)); QCOMPARE(model.userRevision(), quint64{0});
     QCOMPARE(effect.calls, 0); QCOMPARE(effect.writes, 0); QVERIFY(QmlCoreSettings::ValuesEqual(effect.persisted, initial));
-    model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    model.close(); transport.drain(); QVERIFY(transport.quiescent());
 }
 
 void CoreSettingsModelTests::manualStatusIdentityAndEntryAvailability()
@@ -531,7 +531,7 @@ void CoreSettingsModelTests::manualStatusIdentityAndEntryAvailability()
     model.setAdmissionReady(false); model.setAdmissionReady(false); QVERIFY(!entry->canEdit()); QCOMPARE(statuses.size(), 3);
     const auto revision = model.userRevision(); QCOMPARE(model.changeProxyEnabled(true), quint64{0}); QCOMPARE(model.userRevision(), revision);
     model.setAdmissionReady(true); QVERIFY(entry->canEdit()); QCOMPARE(statuses.size(), 4);
-    model.closeAdmission(); model.setAdmissionReady(false); QCOMPARE(statuses.size(), 4); transport.drain(); QVERIFY(transport.quiescent());
+    model.close(); model.setAdmissionReady(false); QCOMPARE(statuses.size(), 4); transport.drain(); QVERIFY(transport.quiescent());
 }
 
 void CoreSettingsModelTests::manualRefusedSettingsKeepPersistedValues_data()
@@ -551,7 +551,7 @@ void CoreSettingsModelTests::manualRefusedSettingsKeepPersistedValues()
     SettingsWriteProbe effect{initial}; effect.install(model);
     model.configureServices([&](auto turn) { gui.push_back(std::move(turn)); }, &transport.executor()); QVERIFY(Settle(transport, gui));
     auto* entry = qobject_cast<CoreSettingEntryModel*>(model.entry(QStringLiteral("server"))); QVERIFY(entry);
-    if (refusal == 0) model.closeAdmission();
+    if (refusal == 0) model.close();
     if (refusal == 1) model.setAdmissionReady(false);
     if (refusal == 3) transport.reject_utility = true;
     if (refusal == 4) transport.reject_core = true;
@@ -580,7 +580,7 @@ void CoreSettingsModelTests::manualRefusedSettingsKeepPersistedValues()
         QCOMPARE(effect.calls, calls + 1); QCOMPARE(effect.writes, 1); QVERIFY(effect.persisted.server); QVERIFY(model.values().server);
         QCOMPARE(model.operationState(), CoreSettingsModel::Applied);
     }
-    model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    model.close(); transport.drain(); QVERIFY(transport.quiescent());
 }
 
 void CoreSettingsModelTests::manualOlderEffectOwnsItsFailureAndContext()
@@ -612,7 +612,7 @@ void CoreSettingsModelTests::manualOlderEffectOwnsItsFailureAndContext()
     QCOMPARE(published, (std::vector<int>{2, 1})); QCOMPARE(outcomes.size(), 2);
     QCOMPARE(outcomes[0][0].toULongLong(), latest); QCOMPARE(outcomes[0][1].value<CoreSettingsModel::OperationState>(), CoreSettingsModel::Applied);
     QCOMPARE(outcomes[1][0].toULongLong(), original); QCOMPARE(outcomes[1][1].value<CoreSettingsModel::OperationState>(), CoreSettingsModel::Failed);
-    held.clear(); model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    held.clear(); model.close(); transport.drain(); QVERIFY(transport.quiescent());
 }
 
 void CoreSettingsModelTests::manualReentrantPublicationStopsAtItsOwner_data()
@@ -636,7 +636,7 @@ void CoreSettingsModelTests::manualReentrantPublicationStopsAtItsOwner()
     QSignalSpy changed{model.get(), &CoreSettingsModel::operationChanged}, entry_status{entry, &CoreSettingEntryModel::statusChanged};
     QSignalSpy value{entry, &CoreSettingEntryModel::valueChanged}, enabled{entry, &CoreSettingEntryModel::enabledChanged}, address{entry, &CoreSettingEntryModel::addressChanged};
     int before_calls{0}, after_calls{0}, completions{0};
-    const auto stop = [&] { if (destroy) model.reset(); else model->closeAdmission(); };
+    const auto stop = [&] { if (destroy) model.reset(); else model->close(); };
     model->setBeforeChangeHandler([&](auto origin) { QVERIFY(origin == CoreSettingsModel::ChangeOrigin::Preview); ++before_calls; if (stage == 0) stop(); });
     model->setAfterChangeHandler([&](const auto&, auto) { ++after_calls; if (stage == 6) stop(); });
     connect(model.get(), &CoreSettingsModel::statusesChanged, this, [&] { if (stage == 1) stop(); });
@@ -697,7 +697,7 @@ void CoreSettingsModelTests::manualProxyDraftValidationBounds()
     QCOMPARE(effect.writes, enabled && valid ? 1 : 0);
     QVERIFY(QmlCoreSettings::ValuesEqual(model.values(), effect.persisted));
     if (!enabled) QVERIFY(QmlCoreSettings::ValuesEqual(effect.persisted, initial));
-    model.closeAdmission(); QVERIFY(!draft->canApply()); QVERIFY(!draft->requestApply());
+    model.close(); QVERIFY(!draft->canApply()); QVERIFY(!draft->requestApply());
     transport.drain(); QVERIFY(transport.quiescent());
 }
 
@@ -735,7 +735,7 @@ void CoreSettingsModelTests::manualProxyDraftObservationFailure()
         QVERIFY(draft->error().isEmpty()); QVERIFY(draft->ready()); QVERIFY(draft->canApply()); QVERIFY(!draft->dirty());
     }
     QCOMPARE(effect.calls, 0); QCOMPARE(effect.writes, 0); QVERIFY(QmlCoreSettings::ValuesEqual(model.values(), initial));
-    model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    model.close(); transport.drain(); QVERIFY(transport.quiescent());
 }
 
 void CoreSettingsModelTests::manualIndependentDraftsRespectLockedGroups_data()
@@ -769,7 +769,7 @@ void CoreSettingsModelTests::manualIndependentDraftsRespectLockedGroups()
     QCOMPARE(effect.persisted.tor_address, lock_proxy ? QStringLiteral("[::1]:9250") : QStringLiteral("[::1]:9150"));
     QVERIFY(QmlCoreSettings::ValuesEqual(model.values(), effect.persisted));
     QCOMPARE(model.status(locked_key).value(QStringLiteral("infoText")).toString(), QStringLiteral("Original command-line value"));
-    model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    model.close(); transport.drain(); QVERIFY(transport.quiescent());
 }
 
 void CoreSettingsModelTests::manualUnrecognizedEntryCannotAdmitCommands()
@@ -788,7 +788,7 @@ void CoreSettingsModelTests::manualUnrecognizedEntryCannotAdmitCommands()
     QCOMPARE(entry.requestAddress(QStringLiteral("127.0.0.1:9050")), quint64{0});
     QCOMPARE(model.operationId(), ticket); QCOMPARE(model.userRevision(), revision);
     QCOMPARE(effect.calls, 0); QVERIFY(transport.quiescent());
-    model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    model.close(); transport.drain(); QVERIFY(transport.quiescent());
 }
 
 void CoreSettingsModelTests::manualServiceConfigurationOwnership_data()
@@ -808,9 +808,9 @@ void CoreSettingsModelTests::manualServiceConfigurationOwnership()
     QVERIFY(model.presentationOpen()); QCOMPARE(model.operationState(), CoreSettingsModel::Idle);
     if (mode == 0) {
         QVERIFY(!model.pending()); QVERIFY(!model.publishedChange().accepted); QVERIFY(model.statuses().isEmpty());
-        model.closeAdmission(); QVERIFY(original.quiescent()); return;
+        model.close(); QVERIFY(original.quiescent()); return;
     }
-    if (mode == 1) model.closeAdmission();
+    if (mode == 1) model.close();
     model.configureServices([&](auto turn) { gui.push_back(std::move(turn)); }, &original.executor());
     if (mode == 1) {
         QVERIFY(!model.presentationOpen()); QCOMPARE(model.operationState(), CoreSettingsModel::Closed);
@@ -824,7 +824,7 @@ void CoreSettingsModelTests::manualServiceConfigurationOwnership()
     QCOMPARE(model.operationId(), ticket); QVERIFY(other.quiescent());
     QVERIFY(model.changeServer(true)); QVERIFY(!original.quiescent()); QVERIFY(other.quiescent());
     QVERIFY(Settle(original, gui)); QVERIFY(model.values().server); QVERIFY(other_gui.empty());
-    model.closeAdmission(); model.configureServices({}, &other.executor());
+    model.close(); model.configureServices({}, &other.executor());
     original.drain(); QVERIFY(original.quiescent()); QVERIFY(other.quiescent());
 }
 
@@ -891,7 +891,7 @@ void CoreSettingsModelTests::manualEffectReadbackAndOneOutcome()
         QVERIFY(Settle(transport, gui)); QVERIFY(model.error().isEmpty());
         QVERIFY(QmlCoreSettings::ValuesEqual(model.values(), persisted)); QCOMPARE(calls, 1);
     }
-    model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    model.close(); transport.drain(); QVERIFY(transport.quiescent());
 }
 
 
@@ -917,7 +917,7 @@ void CoreSettingsModelTests::manualFailureNotificationsStopAtRetiredOwner()
     QSignalSpy statuses{model.get(), &CoreSettingsModel::statusesChanged}, changed{model.get(), &CoreSettingsModel::operationChanged};
     QSignalSpy value{entry, &CoreSettingEntryModel::valueChanged}, enabled{entry, &CoreSettingEntryModel::enabledChanged};
     QSignalSpy address{entry, &CoreSettingEntryModel::addressChanged}, finished{model.get(), &CoreSettingsModel::operationFinished};
-    const auto stop = [&] { if (destroy) model.reset(); else model->closeAdmission(); };
+    const auto stop = [&] { if (destroy) model.reset(); else model->close(); };
     connect(model.get(), &CoreSettingsModel::statusesChanged, this, [&] { if (stage == 0) stop(); });
     connect(entry, &CoreSettingEntryModel::valueChanged, this, [&] { if (stage == 1) stop(); });
     connect(entry, &CoreSettingEntryModel::enabledChanged, this, [&] { if (stage == 2) stop(); });
@@ -957,7 +957,7 @@ void CoreSettingsModelTests::manualDesiredPublicationRetiresWithItsOwner()
     model->setEffectPort([&](const auto& change, auto, auto action, auto done, auto failed) {
         ++calls; held.push_back({change, std::move(action), std::move(done), std::move(failed)});
     }, {}, {});
-    const auto stop = [&] { if (destroy) model.reset(); else model->closeAdmission(); };
+    const auto stop = [&] { if (destroy) model.reset(); else model->close(); };
     QSignalSpy value{entry, &CoreSettingEntryModel::valueChanged}, finished{model.get(), &CoreSettingsModel::operationFinished};
     model->setBeforeChangeHandler([&](auto origin) { QCOMPARE(origin, CoreSettingsModel::ChangeOrigin::User); ++before; if (stage == 1) stop(); });
     model->setAfterChangeHandler([&](const auto&, auto origin) { QCOMPARE(origin, CoreSettingsModel::ChangeOrigin::User); ++after; if (stage == 3) stop(); });
@@ -1002,7 +1002,7 @@ void CoreSettingsModelTests::manualOlderDesiredFrameCannotReplaceNewerIntent()
     }
     held.clear(); QVERIFY(Settle(transport, gui)); QCOMPARE(writes, 2); QVERIFY(!model.pending());
     QVERIFY(QmlCoreSettings::ValuesEqual(model.values(), persisted)); QVERIFY(persisted.listen); QVERIFY(persisted.server);
-    model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    model.close(); transport.drain(); QVERIFY(transport.quiescent());
 }
 
 void CoreSettingsModelTests::manualDraftObserverLossAtHeldOutcome_data()
@@ -1030,7 +1030,7 @@ void CoreSettingsModelTests::manualDraftObserverLossAtHeldOutcome()
         draft->setProxyEnabled(true);
     }
     transport.drain(); QSignalSpy changed{draft.get(), &CoreProxyDraft::changed};
-    if (retire == 0) model->closeAdmission();
+    if (retire == 0) model->close();
     else if (retire == 1) model.reset();
     else draft.reset();
     if (draft) {
@@ -1039,7 +1039,7 @@ void CoreSettingsModelTests::manualDraftObserverLossAtHeldOutcome()
         QVERIFY(!draft->canApply()); QVERIFY(!draft->requestApply());
     }
     QVERIFY(Settle(transport, gui)); QCOMPARE(changed.size(), 0); QCOMPARE(effect.calls, 0); QCOMPARE(effect.writes, 0);
-    if (model) { QVERIFY(QmlCoreSettings::ValuesEqual(model->values(), initial)); model->closeAdmission(); }
+    if (model) { QVERIFY(QmlCoreSettings::ValuesEqual(model->values(), initial)); model->close(); }
     transport.drain(); QVERIFY(transport.quiescent());
 }
 
@@ -1070,7 +1070,7 @@ void CoreSettingsModelTests::manualQueuedResetDoesNotDuplicateANewerOpening()
     QVERIFY(Publish(gui)); QCOMPARE(decisions(), finish_newer_first ? size_t{0} : size_t{1});
     QVERIFY(Settle(transport, gui)); QVERIFY(draft->ready()); QVERIFY(!draft->pending()); QVERIFY(draft->canApply());
     QVERIFY(!draft->dirty()); QVERIFY(model.error().isEmpty());
-    model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    model.close(); transport.drain(); QVERIFY(transport.quiescent());
 }
 
 void CoreSettingsModelTests::manualQueuedValidationDoesNotDuplicateNewerInput()
@@ -1087,7 +1087,7 @@ void CoreSettingsModelTests::manualQueuedValidationDoesNotDuplicateNewerInput()
     QVERIFY(Settle(transport, gui)); QVERIFY(draft->canApply()); QVERIFY(draft->dirty());
     QCOMPARE(draft->proxyAddress(), QStringLiteral("192.0.2.5:9050")); QVERIFY(draft->torEnabled());
     QVERIFY(!model.values().proxy_enabled); QVERIFY(!model.values().tor_enabled);
-    model.closeAdmission(); transport.drain(); QVERIFY(transport.quiescent());
+    model.close(); transport.drain(); QVERIFY(transport.quiescent());
 }
 
 void CoreSettingsModelTests::realDefaultPortsInitializeAtTheFirstPublicCommand_data()
@@ -1117,7 +1117,7 @@ void CoreSettingsModelTests::realDefaultPortsInitializeAtTheFirstPublicCommand()
     if (draft) QTRY_VERIFY(draft->ready() && !draft->pending());
     QVERIFY(model.error().isEmpty()); QCOMPARE(model.values().server, first_command == 1);
     QCOMPARE(model.defaultProxyAddress(), QStringLiteral("127.0.0.1:9050"));
-    model.closeAdmission(); bool drained{false}; model.whenEffectsDrained([&] { drained = true; }); QTRY_VERIFY(drained);
+    model.close(); bool drained{false}; model.whenEffectsDrained([&] { drained = true; }); QTRY_VERIFY(drained);
 }
 
 void CoreSettingsModelTests::standaloneEffectJoinsWithPresentationHeld()

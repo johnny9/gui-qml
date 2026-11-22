@@ -490,7 +490,7 @@ struct WalletQmlModel::ReviewRetirement : std::enable_shared_from_this<ReviewRet
         // active until each destructor returns before acknowledging retirement.
         for (int budget = 0; budget < 32 && !reviews.empty(); ++budget) {
             const auto review = reviews.begin()->second; reviews.erase(reviews.begin());
-            if (review) { review->closeAdmission(); delete review; }
+            if (review) { review->close(); delete review; }
         }
         scheduled = false;
         if (!reviews.empty()) { enqueue(); return; }
@@ -791,7 +791,7 @@ void WalletQmlModel::finishShutdown()
     else finished();
 }
 
-void WalletQmlModel::closeAdmission()
+void WalletQmlModel::close()
 {
     const bool admission_changed = !std::exchange(m_closed, true);
     if (m_receive) m_receive->retire();
@@ -803,7 +803,7 @@ void WalletQmlModel::closeAdmission()
     m_psbt_fee_request.reset();
     m_psbt_fee_pending = false;
     if (m_file_export_operation) m_file_export_operation->retire();
-    if (m_flow_details) m_flow_details->closeAdmission();
+    if (m_flow_details) m_flow_details->close();
     ++m_flow_revision;
     m_current_flow.clear(); m_flow_lifetime.reset(); m_flow_document.reset(); m_flow_proof.reset(); m_flow_transaction.reset();
     { std::lock_guard lock{m_send_facts_input->mutex}; m_send_facts_input->selected.reset(); m_send_facts_input->draft.reset(); }
@@ -830,23 +830,23 @@ void WalletQmlModel::closeAdmission()
     m_balance_timer.stop();
     if (m_receipt_projection) m_receipt_projection->close();
     if (m_fee_read_services.timer) m_fee_read_services.timer->stop();
-    if (m_opening) m_opening->closeAdmission();
-    if (m_address_list_model) m_address_list_model->closeAdmission();
-    if (m_coins_list_model) m_coins_list_model->closeAdmission();
-    if (m_send_recipients) m_send_recipients->closeAdmission();
+    if (m_opening) m_opening->close();
+    if (m_address_list_model) m_address_list_model->close();
+    if (m_coins_list_model) m_coins_list_model->close();
+    if (m_send_recipients) m_send_recipients->close();
     if (m_send_facts_query) m_send_facts_query->close();
     if (m_flow_query) { m_flow_query->close(); m_flow_query.reset(); }
-    if (m_transaction_activity_model) m_transaction_activity_model->closeAdmission();
-    if (m_sign_verify_message_model) m_sign_verify_message_model->closeAdmission();
-    if (m_fee_bumps) m_fee_bumps->closeAdmission();
-    if (m_imported_psbt_model) m_imported_psbt_model->closeAdmission();
+    if (m_transaction_activity_model) m_transaction_activity_model->close();
+    if (m_sign_verify_message_model) m_sign_verify_message_model->close();
+    if (m_fee_bumps) m_fee_bumps->close();
+    if (m_imported_psbt_model) m_imported_psbt_model->close();
     if (admission_changed) Q_EMIT preparationChanged();
 }
 
 void WalletQmlModel::beginShutdown(bool remove_wallet)
 {
     if (m_stopping) return;
-    closeAdmission();
+    close();
     m_stopping = true;
     const QPointer<WalletQmlModel> observer{this};
     const bool was_available{std::exchange(m_available_published, false)};

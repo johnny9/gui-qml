@@ -143,7 +143,7 @@ public:
     explicit RpcConsoleModel(interfaces::Node& node, QObject* parent = nullptr);
     RpcConsoleModel(interfaces::Node& node, execution::Executor& executor, presentation::Post post, QObject* parent = nullptr);
     ~RpcConsoleModel();
-    void closeAdmission();
+    void close();
     void beginShutdown();
 
     QString completionPrefix() const { return m_completion_prefix; }

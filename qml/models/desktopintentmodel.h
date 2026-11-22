@@ -54,7 +54,7 @@ public:
     void setWalletEnabled(bool enabled);
     void setReady(bool ready);
     void setClosedFlag(std::shared_ptr<const std::atomic_bool> closed) { m_parent_closed->store(std::move(closed)); }
-    void closeAdmission();
+    void close();
     // Worker-safe. Includes the last transport reference and queued receipts.
     void whenDrained(std::function<void()> done);
 #ifdef ENABLE_WALLET

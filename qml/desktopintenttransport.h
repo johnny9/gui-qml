@@ -56,7 +56,7 @@ public:
     execution::SubmitResult start(QString profile_directory, QString network, std::vector<Input> inputs,
                                std::function<void(StartResult)> completed);
     // Synchronous admission fence only; no signals, I/O or drain work.
-    void closeAdmission();
+    void close();
     // Admission means stop was requested. retired is delivered only after
     // Native sockets/server/lock are physically gone. Destruction also stops.
     execution::SubmitResult stop(std::function<void()> retired = {});

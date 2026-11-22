@@ -92,7 +92,7 @@ public:
 
     void setSignerExecutor(execution::Executor& executor, presentation::Post post = {});
     void setSignerPorts(signerdiscovery::Ports ports);
-    void closeAdmission();
+    void close();
     //! Signer discovery finished its background work.
     bool drained() const { return !m_signers || m_signers->drained(); }
 

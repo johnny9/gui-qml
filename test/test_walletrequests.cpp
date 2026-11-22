@@ -234,7 +234,7 @@ private Q_SLOTS:
         if (mode == 6) {
             while (f.commands.step(Lane::Utility)) {}
             QVERIFY(f.commands.step(Lane::Core)); QCOMPARE(f.wallet->writes, 1);
-            f.opening->closeAdmission();
+            f.opening->close();
         }
         bool escaped{false};
         try { f.commands.drain(); }
@@ -429,7 +429,7 @@ private Q_SLOTS:
         const auto first = f.store->submit(Create(), [&] {
             ++completed;
             if (boundary == 1) f.opening->utilityQueue()->close();
-            if (boundary == 2) f.opening->closeAdmission();
+            if (boundary == 2) f.opening->close();
         });
         const auto second = f.store->submit(Create(), [&] { ++completed; });
         QVERIFY(first && second); QVERIFY(!first.operation->result() && !second.operation->result());
@@ -559,7 +559,7 @@ private Q_SLOTS:
         Fixture f; bool released{false};
         auto held = f.opening->holdValues([&] { released = true; }); QVERIFY(held);
         QVERIFY(!f.retirement.step(Lane::Utility)); QVERIFY(!released);
-        f.opening->closeAdmission(); held.reset();
+        f.opening->close(); held.reset();
         QVERIFY(f.retirement.step(Lane::Utility)); QVERIFY(released); f.commands.drain();
         QVERIFY(f.commands.quiescent());
     }
@@ -1798,7 +1798,7 @@ private Q_SLOTS:
         while (f.commands.step(Lane::Utility)) {}
         QVERIFY(f.commands.step(Lane::Core)); QCOMPARE(f.wallet->writes, 32);
         if (transport_failure) f.commands.reject_core = true;
-        else f.opening->closeAdmission();
+        else f.opening->close();
         f.commands.drain();
         QVERIFY(operation->result());
         const auto result = *operation->result();

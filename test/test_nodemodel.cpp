@@ -377,7 +377,7 @@ private Q_SLOTS:
             services.diagnostic_loss = loss;
             NodeModel model{node, false, std::move(services)};
             env.drain(); env.publishAll();
-            model.closeAdmission();
+            model.close();
             if (workers_stopped) { model.beginShutdown(); env.drain(); env.publishAll(); }
             QVERIFY(!model.postNative(execution::Lane::Core)(execution::MakeTask([] {}, [] {}, {})));
             const auto core_submissions = env.coreSubmissions();
@@ -401,7 +401,7 @@ private Q_SLOTS:
             }
             QVERIFY(complete.endsWith(diagnostic)); QVERIFY(!loss->load());
             QVERIFY(!model.postNative(execution::Lane::Core)(execution::MakeTask([] {}, [] {}, {})));
-            model.closeAdmission(); model.beginShutdown();
+            model.close(); model.beginShutdown();
             QVERIFY(DrainManualNodeTurns(env));
             QVERIFY(model.isDrained()); // Quiet publication must not require facade destruction.
         }
@@ -568,7 +568,7 @@ void NodeModelTests::originalAdmissionIsCountedBeforeQuietClose()
         else admitted = bool(original(execution::MakeTask([&] { ++effects; }, [&] { ++outcomes; }, {})));
     });
     QVERIFY(entered.tryAcquire(1, ASYNC_TIMEOUT_MS));
-    model.closeAdmission();
+    model.close();
     QVERIFY(!model.postNative(Lane::Core)(execution::MakeTask([] {}, [] {}, {})));
     model.beginShutdown();
     QVERIFY(DrainManualNodeTurns(env));
@@ -614,7 +614,7 @@ void NodeModelTests::sharedRetirementUsesControlledCleanupAndActualDrain()
     QTRY_VERIFY_WITH_TIMEOUT(model.notificationsReady(), ASYNC_TIMEOUT_MS);
 
     if (fence_first) {
-        model.closeAdmission();
+        model.close();
         QVERIFY(!model.postNative(Lane::Core)(execution::MakeTask([] {}, [] {}, {})));
     }
     const auto retire = model.valueRetirement();
@@ -691,7 +691,7 @@ void NodeModelTests::manualOriginalActionScopeOwnsLateStagesAndNativeCleanup()
         return true;
     }, [&](int) { ++published; }, [](std::exception_ptr) {}));
     const auto submit = work.queuePost();
-    model.closeAdmission();
+    model.close();
     QVERIFY(!model.postNative(Lane::Core)(execution::MakeTask([] {}, [] {}, {})));
     work.close([&] { work_drained = true; });
     QVERIFY(!work.submit([] { return 0; }, [](int) {}, [](std::exception_ptr) {}));
@@ -926,7 +926,7 @@ void NodeModelTests::sharedObservationsUseCoreAndPriorityAndDrainBeforeNodeShutd
     QVERIFY(step(Lane::Core));
     model.refreshMempoolInfo(); // Coalesce a follow-up while Utility holds the result.
     QSignalSpy drained{&model, &NodeModel::workDrained};
-    model.closeAdmission();
+    model.close();
     QVERIFY(!post_core(execution::MakeTask([] {}, [] {}, {})));
     model.beginShutdown();
     env.publishAll();
@@ -1311,7 +1311,7 @@ void NodeModelTests::peerAdmissionDoesNotWaitForNetworkObservation()
         QVERIFY(model.peerCommands()->pending());
         QCOMPARE(effects, 0);
         if (shutdown) model.beginShutdown();
-        else model.closeAdmission();
+        else model.close();
         QVERIFY(!model.networkBackendAvailable());
         QVERIFY(!model.peerCommands()->canStart());
         QCOMPARE(model.peerCommands()->requestDisconnectPeer(8), quint64{0});
@@ -2449,7 +2449,7 @@ void NodeModelTests::manualInitializationStopsAfterPublicReentrancy()
         synchronized_at_boundary = model->initialSyncComplete();
         if (invalidation == 0) model->requestShutdown();
         else if (invalidation == 1) model->beginShutdown();
-        else if (invalidation == 2) model->closeAdmission();
+        else if (invalidation == 2) model->close();
         else if (invalidation == 3) model.reset();
     };
     switch (boundary) {

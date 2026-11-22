@@ -39,7 +39,7 @@ struct Fixture {
         finish();
     }
     ~Fixture() {
-        if (recipients) recipients->closeAdmission();
+        if (recipients) recipients->close();
         recipients.reset();
         // Independent bounded GUI retirement outlives the facade, including a
         // deliberately throwing primary transport and its real queued fallback.
@@ -249,7 +249,7 @@ private Q_SLOTS:
         connect(recipient->amount(), &BitcoinAmount::inputChanged, f.recipients.get(), [&] {
             if (handled) return;
             handled = true;
-            if (outcome == 0) f.recipients->closeAdmission();
+            if (outcome == 0) f.recipients->close();
             if (outcome == 1) f.recipients.reset();
             if (outcome == 2) recipient->amount()->setSatoshi(9000);
             if (outcome == 3) recipient->applyImportedPayment({Address(7), "newer", "newer message", {}, CAmount{7000}, false});
@@ -345,7 +345,7 @@ private Q_SLOTS:
         f.recipients->clear(); f.finish(); QCOMPARE(f.recipients->draftId(), id);
         QCOMPARE(f.recipients->state(), SendRecipientsListModel::DraftState::Empty); QVERIFY(f.recipients->revision() != revision);
         QCOMPARE(captured->recipients.front().amount, CAmount{100000});
-        f.recipients->currentRecipient()->chooseMaximum(); f.recipients->closeAdmission(); f.finish();
+        f.recipients->currentRecipient()->chooseMaximum(); f.recipients->close(); f.finish();
         QCOMPARE(f.recipients->state(), SendRecipientsListModel::DraftState::Retired); QCOMPARE(f.recipients->count(), 0);
         QCOMPARE(captured->recipients.front().amount, CAmount{100000});
     }
@@ -396,7 +396,7 @@ private Q_SLOTS:
         QVERIFY(DrainManualNodeTurns(env));
         QSignalSpy draft{recipient.get(), &SendRecipient::draftChanged};
         interrupt = [&] {
-            if (outcome == 0) recipient->closeAdmission();
+            if (outcome == 0) recipient->close();
             else if (outcome == 1) recipient.reset();
             else recipient->amount()->setSatoshi(9000);
         };
@@ -439,7 +439,7 @@ private Q_SLOTS:
             env.post()(std::move(work));
         });
         QVERIFY(env.hasWork(execution::Lane::Utility));
-        if (outcome == 0) recipient->closeAdmission();
+        if (outcome == 0) recipient->close();
         else if (outcome == 1) recipient.reset();
         else {
             recipient->setOpening(opening, [&](auto work) {
@@ -470,7 +470,7 @@ private Q_SLOTS:
         QFETCH(int, mutation); QFETCH(bool, about); Fixture f; f.recipients->add(); f.finish();
         auto* model = f.recipients.get(); bool closed{false}; int at_end{-1};
         const auto close = [&] {
-            const auto rows = model->rowCount(); model->closeAdmission();
+            const auto rows = model->rowCount(); model->close();
             QCOMPARE(model->rowCount(), rows); closed = true;
         };
         if (mutation == 0) {
@@ -501,7 +501,7 @@ private Q_SLOTS:
         QSignalSpy validity{first.data(), &SendRecipient::isValidChanged};
         for (auto* recipient : rows)
             connect(recipient, &QObject::destroyed, this, [&] { ++destroyed; });
-        f.recipients->closeAdmission();
+        f.recipients->close();
         QCOMPARE(f.recipients->count(), 0); QVERIFY(first);
         const auto address = first->address()->address();
         first->setAddress(Address(9));
@@ -652,7 +652,7 @@ private Q_SLOTS:
     void quietCloseAndObserverLossDoNotPublishAcceptedValidation() {
         Fixture f; auto* recipient = f.recipients->currentRecipient(); f.fill(recipient, 4, 1000);
         QSignalSpy changed{recipient, &SendRecipient::isValidChanged};
-        recipient->closeAdmission(); f.recipients->closeAdmission(); f.recipients.reset();
+        recipient->close(); f.recipients->close(); f.recipients.reset();
         f.commands.drain(); while (f.publishOne()) {}
         QCOMPARE(changed.count(), 0);
     }
@@ -675,7 +675,7 @@ private Q_SLOTS:
         SendRecipient recipient{nullptr};
         const auto cleanup = qScopeGuard([&] {
             release.release();
-            recipient.closeAdmission();
+            recipient.close();
             opening->stop(false, [stopped] { *stopped = true; });
             QVERIFY(QTest::qWaitFor([&] { return stopped->load(); }, 5'000));
             executor.stopAndJoin();

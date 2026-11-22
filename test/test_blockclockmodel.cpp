@@ -187,7 +187,7 @@ void BlockClockModelTests::manualHistoryQuietCloseReleasesAcceptedProjection()
     auto model = std::make_unique<BlockClockModel>(history, services, false, [] { return UtcTime(15); });
     QSignalSpy changes{model.get(), &BlockClockModel::blockTimeFractionsChanged};
     worker.drain(); QVERIFY(model->historyPending());
-    model->closeAdmission(); model.reset();
+    model->close(); model.reset();
     worker.drain(); env.publishAll(); worker.drain();
     QCOMPARE(changes.count(), 0);
     QCOMPARE(services.pendingRetirements(), size_t{0});
@@ -216,7 +216,7 @@ void BlockClockModelTests::retentionRequestsDoNotWaitForNativeHistoryMutex()
     auto finish = qScopeGuard([&] { release.release(); native.join(); });
     QVERIFY(entered.tryAcquire(1, 5000));
     model.updateCurrentTime(UtcTime(3).addDays(1));
-    model.closeAdmission(); // Neither atomic retention nor quiet destruction takes the held Native mutex.
+    model.close(); // Neither atomic retention nor quiet destruction takes the held Native mutex.
     QVERIFY(!timed_out.load());
     QVERIFY(services.pendingRetirements() > 0);
     release.release(); native.join(); finish.dismiss();
@@ -244,7 +244,7 @@ void BlockClockModelTests::replacementObserverSurvivesOriginalNativeRetirement()
     auto history = std::make_shared<BlockClockHistory>(); history->initialize({{uint256{1}, UtcTime(13).toSecsSinceEpoch()}});
     BlockClockModel original{history, services, false, [] { return UtcTime(15); }};
     settle(); QCOMPARE(original.blockTimeFractions(), QList<qreal>{1.0 / 12.0});
-    original.closeAdmission();
+    original.close();
     QVERIFY(!retirement.quiescent()); // Keep the original token until the successor installs its own.
     BlockClockModel replacement{history, services, false, [] { return UtcTime(15); }};
     worker.drain(); // Register the successor before releasing the original retirement.
@@ -252,7 +252,7 @@ void BlockClockModelTests::replacementObserverSurvivesOriginalNativeRetirement()
     ConnectBlock(*history, 2, UtcTime(14).toSecsSinceEpoch());
     QCOMPARE(publications.size(), size_t{1});
     settle(); QCOMPARE(replacement.blockTimeFractions(), (QList<qreal>{1.0 / 12.0, 2.0 / 12.0}));
-    replacement.closeAdmission(); settle();
+    replacement.close(); settle();
     QVERIFY(worker.quiescent()); QVERIFY(retirement.quiescent());
     QCOMPARE(services.pendingRetirements(), size_t{0});
 }
@@ -282,7 +282,7 @@ void BlockClockModelTests::throwingPresentationPortCannotEscapeCoreOrStickWakeup
         settle(); QCOMPARE(model.blockTimeFractions().size(), qsizetype{id});
     }
     QVERIFY(rejected.load() >= 3);
-    model.closeAdmission(); settle();
+    model.close(); settle();
     QVERIFY(worker.quiescent()); QCOMPARE(services.pendingRetirements(), size_t{0});
 }
 

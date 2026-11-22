@@ -125,7 +125,7 @@ PsbtQmlModel::PsbtQmlModel(bool wallet_expected, interfaces::Node* node, QObject
 
 PsbtQmlModel::~PsbtQmlModel()
 {
-    closeAdmission();
+    close();
     if (m_owned_queues) m_owned_queues->retire();
 }
 
@@ -177,7 +177,7 @@ void PsbtQmlModel::setNode(interfaces::Node* node)
     retireSummaryQuery();
     if (!busy() && m_snapshot && !m_closed) refreshState();
 }
-void PsbtQmlModel::closeAdmission()
+void PsbtQmlModel::close()
 {
     m_closed = true;
     m_phase = Phase::Closed;
@@ -191,7 +191,7 @@ void PsbtQmlModel::closeAdmission()
 }
 void PsbtQmlModel::detachWallet()
 {
-    closeAdmission();
+    close();
     ++m_generation;
     Q_EMIT changed();
 }

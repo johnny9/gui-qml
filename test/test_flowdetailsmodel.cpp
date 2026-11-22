@@ -59,7 +59,7 @@ struct Fixture {
     ~Fixture()
     {
         on_submit = {}; on_hold = {};
-        if (model) model->closeAdmission();
+        if (model) model->close();
         model.reset();
         bool retired{false};
         values->close([&] { retired = true; });
@@ -142,7 +142,7 @@ private Q_SLOTS:
         int notices_after{-1}, documents_after{-1}, calls{0};
         auto change = [&] {
             ++calls;
-            if (action == 0) f.model->closeAdmission();
+            if (action == 0) f.model->close();
             else if (action == 1) f.model.reset();
             else f.model->publishSource(Flow(7, "successor"),
                 QVariantList{QVariantMap{{"label", "successor recipient"}, {"amountSat", 2000}}}, &f.successor, 2);
@@ -178,7 +178,7 @@ private Q_SLOTS:
                 QCOMPARE(f.model->outputRows()->rowCount(), 0);
             }
         }
-        if (f.model) f.model->closeAdmission();
+        if (f.model) f.model->close();
         f.model.reset();
         f.finish();
         QVERIFY(f.commands.quiescent());
@@ -216,7 +216,7 @@ private Q_SLOTS:
         if(stage==1){f.commands.drain();QVERIFY(f.model->pending());QCOMPARE(f.model->outputRows()->rowCount(),0);}
         if(stage==2){f.finish();QCOMPARE(f.model->outputRows()->rowCount(),1001);}
         QSignalSpy notices{f.model.get(),&FlowDetailsModel::snapshotChanged};
-        f.model->closeAdmission();const auto closed_notices=notices.count();f.finish();
+        f.model->close();const auto closed_notices=notices.count();f.finish();
         QCOMPARE(notices.count(),closed_notices);QCOMPARE(f.model->outputRows()->rowCount(),0);
         QVERIFY(f.commands.quiescent());
     }
@@ -277,7 +277,7 @@ private Q_SLOTS:
         FlowDetailsModel model;
         bool drained{false};
         const auto cleanup = qScopeGuard([&] {
-            model.closeAdmission();
+            model.close();
             stop([&] { drained = true; });
             worker.drain();
             publishAll();
@@ -312,7 +312,7 @@ private Q_SLOTS:
         QVERIFY(model.requestEntryDetails("outputs", 1, &context));
         QVERIFY(worker.step(Lane::Utility));
         QVERIFY(model.entryDetailsBusy());
-        model.closeAdmission();
+        model.close();
         stop([&] { drained = true; });
         QCOMPARE(*releases, 0);
         worker.drain();
@@ -360,7 +360,7 @@ private Q_SLOTS:
     void closeDuringModelResetDoesNotPublishOrLeaveNativeOwnersOnGui() {
         Fixture f; f.model->publishSource(Flow(30), {}, &f.original, 1);
         QSignalSpy changed{f.model.get(), &FlowDetailsModel::snapshotChanged};
-        connect(f.model->inputRows(), &QAbstractItemModel::modelAboutToBeReset, f.model.get(), [&] { f.model->closeAdmission(); });
+        connect(f.model->inputRows(), &QAbstractItemModel::modelAboutToBeReset, f.model.get(), [&] { f.model->close(); });
         f.finish(); QCOMPARE(changed.count(), 0); QCOMPARE(f.model->inputRows()->rowCount(), 0); QCOMPARE(f.model->outputRows()->rowCount(), 0);
         QVERIFY(!f.model->requestEntryDetails("outputs", 0, &f.original));
     }
@@ -381,7 +381,7 @@ private Q_SLOTS:
         FlowDetailsModel model;
         const auto cleanup = qScopeGuard([&] {
             release.release();
-            model.closeAdmission();
+            model.close();
             utility.close();
             utility.whenDrained([&] { work_drained.release(); });
             const bool drained = work_drained.tryAcquire(1, 5'000);
@@ -409,7 +409,7 @@ private Q_SLOTS:
         QTRY_VERIFY(!model.pending());
         QCOMPARE(model.outputRows()->rowCount(), 1001);
         QVERIFY(background.load() && background.load() != QThread::currentThread());
-        model.closeAdmission();
+        model.close();
         QTRY_VERIFY(retired->load() != nullptr);
         QVERIFY(retired->load() != QThread::currentThread());
     }

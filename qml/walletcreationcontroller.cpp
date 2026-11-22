@@ -89,7 +89,7 @@ WalletProvisioningCheck* WalletCreationController::createProvisioningCheck()
         m_host.names_ready, m_host.registry->nameRegistry(), m_host.shutdown_gate, false, m_host.catalog_queues);
     QQmlEngine::setObjectOwnership(form, QQmlEngine::JavaScriptOwnership);
     const QPointer<WalletProvisioningCheck> original{form};
-    m_host.registry->registerForm(form, [original] { if (original) original->closeAdmission(); });
+    m_host.registry->registerForm(form, [original] { if (original) original->close(); });
     connect(form, &QObject::destroyed, this, [this, form] { if (m_host.registry) m_host.registry->forgetForm(form); });
     connect(this, &WalletCreationController::capabilitiesChanged, form, &WalletProvisioningCheck::refresh);
     return form;
@@ -101,7 +101,7 @@ void WalletCreationController::track(WalletOperationModel* operation)
     m_operation = operation;
     m_busy = true;
     const QPointer<WalletOperationModel> original{operation};
-    m_host.registry->registerForm(operation, [original] { if (original) original->closeAdmission(); });
+    m_host.registry->registerForm(operation, [original] { if (original) original->close(); });
     connect(operation, &QObject::destroyed, this, [this, operation] { if (m_host.registry) m_host.registry->forgetForm(operation); });
     connect(operation, &WalletOperationModel::activated, this, [this](WalletOperationModel* active) {
         if (m_operation == active && m_busy) return;
@@ -259,11 +259,11 @@ void WalletCreationController::refreshSigners()
     m_signers->refresh();
 }
 
-void WalletCreationController::closeAdmission()
+void WalletCreationController::close()
 {
     m_closed = true;
     // The active operation's projection is closed synchronously; the registry
     // retires every other retained form in its ordinary shutdown batches.
-    if (m_operation) m_operation->closeAdmission();
-    if (m_signers) m_signers->closeAdmission();
+    if (m_operation) m_operation->close();
+    if (m_signers) m_signers->close();
 }

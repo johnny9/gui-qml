@@ -80,7 +80,7 @@ private Q_SLOTS:
             } while (!commands.quiescent());
         };
         DesktopIntentModel model{commands.executor(), post, false};
-        const auto finish = qScopeGuard([&] { model.closeAdmission(); drain(); });
+        const auto finish = qScopeGuard([&] { model.close(); drain(); });
         model.installFileOpenHandler();
         QFileOpenEvent link{QUrl{QStringLiteral("bitcoin:request?amount=1")}};
         QVERIFY(QCoreApplication::sendEvent(QCoreApplication::instance(), &link));
@@ -95,7 +95,7 @@ private Q_SLOTS:
         QVERIFY(QCoreApplication::sendEvent(QCoreApplication::instance(), &invalid));
         drain(); QVERIFY(!model.error().isEmpty()); QVERIFY(model.canDismiss());
         model.dismiss(); drain(); QVERIFY(model.error().isEmpty());
-        model.closeAdmission();
+        model.close();
         QFileOpenEvent late{QUrl{QStringLiteral("bitcoin:late")}};
         QVERIFY(QCoreApplication::sendEvent(QCoreApplication::instance(), &late));
         drain(); QCOMPARE(model.pendingCount(), 0);
@@ -148,7 +148,7 @@ private Q_SLOTS:
         };
         BitcoinUriModel factory; factory.setServices(post, &commands.executor());
         DesktopIntentModel model{worker.executor(), post, true}; model.setFactory(&factory);
-        const auto finish = qScopeGuard([&] { model.closeAdmission(); factory.closeAdmission(); drain(); });
+        const auto finish = qScopeGuard([&] { model.close(); factory.close(); drain(); });
         const auto native_closed = std::make_shared<std::atomic_bool>(false);
         model.setClosedFlag(native_closed);
         model.setReady(true); drain();
@@ -168,7 +168,7 @@ private Q_SLOTS:
         QObject control_view;
         auto* control = factory.requestImport({paymentimport::Input::Kind::Text, QStringLiteral("bitcoin:control")}, {}, &control_view);
         QVERIFY(control); QCOMPARE(control->requestId(), quint64{1}); // Neither rejected handoff called the Source factory.
-        delete control; model.closeAdmission(); factory.closeAdmission(); drain();
+        delete control; model.close(); factory.close(); drain();
         QVERIFY(commands.quiescent());
     }
     void retainedFacadeDoesNotHoldPhysicalShutdownAfterStop()
@@ -186,19 +186,19 @@ private Q_SLOTS:
         };
         BitcoinUriModel factory; factory.setServices(post, &commands.executor());
         DesktopIntentModel model{worker.executor(), post, true}; model.setFactory(&factory);
-        const auto finish = qScopeGuard([&] { model.closeAdmission(); factory.closeAdmission(); drain(); });
+        const auto finish = qScopeGuard([&] { model.close(); factory.close(); drain(); });
         QVERIFY(model.owner()->admit({Input(1)}, {})); model.setReady(true); drain();
         model.inspectNext(); drain(); QVERIFY(model.inspection());
         const QPointer<PaymentImportOperation> inspection{model.inspection()};
         QSignalSpy changed{&model, &DesktopIntentModel::changed};
         QSignalSpy inspection_changed{inspection.data(), &PaymentImportOperation::changed};
         int drained{0};
-        const auto guarded_drain = qScopeGuard([&] { model.closeAdmission(); drain(); });
+        const auto guarded_drain = qScopeGuard([&] { model.close(); drain(); });
         model.whenDrained([&] { ++drained; });
-        model.closeAdmission();
+        model.close();
         QCOMPARE(drained, 0);
         QCOMPARE(changed.count(), 0); QCOMPARE(inspection_changed.count(), 0);
-        factory.closeAdmission(); drain();
+        factory.close(); drain();
         QVERIFY(inspection); // The cached presentation deliberately remains alive.
         QCOMPARE(drained, 1);
         QVERIFY(commands.quiescent());
@@ -219,7 +219,7 @@ private Q_SLOTS:
         const auto unused = std::make_shared<paymentimport::CreationReceipt>(); unused->withdraw();
         QVERIFY(!factory.requestImport({paymentimport::Input::Kind::Text, QStringLiteral("bitcoin:unused")}, {}, &presentation, unused));
         QVERIFY(unused->state() == paymentimport::CreationReceipt::State::NotAccepted);
-        factory.closeAdmission(); commands.drain();
+        factory.close(); commands.drain();
     }
     void facadeDefersInspectionUntilReadyAndRetainsOriginalFactoryReceipt()
     {
@@ -236,7 +236,7 @@ private Q_SLOTS:
         };
         BitcoinUriModel factory; factory.setServices(post, &commands.executor());
         DesktopIntentModel model{worker.executor(), post, true}; model.setFactory(&factory);
-        const auto finish = qScopeGuard([&] { model.closeAdmission(); factory.closeAdmission(); drain(); });
+        const auto finish = qScopeGuard([&] { model.close(); factory.close(); drain(); });
         QVERIFY(model.owner()->admit({Input(1)}, {})); drain();
         QCOMPARE(model.pendingCount(), 1); QVERIFY(!model.canInspect()); model.inspectNext(); drain();
         QVERIFY(!model.inspection());
@@ -246,7 +246,7 @@ private Q_SLOTS:
         auto* operation = model.takeInspection(&recipient_view); QVERIFY(operation); QCOMPARE(operation->requestId(), original);
         QVERIFY(!model.inspection());
         auto original_owner = model.owner();
-        model.closeAdmission(); factory.closeAdmission(); delete operation; drain();
+        model.close(); factory.close(); delete operation; drain();
         std::optional<desktopintent::Receipt> receipt;
         QVERIFY(original_owner->lookup(QStringLiteral("1"), [&](auto value) { receipt = value; })); drain();
         QVERIFY(receipt); QCOMPARE(receipt->inspection, static_cast<uint64_t>(original));
@@ -275,7 +275,7 @@ private Q_SLOTS:
         };
         BitcoinUriModel factory; factory.setServices(post, &commands.executor());
         DesktopIntentModel model{worker.executor(), post, true}; model.setFactory(&factory);
-        const auto finish = qScopeGuard([&] { model.closeAdmission(); factory.closeAdmission(); drain(); });
+        const auto finish = qScopeGuard([&] { model.close(); factory.close(); drain(); });
         bool retired_first{false}; quint64 first{0};
         if (before_ack) QObject::connect(&model, &DesktopIntentModel::inspectionChanged, &model, [&] {
             if (!retired_first && model.inspection()) {
@@ -291,7 +291,7 @@ private Q_SLOTS:
         }
         QCOMPARE(first, quint64{1}); QVERIFY(model.inspection());
         QCOMPARE(model.inspection()->requestId(), quint64{2}); QCOMPARE(model.pendingCount(), 0);
-        model.closeAdmission(); factory.closeAdmission(); drain();
+        model.close(); factory.close(); drain();
         QVERIFY(commands.quiescent());
     }
 #endif

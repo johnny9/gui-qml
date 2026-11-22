@@ -54,7 +54,7 @@ struct Fixture {
         model->setOpening(opening, [this](std::function<void()> turn) { publications.push_back(std::move(turn)); });
         finish();
     }
-    ~Fixture() { if (model) model->closeAdmission(); commands.drain(); model.reset(); opening->stop(false, {}); commands.drain(); }
+    ~Fixture() { if (model) model->close(); commands.drain(); model.reset(); opening->stop(false, {}); commands.drain(); }
     void publish() { while (!publications.empty()) { auto turn = std::move(publications.front()); publications.pop_front(); turn(); } }
     void finish() { commands.drain(); publish(); }
     void setInput(const QString& message) { model->setSigningAddress(Address()); model->setSigningMessage(message); finish(); }
@@ -89,7 +89,7 @@ private Q_SLOTS:
     }
     void quietClosedNoWalletRejectsWithoutPublication() {
         SignVerifyMessageModel model;
-        model.closeAdmission();
+        model.close();
         QSignalSpy errors{&model, &SignVerifyMessageModel::signingErrorChanged};
         QSignalSpy signatures{&model, &SignVerifyMessageModel::signatureChanged};
         QSignalSpy states{&model, &SignVerifyMessageModel::signingStateChanged};
@@ -160,7 +160,7 @@ private Q_SLOTS:
         connect(&model, &SignVerifyMessageModel::signingErrorChanged, &model, [&] {
             if (model.signingState() != SignVerifyMessageModel::SigningFailed) return;
             closed = true;
-            model.closeAdmission();
+            model.close();
         });
         QCOMPARE(model.requestSignMessage(Address(), "statement"), quint64{0});
         QVERIFY(closed);
@@ -179,7 +179,7 @@ private Q_SLOTS:
         const auto ticket = f.model->requestSignMessageWithPassphrase(Address(), "original statement", password); QVERIFY(ticket);
         const auto owner = f.model->signingOperation(); password = "changed";
         QCOMPARE(f.wallet->unlocks, 0); QCOMPARE(f.wallet->signs, 0);
-        if (close_first) f.model->closeAdmission();
+        if (close_first) f.model->close();
         QVERIFY(f.commands.step(execution::Lane::Core));
         QCOMPARE(f.wallet->unlocks, 1); QCOMPARE(f.wallet->signs, 1); QCOMPARE(f.wallet->locks, 1); QVERIFY(f.wallet->locked);
         QVERIFY(!owner->result()); f.commands.drain();
@@ -245,7 +245,7 @@ private Q_SLOTS:
         Fixture f; f.setInput("original statement");
         QVERIFY(f.model->requestSignMessage(Address(), "original statement"));
         const auto owner = f.model->signingOperation();
-        f.model->closeAdmission(); f.model.reset(); f.opening->closeAdmission();
+        f.model->close(); f.model.reset(); f.opening->close();
         QVERIFY(f.commands.step(execution::Lane::Core));
         QCOMPARE(f.wallet->signs, 1); QVERIFY(!owner->result());
         QVERIFY(f.commands.step(execution::Lane::Utility));
@@ -283,7 +283,7 @@ private Q_SLOTS:
     void walletlessVerificationIsAsynchronousAndDraftScoped()
     {
         Fixture f;
-        f.model->closeAdmission();
+        f.model->close();
         f.model = std::make_unique<SignVerifyMessageModel>();
         f.model->setOpening({}, [&f](std::function<void()> turn) { f.publications.push_back(std::move(turn)); }, f.opening->utilityQueue());
         f.finish();
@@ -450,7 +450,7 @@ private Q_SLOTS:
         QCOMPARE(f.wallet->signs, 1); QVERIFY(owner->result()->value); QCOMPARE(owner->result()->value->signature, QStringLiteral("owned-signature"));
         QVERIFY(f.model->signature().isEmpty()); QVERIFY(!f.model->signingBusy());
         QVERIFY(f.model->verify(QString(32769, 'x')).isEmpty()); QCOMPARE(rejected.size(), 2); QVERIFY(!f.model->verificationOperation());
-        f.model->closeAdmission(); QVERIFY(f.model->sign().isEmpty()); QVERIFY(f.model->verify("signature").isEmpty());
+        f.model->close(); QVERIFY(f.model->sign().isEmpty()); QVERIFY(f.model->verify("signature").isEmpty());
         QCOMPARE(rejected.size(), 4); QCOMPARE(f.wallet->signs, 1);
     }
     void cancelledVerificationDrainsItsOriginalCpuReceipt()
@@ -510,7 +510,7 @@ private Q_SLOTS:
             QCOMPARE(wallet->effect.load(), core_thread->load());
             QCOMPARE(wallet->unlock_thread.load(), core_thread->load());
             QCOMPARE(wallet->unlocks, 1); QCOMPARE(wallet->locks, 1);
-            model.closeAdmission();
+            model.close();
         }
         QCOMPARE(wallet->internals, 0);
     }

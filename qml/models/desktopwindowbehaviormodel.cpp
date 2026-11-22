@@ -68,7 +68,7 @@ DesktopWindowBehaviorModel::DesktopWindowBehaviorModel(bool desktop_platform, pr
     if (!desktop_platform) apply({false, false, false});
     submit({}, true);
 }
-DesktopWindowBehaviorModel::~DesktopWindowBehaviorModel() { closeAdmission(); }
+DesktopWindowBehaviorModel::~DesktopWindowBehaviorModel() { close(); }
 void DesktopWindowBehaviorModel::retryPersistence()
 {
     if (m_stopping) return;
@@ -97,7 +97,7 @@ void DesktopWindowBehaviorModel::finishRefresh()
     m_refresh_requested = false;
     submit({}, true);
 }
-void DesktopWindowBehaviorModel::closeAdmission()
+void DesktopWindowBehaviorModel::close()
 {
     if (std::exchange(m_stopping, true)) return;
     m_watch.stop();

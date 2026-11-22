@@ -198,7 +198,7 @@ QmlCoreSettings::Change Observe(QmlCoreSettings::Session& session){
 CoreSettingsModel::CoreSettingsModel(QObject* parent):QObject(parent){}
 CoreSettingsModel::CoreSettingsModel(QmlCoreSettings::Values values,QmlCoreSettings::StatusProjection statuses,QObject* parent)
     :QObject(parent),m_initial_values(std::move(values)),m_initial_statuses(std::move(statuses.values)){}
-CoreSettingsModel::~CoreSettingsModel() { closeAdmission(); }
+CoreSettingsModel::~CoreSettingsModel() { close(); }
 void CoreSettingsModel::configureServices(presentation::Post post, execution::Executor* executor){
     if(m_work||m_stopping)return;
     initializeServices(std::move(post), executor);
@@ -234,7 +234,7 @@ void CoreSettingsModel::setEffect(Effect effect, std::function<EffectContext()> 
     }, std::move(capture), std::move(publish), std::move(abort));
 }
 void CoreSettingsModel::setAdmissionReady(bool ready){if(m_stopping||m_admission_ready==ready)return;m_admission_ready=ready;notifyStatusesChanged();}
-void CoreSettingsModel::closeAdmission()
+void CoreSettingsModel::close()
 {
     m_stopping = true;
     ++*m_context;

@@ -72,7 +72,7 @@ public:
     void refresh();
     //! Applies the saved display name to one wallet.
     void apply(WalletQmlModel* wallet) const;
-    void closeAdmission();
+    void close();
     void setOpenLocalPathForTesting(OpenLocalPath open) { m_open_local_path = std::move(open); }
 
 Q_SIGNALS:

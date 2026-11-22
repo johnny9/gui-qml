@@ -67,7 +67,7 @@ public:
     //! Copies this view's raw transaction to the clipboard. Another
     //! transaction or a hidden view clears the copy state.
     Q_INVOKABLE bool copyRawTransaction();
-    void closeAdmission();
+    void close();
     void retryPublications();
 Q_SIGNALS:
     void transactionIdChanged();

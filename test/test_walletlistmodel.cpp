@@ -113,7 +113,7 @@ struct CatalogExecution {
     }
     bool retire(WalletListModel& model)
     {
-        model.closeAdmission();
+        model.close();
         const auto retired = std::make_shared<bool>(false);
         model.whenRetired([retired] { *retired = true; });
         settle();
@@ -725,7 +725,7 @@ void WalletListModelTests::manualCatalogOwnsPhasesAndRetainsPriorRows()
     QCOMPARE(loader.reads.load(), reads);
     environment.drain();
     if (scenario == 3) {
-        const auto notices = changed.size(); model.closeAdmission();
+        const auto notices = changed.size(); model.close();
         QCOMPARE(reset.size(), resets); QCOMPARE(changed.size(), notices);
         environment.publishAll(); QCOMPARE(reset.size(), resets); QCOMPARE(changed.size(), notices);
     } else {
@@ -1043,7 +1043,7 @@ void WalletListModelTests::manualStopFencesReadAndPublication()
     if (read_finished) QVERIFY(environment.step(environment.core));
     bool retired{false};
     model.whenRetired([&] { retired = true; });
-    model.closeAdmission();
+    model.close();
     QVERIFY(!retired);
     QCOMPARE(model.phase(), WalletListModel::ReaderPhase::Stopping); QVERIFY(!model.fresh()); QVERIFY(!model.projectionPending());
     model.refresh(); model.setWalletLoadState({}, WalletListModel::LoadState::Open);
@@ -1071,7 +1071,7 @@ void WalletListModelTests::catalogRetirementWaitsForRunningDirectoryRead()
     model.whenRetired([&] { retired = true; });
     const auto stop = qScopeGuard([&] {
         release.release();
-        model.closeAdmission();
+        model.close();
         QVERIFY(QTest::qWaitFor([&] { return retired.load(); }, 5000));
         executor.stopAndJoin();
     });
@@ -1080,7 +1080,7 @@ void WalletListModelTests::catalogRetirementWaitsForRunningDirectoryRead()
     QVERIFY(entered.tryAcquire(1, 5000));
     QCOMPARE(loader.read_thread.load(), core_thread->load());
     QVERIFY(loader.read_thread.load() != QThread::currentThread());
-    model.closeAdmission();
+    model.close();
     bool heartbeat{false};
     QTimer::singleShot(0, &model, [&] { heartbeat = true; });
     QTRY_VERIFY(heartbeat);

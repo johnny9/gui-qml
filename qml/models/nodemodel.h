@@ -123,11 +123,11 @@ public:
     NodeModel(interfaces::Node& node, bool backend_ready, Services services);
     ~NodeModel() override;
     void beginShutdown();
-    void closeAdmission();
+    void close();
     // Post a C++ task to the node Core or Priority queue. Outcomes run on Utility.
     std::function<execution::SubmitResult(std::shared_ptr<execution::Task>)> postNative(execution::Lane lane) const;
     // Value-only retirement shares the existing worker and its shutdown join.
-    // Admission stays open through closeAdmission(), until beginShutdown().
+    // Admission stays open through close(), until beginShutdown().
     // A false admission leaves ownership with the caller's retirement mailbox.
     std::function<bool(std::function<void()>)> valueRetirement() const;
     bool isDrained() const { return m_drained; }

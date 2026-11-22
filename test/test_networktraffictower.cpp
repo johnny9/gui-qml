@@ -275,7 +275,7 @@ void NetworkTrafficTowerTests::manualSamplesAndActivationFence()
     QCOMPARE(tower.receivedRateList().size(),2);QCOMPARE(tower.receivedRateList().front(),50.0f);
     tower.updateFilterWindowSize(1);QVERIFY(complete());QCOMPARE(tower.receivedRateList().front(),60.0f);
     QCOMPARE(node.calls.getTotalBytesRecv.load(),3);
-    tower.closeAdmission();QVERIFY(!timer->tick);transport.drain();QVERIFY(transport.quiescent());
+    tower.close();QVERIFY(!timer->tick);transport.drain();QVERIFY(transport.quiescent());
 }
 void NetworkTrafficTowerTests::manualFailureRejectionAndDrain()
 {
@@ -308,7 +308,7 @@ void NetworkTrafficTowerTests::manualFailureRejectionAndDrain()
     transport.reject_core = true;timer->advance();QVERIFY(publish());QVERIFY(!tower.readError().isEmpty());
     fail=false;timer->advance();QSignalSpy drained{&tower,&NetworkTrafficTower::drained};
     QSignalSpy history{&tower,&NetworkTrafficTower::receivedRateListChanged};
-    tower.closeAdmission();tower.beginShutdown();QCOMPARE(drained.size(),0);
+    tower.close();tower.beginShutdown();QCOMPARE(drained.size(),0);
     QVERIFY(transport.step(execution::Lane::Core));QCOMPARE(drained.size(),0);
     QVERIFY(transport.step(execution::Lane::Utility));
     transport.drain(); while(publish()){}

@@ -105,7 +105,7 @@ public:
     CoreSettingsModel(QmlCoreSettings::Values values,QmlCoreSettings::StatusProjection statuses={},QObject* parent=nullptr);
     ~CoreSettingsModel() override;
     void configureServices(presentation::Post post, execution::Executor* executor = nullptr);
-    void closeAdmission();
+    void close();
     void whenEffectsDrained(std::function<void()> done){if(m_work)m_work->close(std::move(done));else if(done)done();}
     void whenEffectQueuesDrained(std::function<void()> done) { m_work->whenQueuesDrained(std::move(done)); }
     bool presentationOpen() const {return !m_stopping;}

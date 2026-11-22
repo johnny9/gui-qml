@@ -462,7 +462,7 @@ private Q_SLOTS:
             QCOMPARE(standalone.phase(), PsbtQmlModel::Phase::Ready);
             QVERIFY(!standalone.canSign()); QVERIFY(!standalone.canBroadcast());
             QCOMPARE(PsbtQmlModel::SerializePsbtRaw(*standalone.document()), original.first);
-            standalone.closeAdmission();
+            standalone.close();
         }
         QCOMPARE(qmltest::SelectOpenWalletForSetup(m_app, wallet->name()), wallet);
         QVERIFY(qmltest::Click(m_app, "sendTabButton"));

@@ -43,14 +43,14 @@ WalletListModel::WalletListModel(interfaces::Node& node, execution::Executor* ex
 }
 WalletListModel::~WalletListModel()
 {
-    closeAdmission();
+    close();
     if (m_owned_executor) {
         auto join = JoinThreadAfterDrain([executor = std::move(m_owned_executor)] { executor->stopAndJoin(); },
             QCoreApplication::instance(), [] {});
         m_reader->whenRetired(std::move(join));
     }
 }
-void WalletListModel::closeAdmission()
+void WalletListModel::close()
 {
     if (std::exchange(m_stopping, true)) return;
     m_pending = false;

@@ -138,7 +138,7 @@ public:
     std::shared_ptr<std::atomic_bool> closedFlag() const { return m_closed; }
     bool observationOpen() const { return !m_closed->load() && (!m_shutdown_gate || !m_shutdown_gate->load()) && (!m_native_events.unloaded || !m_native_events.unloaded->load()); }
     bool available() const { return !m_actions_closed.load() && observationOpen(); }
-    void closeAdmission();
+    void close();
     bool admitAction();
     class Action {
     public:

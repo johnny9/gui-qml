@@ -115,7 +115,7 @@ public:
     CAmount getTotalTransactionAmount() const;
 
     void setDisplayUnit(int unit);
-    void closeAdmission();
+    void close();
     void setReviewFeeDetails(int target_blocks, const QString& fee_rate);
 
 

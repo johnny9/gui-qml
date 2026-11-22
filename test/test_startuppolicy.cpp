@@ -232,7 +232,7 @@ private Q_SLOTS:
         }
         *loss = false; startup::RecordProjectionOutcome(*details.model, loss); QCOMPARE(loss->load(), mode == 3);
         startup::RecordProjectionOutcome(*details.model, {});
-        details.owned.reset(); collection.reset(); existing.closeAdmission(); fixture.settle();
+        details.owned.reset(); collection.reset(); existing.close(); fixture.settle();
     }
     void canceledErrorNeverEntersModalEffect_data() {
         QTest::addColumn<bool>("canceled"); QTest::addColumn<bool>("quitting"); QTest::addColumn<bool>("answer");
@@ -427,7 +427,7 @@ private Q_SLOTS:
         QCOMPARE(store->ready(), mode != 2);
         if (mode != 2) QCOMPARE(store->values().windowWidth, 1234.0);
         else QVERIFY(!store->error().isEmpty());
-        store->closeAdmission();
+        store->close();
         fixture.drain();
         if (mode == 3) QVERIFY(core_ran);
     }

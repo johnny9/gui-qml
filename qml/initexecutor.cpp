@@ -169,7 +169,7 @@ QmlInitExecutor::~QmlInitExecutor()
     m_driver.reset();
     joinWorker();
 }
-void QmlInitExecutor::closeAdmission(){m_closed->store(true);publishAcceptingRequests();}
+void QmlInitExecutor::close(){m_closed->store(true);publishAcceptingRequests();}
 void QmlInitExecutor::initialize(){if(m_initialize_requested||!acceptingRequests())return;m_initialize_requested=true;if(!m_driver||!m_driver->initialize())diagnosticTransportFailed();}
 void QmlInitExecutor::interrupt()
 {
@@ -177,14 +177,14 @@ void QmlInitExecutor::interrupt()
     // GUI control request cannot turn an already drained node into a failure.
     if(m_interrupt_requested||m_shutdown_requested||m_runaway_exception)return;
     m_interrupt_requested=true;
-    const QPointer<QmlInitExecutor> observer{this};closeAdmission();if(!observer)return;
+    const QPointer<QmlInitExecutor> observer{this};close();if(!observer)return;
     if(!m_driver||!m_driver->interrupt())diagnosticTransportFailed();
 }
 void QmlInitExecutor::shutdown()
 {
     if(m_shutdown_requested||m_runaway_exception)return;
     m_shutdown_requested=true;
-    const QPointer<QmlInitExecutor> observer{this};closeAdmission();if(!observer)return;
+    const QPointer<QmlInitExecutor> observer{this};close();if(!observer)return;
     if(!m_driver||!m_driver->shutdown())diagnosticTransportFailed();
 }
 void QmlInitExecutor::publishAcceptingRequests()

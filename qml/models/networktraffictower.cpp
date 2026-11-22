@@ -285,8 +285,8 @@ NetworkTrafficTower::NetworkTrafficTower(interfaces::Node& node, execution::Exec
       m_interval(std::max(1, interval))
 {
 }
-NetworkTrafficTower::~NetworkTrafficTower() { closeAdmission(); }
-void NetworkTrafficTower::closeAdmission()
+NetworkTrafficTower::~NetworkTrafficTower() { close(); }
+void NetworkTrafficTower::close()
 {
     if (std::exchange(m_stopping, true)) return;
     m_timer->stop();
@@ -306,7 +306,7 @@ void NetworkTrafficTower::closeAdmission()
 void NetworkTrafficTower::beginShutdown()
 {
     if (std::exchange(m_shutdown_started, true)) return;
-    closeAdmission();
+    close();
     const QPointer<NetworkTrafficTower> observer{this};
     m_queues->utility.whenDrained([observer, post = m_post] {
         post([observer] { if (observer) Q_EMIT observer->drained(); });

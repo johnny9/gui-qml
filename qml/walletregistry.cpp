@@ -159,8 +159,8 @@ std::shared_ptr<WalletNameRegistry> OpenWalletListModel::nameRegistry() const
 {
     return m_state ? std::shared_ptr<WalletNameRegistry>{m_state, &m_state->registry} : std::shared_ptr<WalletNameRegistry>{};
 }
-OpenWalletListModel::~OpenWalletListModel() { closeAdmission(); }
-void OpenWalletListModel::closeAdmission()
+OpenWalletListModel::~OpenWalletListModel() { close(); }
+void OpenWalletListModel::close()
 {
     if (!m_state) return;
     m_state->closed = true;
@@ -765,7 +765,7 @@ void WalletRegistry::closeOpening(WalletQmlModel* wallet)
     const QString name = wallet->name();
     opening->closed = true; // Fence before allocation or any reentrant signal.
     m_host->prepareForget(wallet);
-    wallet->closeAdmission();
+    wallet->close();
     if (!observer || m_host->stopping() || state->values != values) return;
     std::shared_ptr<Retirement::ClosedFence> fence;
     if (m_close_fence_sequence != std::numeric_limits<uint64_t>::max()) {
@@ -855,9 +855,9 @@ void WalletRegistry::insert(WalletQmlModel* wallet, const QString& name)
     m_wallets.push_back(wallet); m_wallet_positions.emplace(wallet, std::prev(m_wallets.end())); m_wallet_names.insert_or_assign(name, wallet);
     if (m_names_registry) { std::lock_guard name_lock{m_names_registry->mutex}; m_names_registry->names.insert(name); }
 }
-void WalletRegistry::closeAdmission()
+void WalletRegistry::close()
 {
-    if (m_open_wallet_model) m_open_wallet_model->closeAdmission();
+    if (m_open_wallet_model) m_open_wallet_model->close();
     clearOrigins();
     m_names_registry.reset();
 }

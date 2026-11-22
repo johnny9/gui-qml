@@ -72,7 +72,7 @@ void FlowDetailRowsModel::setSnapshot(std::shared_ptr<const FlowDetailSnapshot> 
     m_resetting = false; endResetModel();
 }
 FlowDetailsModel::FlowDetailsModel(QObject* parent) : QObject(parent), m_state(std::make_shared<State>()) {}
-FlowDetailsModel::~FlowDetailsModel() { closeAdmission(); }
+FlowDetailsModel::~FlowDetailsModel() { close(); }
 void FlowDetailsModel::setServices(presentation::Post publish, execution::SnapshotQuery<FlowDetailProjection>::Post submit,
                                    execution::ValueCleanup hold)
 {
@@ -212,7 +212,7 @@ void FlowDetailsModel::clearSource()
     if (!guard || *m_closed || generation != m_generation) return;
     Q_EMIT snapshotChanged(); if (guard && !*m_closed && generation == m_generation) Q_EMIT entryDetailsChanged();
 }
-void FlowDetailsModel::closeAdmission()
+void FlowDetailsModel::close()
 {
     if (m_closed->exchange(true)) return;
     ++m_generation; if (m_query) m_query->close(); m_query.reset();

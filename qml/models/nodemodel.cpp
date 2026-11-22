@@ -245,7 +245,7 @@ NodeModel::NodeModel(interfaces::Node& node, bool backend_ready, Services servic
         return networkBackendAvailable();
     }, this, postNative(execution::Lane::Core));
     connect(this, &NodeModel::networkBackendAvailabilityChanged, m_peer_actions, [this] {
-        if (m_closed || m_workers_stopping || m_shutdown_requested) m_peer_actions->closeAdmission();
+        if (m_closed || m_workers_stopping || m_shutdown_requested) m_peer_actions->close();
         else m_peer_actions->readinessChanged();
     });
     m_notifications->diagnostic_loss = m_services.diagnostic_loss;
@@ -303,7 +303,7 @@ NodeModel::~NodeModel()
     beginShutdown();
 }
 
-void NodeModel::closeAdmission()
+void NodeModel::close()
 {
     const QPointer<NodeModel> observer{this};
     if(std::exchange(m_closed,true))return;
@@ -314,9 +314,9 @@ void NodeModel::closeAdmission()
     if(m_mempool_query)m_mempool_query->close();
     Q_EMIT networkBackendAvailabilityChanged();if(!observer)return;
     setNodeReady(false);if(!observer)return;
-    if (m_startup_diagnostics) m_startup_diagnostics->closeAdmission();
+    if (m_startup_diagnostics) m_startup_diagnostics->close();
     if(!observer)return;
-    if (m_runtime_diagnostics && m_runtime_diagnostics != m_startup_diagnostics) m_runtime_diagnostics->closeAdmission();
+    if (m_runtime_diagnostics && m_runtime_diagnostics != m_startup_diagnostics) m_runtime_diagnostics->close();
     if(!observer)return;
     m_observations->core.close();
 }
@@ -328,9 +328,9 @@ void NodeModel::beginShutdown()
         // An original admitted lifecycle operation may publish its fatal
         // diagnostic after worker shutdown. A repeated terminal close must
         // also retire that newly retained presentation while the facade lives.
-        if (m_startup_diagnostics) m_startup_diagnostics->closeAdmission();
+        if (m_startup_diagnostics) m_startup_diagnostics->close();
         if (!observer) return;
-        if (m_runtime_diagnostics && m_runtime_diagnostics != m_startup_diagnostics) m_runtime_diagnostics->closeAdmission();
+        if (m_runtime_diagnostics && m_runtime_diagnostics != m_startup_diagnostics) m_runtime_diagnostics->close();
         return;
     }
     m_workers_stopping = true;
@@ -348,9 +348,9 @@ void NodeModel::beginShutdown()
         else m_network_model->close();
     }
     if(!observer)return;
-    if (m_startup_diagnostics) m_startup_diagnostics->closeAdmission();
+    if (m_startup_diagnostics) m_startup_diagnostics->close();
     if(!observer)return;
-    if (m_runtime_diagnostics && m_runtime_diagnostics != m_startup_diagnostics) m_runtime_diagnostics->closeAdmission();
+    if (m_runtime_diagnostics && m_runtime_diagnostics != m_startup_diagnostics) m_runtime_diagnostics->close();
     if(!observer)return;
     m_initialization_result.reset();
     m_ready_initialization.reset();
@@ -1388,7 +1388,7 @@ void NodeModel::clearRuntimeDialogs(bool notify)
     const bool retire=details&&details!=m_startup_diagnostics;
     const bool visible=std::exchange(m_runtime_dialog_visible,false);
     if(prompt)prompt->deleteLater();
-    if(retire){details->closeAdmission();if(details)details->deleteLater();}
+    if(retire){details->close();if(details)details->deleteLater();}
     if(observer&&notify&&visible)Q_EMIT runtimeDialogChanged();
 }
 void NodeModel::answerRuntimeDialog(unsigned int button)

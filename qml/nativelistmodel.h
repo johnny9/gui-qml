@@ -59,7 +59,7 @@ public:
     bool hasChildren(const QModelIndex& parent = {}) const override { return !parent.isValid() && rowCount() > 0; }
     bool projectionPending() const { return m_pending; }
     QString readError() const { return m_error; }
-    virtual void closeAdmission();
+    virtual void close();
     presentation::Post post() const { return m_post; }
     Queues queues() const { return m_queues; }
     NativeVersionHandle completedSnapshot() const { return m_completed; }

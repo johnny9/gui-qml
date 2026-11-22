@@ -166,7 +166,7 @@ struct ManualAddressFixture {
     }
     bool finish()
     {
-        if (model) model->closeAdmission();
+        if (model) model->close();
         model.reset();
         auto stopped = std::make_shared<bool>(false);
         opening->stop(false, [stopped] { *stopped = true; });
@@ -502,7 +502,7 @@ void AddressListModelTests::manualProjectionBudgetsAndPersistentIdentity()
     wallet->m_addresses.clear(); model.refresh(); worker.drain(); gui.drain();
     QCOMPARE(model.count(), 0); QVERIFY(!stable.isValid());
     QCOMPARE(resets.size(), 0);
-    model.closeAdmission(); opening->stop(false, {}); worker.drain(); gui.drain();
+    model.close(); opening->stop(false, {}); worker.drain(); gui.drain();
     QVERIFY(worker.quiescent()); QVERIFY(gui.quiescent());
 }
 
@@ -535,7 +535,7 @@ void AddressListModelTests::manualStaleFailureAndQuietClose()
     } else if (scenario == 3) {
         QVERIFY(gui.step(execution::Lane::Utility)); QCOMPARE(model.count(), 32);
         const auto notices = inserted.size(); const auto counts = count_changed.size(); const auto failures = errors.size();
-        model.closeAdmission();
+        model.close();
         QCOMPARE(inserted.size(), notices); QCOMPARE(count_changed.size(), counts); QCOMPARE(errors.size(), failures);
         worker.drain(); gui.drain();
         QCOMPARE(inserted.size(), notices); QCOMPARE(count_changed.size(), counts); QCOMPARE(errors.size(), failures);
@@ -551,7 +551,7 @@ void AddressListModelTests::manualStaleFailureAndQuietClose()
         model.refresh(); worker.drain(); gui.drain();
         QCOMPARE(model.count(), 96); QVERIFY(model.readError().isEmpty());
     }
-    model.closeAdmission(); opening->stop(false, {}); worker.drain(); gui.drain();
+    model.close(); opening->stop(false, {}); worker.drain(); gui.drain();
     QVERIFY(worker.quiescent()); QVERIFY(gui.quiescent());
 }
 
@@ -618,7 +618,7 @@ void AddressListModelTests::labelRefreshPreservesInventoryAndOriginalInterest()
     QCOMPARE(f.wallet->coin_reads.load(), coins_before);
     if (boundary == 4) {
         const auto notices = pending.size();
-        f.model->closeAdmission();
+        f.model->close();
         QVERIFY(!f.model->refreshPending());
         QCOMPARE(pending.size(), notices + 1); // One coherent explicit close outcome.
         f.settle();
@@ -665,7 +665,7 @@ void AddressListModelTests::labelRefreshPreservesInventoryAndOriginalInterest()
         QCOMPARE(changes.size(), 32);
         QVERIFY(f.model->refreshPending());
         const auto notices = pending.size();
-        f.model->closeAdmission();
+        f.model->close();
         QVERIFY(!f.model->refreshPending());
         QCOMPARE(pending.size(), notices + 1);
         f.settle();
@@ -888,7 +888,7 @@ void AddressListModelTests::labelReservationsKeepOriginalViewDuringReentrancy()
     if (read_completed) QVERIFY(f.worker.step(execution::Lane::Core));
     const auto expected_reads = addresses_before + int(read_completed);
     QCOMPARE(f.wallet->reads.load(), expected_reads);
-    if (action == 0) f.model->closeAdmission();
+    if (action == 0) f.model->close();
     else if (action == 1) f.model.reset();
     else f.model->setCategory(AddressListModel::Change);
     QCOMPARE(changes.size(), 0);
@@ -952,7 +952,7 @@ void AddressListModelTests::closeInsideStructuralChangeKeepsBalancedOriginalRows
     const auto about_callback = [&](const QModelIndex&, int, int) {
         ++about;
         before_close = f.model->rowCount();
-        f.model->closeAdmission();
+        f.model->close();
         after_close = f.model->rowCount();
     };
     const auto completed_callback = [&](const QModelIndex&, int, int) {

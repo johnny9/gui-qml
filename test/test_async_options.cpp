@@ -173,8 +173,8 @@ private Q_SLOTS:
         auto priority = std::make_shared<execution::SerialQueue>(executor.makeQueue(execution::Lane::Priority));
         QmlInitExecutor lifecycle{fixture.node, priority};
         ShutdownCoordinator coordinator{lifecycle};
-        coordinator.addStopHook([&] { node.closeAdmission(); });
-        coordinator.addStopHook([&] { settings.closeAdmission(); });
+        coordinator.addStopHook([&] { node.close(); });
+        coordinator.addStopHook([&] { settings.close(); });
         coordinator.addBeforeInterruptParticipant(&settings, &OptionsQmlModel::shutdownFinished,
                                                   [&] { settings.beginShutdown(); });
         coordinator.addParticipant(&node, &NodeModel::workDrained, [&] { node.beginShutdown(); });
@@ -185,7 +185,7 @@ private Q_SLOTS:
             dismissed = !question(Untranslated("Continue?"), "Continue?", CClientUIInterface::BTN_OK);
             returned.release();
         }));
-        const auto unblock = qScopeGuard([&] { node.closeAdmission(); returned.acquire(); });
+        const auto unblock = qScopeGuard([&] { node.close(); returned.acquire(); });
         QTRY_VERIFY(node.runtimeDialogVisible());
         settings.setMaxMempoolSizeMB(amount);
         QVERIFY(settings.settingsPending());
@@ -227,7 +227,7 @@ private Q_SLOTS:
         Fixture fixture;
         OptionsQmlModel model{fixture.node, fixture.args,
             [&](auto turn) { gui.push_back(std::move(turn)); }, &transport.executor()};
-        const auto cleanup = qScopeGuard([&] { model.closeAdmission(); SettleManualOptions(transport, gui); });
+        const auto cleanup = qScopeGuard([&] { model.close(); SettleManualOptions(transport, gui); });
         QVERIFY(SettleManualOptions(transport, gui));
         QVERIFY(model.settingsReady());
         model.setExternalSignerPath(QStringLiteral("this-signer-does-not-exist-original-receipt"));
@@ -276,7 +276,7 @@ private Q_SLOTS:
         const auto throw_read = std::make_shared<std::atomic_bool>(!reject_transport);
         OptionsQmlModel model{fixture.node, fixture.args,
             [&](auto turn) { gui.push_back(std::move(turn)); }, &transport.executor()};
-        const auto cleanup = qScopeGuard([&] { model.closeAdmission(); SettleManualOptions(transport, gui); });
+        const auto cleanup = qScopeGuard([&] { model.close(); SettleManualOptions(transport, gui); });
         QVERIFY(SettleManualOptions(transport, gui));
         QVERIFY(model.settingsReady());
         model.setExternalSignerPath(QStringLiteral("original-failed-signer-intent-does-not-exist"));
@@ -340,7 +340,7 @@ private Q_SLOTS:
         Fixture fixture;
         OptionsQmlModel model{fixture.node, fixture.args,
             [&](auto turn) { gui.push_back(std::move(turn)); }, &transport.executor()};
-        const auto cleanup = qScopeGuard([&] { model.closeAdmission(); SettleManualOptions(transport, gui); });
+        const auto cleanup = qScopeGuard([&] { model.close(); SettleManualOptions(transport, gui); });
         QVERIFY(SettleManualOptions(transport, gui));
         QVERIFY(model.settingsReady());
         model.setExternalSignerPath(QStringLiteral("original-failure-with-a-held-successor-read"));
@@ -407,7 +407,7 @@ private Q_SLOTS:
         };
         OptionsQmlModel model{fixture.node, fixture.args,
             [&](auto turn) { gui.push_back(std::move(turn)); }, &transport.executor()};
-        const auto cleanup = qScopeGuard([&] { model.closeAdmission(); SettleManualOptions(transport, gui); });
+        const auto cleanup = qScopeGuard([&] { model.close(); SettleManualOptions(transport, gui); });
         QVERIFY(SettleManualOptions(transport, gui));
         QVERIFY(model.settingsReady());
         model.setExternalSignerPath(QStringLiteral("failed-user-signer-before-observation-recovery"));
@@ -500,7 +500,7 @@ private Q_SLOTS:
         // disabled, before draining starts. Close admission without emitting
         // signals first; the already accepted mapping must still drain.
         QSignalSpy statuses(&model, &OptionsQmlModel::coreSettingStatusesChanged);
-        model.closeAdmission();
+        model.close();
         QCOMPARE(statuses.size(), 0);
         const int mempool = model.maxMempoolSizeMB();
         model.setMaxMempoolSizeMB(mempool + 1);
@@ -586,7 +586,7 @@ private Q_SLOTS:
         QCOMPARE(model.settingsOperationState(),OptionsQmlModel::SettingsApplied);
         QCOMPARE(SettingTo<int64_t>(fixture.args.GetPersistentSetting("maxmempool")).value_or(0),int64_t{initial+10});
         QSignalSpy changes{&model,&OptionsQmlModel::settingsPendingChanged};QSignalSpy drained{&model,&OptionsQmlModel::shutdownFinished};
-        model.closeAdmission();model.beginShutdown();QCOMPARE(drained.size(),0);
+        model.close();model.beginShutdown();QCOMPARE(drained.size(),0);
         transport.drain();while(publish()){}
         QCOMPARE(drained.size(),1);QCOMPARE(changes.size(),0);QCOMPARE(model.settingsOperationId(),ticket);
         QCOMPARE(model.settingsOperationState(),OptionsQmlModel::SettingsApplied);
@@ -613,7 +613,7 @@ private Q_SLOTS:
         QVERIFY(transport.step(execution::Lane::Core));QVERIFY(transport.step(execution::Lane::Utility));
         model.requestExternalSignerPathValidation(QCoreApplication::applicationFilePath());QVERIFY(publish());
         QVERIFY(!transport.step(execution::Lane::Core));
-        model.closeAdmission();
+        model.close();
         QSignalSpy quiet{&model,&OptionsQmlModel::signerPathValidationChanged};
         QVERIFY(SettleManualOptions(transport,gui));QCOMPARE(quiet.size(),0);
         transport.drain();QVERIFY(transport.quiescent());
@@ -673,7 +673,7 @@ private Q_SLOTS:
         links->setTxid("closed");
         QSignalSpy changed{links.get(), &OptionsTransactionLinks::resultChanged};
         presentation.close();
-        model.closeAdmission();
+        model.close();
         bool drained{false};
         QObject receiver;
         presentation.whenRetired(&receiver, [&] { drained = true; });
@@ -711,7 +711,7 @@ private Q_SLOTS:
 
         model.setThirdPartyTransactionUrls("https://three.example/tx/%s");settle();
         QCOMPARE(links->rowCount(),1);QCOMPARE(url(0),QStringLiteral("https://three.example/tx/tx"));
-        model.closeAdmission();transport.drain();while(!gui.empty()){auto turn=std::move(gui.front());gui.pop_front();turn();}
+        model.close();transport.drain();while(!gui.empty()){auto turn=std::move(gui.front());gui.pop_front();turn();}
         QVERIFY(transport.quiescent());
     }
 
@@ -730,7 +730,7 @@ private Q_SLOTS:
         QVERIFY(publish());QCOMPARE(links->rowCount(),96);QVERIFY(!links->pending());
         QCOMPARE(links->data(links->index(95),OptionsTransactionLinks::UrlRole).toString(),QStringLiteral("https://example.test/95/exact"));
         links->setTxid("later");QVERIFY(transport.step(execution::Lane::Utility));
-        QVERIFY(publish());QCOMPARE(links->rowCount(),64);QSignalSpy changed{links.get(),&QAbstractItemModel::rowsRemoved};model.closeAdmission();
+        QVERIFY(publish());QCOMPARE(links->rowCount(),64);QSignalSpy changed{links.get(),&QAbstractItemModel::rowsRemoved};model.close();
         while(publish()){}QCOMPARE(changed.size(),0);transport.drain();QVERIFY(transport.quiescent());
     }
 
@@ -774,8 +774,8 @@ private Q_SLOTS:
         QCOMPARE(mapping_calls, 0);
         QSignalSpy drained{&model, &OptionsQmlModel::shutdownFinished};
         QSignalSpy values{&model, &OptionsQmlModel::natpmpChanged};
-        original_node.closeAdmission();
-        model.closeAdmission();
+        original_node.close();
+        model.close();
         model.beginShutdown();
         QCOMPARE(drained.size(), 0);
 

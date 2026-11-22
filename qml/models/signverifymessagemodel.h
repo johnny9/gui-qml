@@ -58,7 +58,7 @@ public:
     explicit SignVerifyMessageModel(QObject* parent = nullptr);
     void setOpening(std::shared_ptr<walletopening::Session> opening, presentation::Post post,
                     std::shared_ptr<execution::SerialQueue> outcomes = {});
-    void closeAdmission();
+    void close();
     void retryPublications();
     void setSecurityStateChangedFn(SecurityStateChangedFn fn);
 

@@ -46,7 +46,7 @@ public:
     WalletListModel(interfaces::Node& node, QObject *parent = nullptr);
     WalletListModel(interfaces::Node& node, execution::Executor& executor, presentation::Post post, QObject* parent = nullptr);
     ~WalletListModel() override;
-    void closeAdmission();
+    void close();
     void whenRetired(std::function<void()> done);
     bool projectionPending() const { return m_pending; }
     QString readError() const { return m_error; }

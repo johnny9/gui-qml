@@ -1142,7 +1142,7 @@ private Q_SLOTS:
         int observations{0}, actions{0};
         QVERIFY(fixture.session->postDomain([&] { ++observations; }));
         QVERIFY(fixture.session->postDomain([&] { ++actions; }, execution::WorkClass::Action));
-        fixture.session->closeAdmission();
+        fixture.session->close();
         fixture.commands.drain();
         QCOMPARE(observations, 0); QCOMPARE(actions, 1);
         QCOMPARE(fixture.session->postDomain([] {}).rejection, execution::Rejection::Closed);
@@ -1277,7 +1277,7 @@ private Q_SLOTS:
                     }));
                 }));
         }));
-        fixture.session->closeAdmission();
+        fixture.session->close();
         fixture.session->stop(false, {});
         QVERIFY(!fixture.session->startAction());
         action.reset();

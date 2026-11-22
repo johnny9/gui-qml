@@ -153,7 +153,7 @@ MonospaceOutputModel::MonospaceOutputModel(QObject* parent) : QAbstractListModel
 
 MonospaceOutputModel::~MonospaceOutputModel()
 {
-    closeAdmission();
+    close();
     // The services keep tracking a mailbox with pending values after this model is gone.
     if (m_mailbox) m_mailbox->retry();
 }
@@ -162,9 +162,9 @@ void MonospaceOutputModel::setServices(PresentationServices* services)
 {
     if (!services || m_presentation || m_closed) return;
     m_presentation = services;
-    connect(services, &PresentationServices::closed, this, &MonospaceOutputModel::closeAdmission);
+    connect(services, &PresentationServices::closed, this, &MonospaceOutputModel::close);
     Q_EMIT servicesChanged();
-    if (services->isClosed()) closeAdmission();
+    if (services->isClosed()) close();
     else usePorts(services->ports());
 }
 
@@ -225,7 +225,7 @@ void MonospaceOutputModel::retryCleanup()
     else QTimer::singleShot(1, this, retry);
 }
 
-void MonospaceOutputModel::closeAdmission()
+void MonospaceOutputModel::close()
 {
     if (std::exchange(m_closed, true)) return;
     m_refresh_timer.stop();

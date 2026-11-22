@@ -208,7 +208,7 @@ void NativeListModel::configureServices(presentation::Post post, Queues queues)
 }
 NativeListModel::~NativeListModel()
 {
-    closeAdmission();
+    close();
     finishClose();
     if (!m_owned_executor) return;
 
@@ -224,7 +224,7 @@ NativeListModel::~NativeListModel()
         utility->whenDrained([cleanup, join] { cleanup->close(join); });
     });
 }
-void NativeListModel::closeAdmission()
+void NativeListModel::close()
 {
     m_stopping = true; m_pending = false; ++m_generation;
     if (m_query) m_query->close();

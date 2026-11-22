@@ -92,7 +92,7 @@ private Q_SLOTS:
             model->add();
             QCOMPARE(model->count(), 2);
         }
-        if (outcome == 0) model->closeAdmission();
+        if (outcome == 0) model->close();
         else if (outcome == 1) model.reset();
         else {
             model->clear();
@@ -124,7 +124,7 @@ private Q_SLOTS:
         model->setOpening(f.opening, [&](auto turn) { ++original_posts; f.env.post()(std::move(turn)); });
         if (stage >= 1) QVERIFY(f.env.step(execution::Lane::Utility));
         if (stage == 2) f.env.drain();
-        if (outcome == 0) model->closeAdmission();
+        if (outcome == 0) model->close();
         else if (outcome == 1) model.reset();
         else {
             model->setOpening(f.opening, [&](auto turn) { ++replacement_posts; f.env.post()(std::move(turn)); });
@@ -156,7 +156,7 @@ private Q_SLOTS:
         QPointer<SendRecipient> successor;
         model->clear();
         if (stage == 1) f.env.drain();
-        if (outcome == 0) model->closeAdmission();
+        if (outcome == 0) model->close();
         else if (outcome == 1) model.reset();
         else {
             model->clear();

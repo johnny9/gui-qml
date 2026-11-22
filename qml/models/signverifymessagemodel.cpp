@@ -60,7 +60,7 @@ void SignVerifyMessageModel::setOpening(std::shared_ptr<walletopening::Session> 
     requestAddressValidation();
 }
 
-void SignVerifyMessageModel::closeAdmission()
+void SignVerifyMessageModel::close()
 {
     m_closed = true;
     if (m_address_query) m_address_query->close();

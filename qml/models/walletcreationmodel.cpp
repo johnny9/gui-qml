@@ -122,5 +122,5 @@ WalletOperationModel* WalletCreationModel::create(const QString& passphrase, con
     return original;
 }
 void WalletCreationModel::refreshCapabilities() { if (!m_closed) validationChanged(); }
-void WalletCreationModel::discard() { if (m_closed) return; m_closed = true; if (m_check) m_check->closeAdmission(); m_services.operation.native.open_names.reset(); m_services.operation.publisher.reset(); Q_EMIT changed(); }
+void WalletCreationModel::discard() { if (m_closed) return; m_closed = true; if (m_check) m_check->close(); m_services.operation.native.open_names.reset(); m_services.operation.publisher.reset(); Q_EMIT changed(); }
 

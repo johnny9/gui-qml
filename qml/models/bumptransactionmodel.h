@@ -30,7 +30,7 @@ public:
     explicit BumpTransactionModel(QObject* parent = nullptr);
     void setOpening(std::shared_ptr<walletopening::Session> opening, presentation::Post post,
                     walletbump::Services bump_services = {});
-    void closeAdmission() override;
+    void close() override;
     void setDisplayUnit(int unit) override;
     void retryPublications() override;
     State state() const override { return m_state; }

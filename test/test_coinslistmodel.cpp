@@ -88,7 +88,7 @@ struct ManualCoins {
         if (initialize) finish();
     }
     ~ManualCoins() {
-        if (model) model->closeAdmission();
+        if (model) model->close();
         commands.drain(); model.reset(); commands.drain();
         stopAndDrain();
         opening.reset();
@@ -409,7 +409,7 @@ private Q_SLOTS:
         if (read_completed) fixture.commands.drain();
         QCOMPARE(fixture.wallet->read_calls.load(), size_t(read_completed));
         if (destroy) fixture.model.reset();
-        else fixture.model->closeAdmission();
+        else fixture.model->close();
         fixture.finish();
         QCOMPARE(fixture.wallet->read_calls.load(), size_t(read_completed));
         QCOMPARE(inserted.count(), 0);
@@ -456,7 +456,7 @@ private Q_SLOTS:
     void quietCloseDuringQtRows() {
         QFETCH(int, mutation); QFETCH(bool, about); ManualCoins f{3, mutation != 0};
         auto* model = f.model.get(); bool closed{false}; int at_end{-1};
-        const auto close = [&] { const auto rows = model->rowCount(); model->closeAdmission(); QCOMPARE(model->rowCount(), rows); closed = true; };
+        const auto close = [&] { const auto rows = model->rowCount(); model->close(); QCOMPARE(model->rowCount(), rows); closed = true; };
         if (mutation == 0) {
             connect(model, about ? &QAbstractItemModel::rowsAboutToBeInserted : &QAbstractItemModel::rowsInserted, this, close);
             connect(model, &QAbstractItemModel::rowsInserted, this, [&] { at_end = model->rowCount(); });
@@ -474,7 +474,7 @@ private Q_SLOTS:
         ManualCoins fixture{129};
         fixture.model->setSortBy("amount"); fixture.finish();
         QCOMPARE(fixture.model->rowCount(), 129);
-        fixture.model->closeAdmission();
+        fixture.model->close();
         QCOMPARE(fixture.model->rowCount(), 0);
         QVERIFY(!fixture.model->selectionSnapshot());
         fixture.stopAndDrain();
@@ -876,7 +876,7 @@ private Q_SLOTS:
         const COutPoint original{Txid{}, 0};
         QVERIFY(fixture.model->requestSelectionDelta(original, true));
         const auto owner = fixture.model->selectionOperation(); QVERIFY(owner);
-        fixture.model->closeAdmission(); fixture.model.reset(); fixture.opening->closeAdmission();
+        fixture.model->close(); fixture.model.reset(); fixture.opening->close();
         fixture.commands.drain();
         QVERIFY(owner->result()); QVERIFY(owner->result()->value);
         QVERIFY(owner->result()->value->selection->contains(original));
@@ -899,7 +899,7 @@ private Q_SLOTS:
         // The GUI may retain the actual outcome until close. Afterward no
         // persistent completion may keep its own result/selection lease alive.
         QVERIFY(!completed.expired());
-        coins->closeAdmission();fixture.model.reset();
+        coins->close();fixture.model.reset();
         fixture.stopAndDrain();
         QVERIFY(completed.expired());
         QCOMPARE(fixture.wallet->lockCalls(),std::vector<bool>{true});
@@ -913,7 +913,7 @@ private Q_SLOTS:
         QVERIFY(fixture.commands.step(execution::Lane::Utility));
         QVERIFY(fixture.commands.step(execution::Lane::Core));
         QCOMPARE(fixture.wallet->lockCalls().size(), size_t{32});
-        fixture.model->closeAdmission(); fixture.model.reset(); fixture.opening->closeAdmission();
+        fixture.model->close(); fixture.model.reset(); fixture.opening->close();
         fixture.commands.drain();
         QCOMPARE(fixture.wallet->lockCalls().size(), size_t{97});
         QVERIFY(owner->result()); QVERIFY(owner->result()->value);

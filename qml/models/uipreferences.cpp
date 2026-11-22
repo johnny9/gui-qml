@@ -101,7 +101,7 @@ UiPreferencesStore::UiPreferencesStore(execution::Executor* executor, execution:
       m_native(std::make_shared<Native>(Native{std::move(id), {}, 0}))
 {
 }
-UiPreferencesStore::~UiPreferencesStore(){closeAdmission();}
+UiPreferencesStore::~UiPreferencesStore(){close();}
 const UiPreferencesValues& UiPreferencesStore::values()const{return m_result?m_result->values:m_defaults;}
 void UiPreferencesStore::start(){if(!m_closed&&!m_ready&&!m_pending){m_refresh_requested=false;load();}}
 void UiPreferencesStore::retry(){if(!m_closed&&!m_pending){m_refresh_requested=false;load();}}
@@ -225,7 +225,7 @@ void UiPreferencesStore::publish(std::shared_ptr<const Result> result,quint64 ti
     --m_pending;if(result->revision>=m_revision){m_revision=result->revision;m_result=std::move(result);m_ready=m_result->loaded;m_watch.update(m_result->watch);if(ticket==m_operation_id)m_error=m_result->error;}
     const QPointer<UiPreferencesStore> guard{this};notifyViews();if(guard&&!m_closed)Q_EMIT stateChanged();if(guard&&!m_closed)finishRefresh();
 }
-void UiPreferencesStore::closeAdmission()
+void UiPreferencesStore::close()
 {
     if (m_closed) return;
     m_watch.stop();
@@ -238,7 +238,7 @@ void UiPreferencesStore::closeAdmission()
 }
 void UiPreferencesStore::whenDrained(std::function<void()> done)
 {
-    closeAdmission();
+    close();
     if (!done) return;
     m_outcomes->whenDrained([post = m_post, done = std::move(done)] { post(done); });
 }

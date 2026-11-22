@@ -34,7 +34,7 @@ public:
     explicit BitcoinUriModel(QObject* parent = nullptr);
     ~BitcoinUriModel() override;
     void setServices(presentation::Post post, execution::Executor* executor = nullptr);
-    void closeAdmission();
+    void close();
     void whenDrained(std::function<void()> done);
     //! Whether pasted text is a payment URI. Decided by its scheme, so a paste
     //! is routed at once: other text is pasted into the field as typed.

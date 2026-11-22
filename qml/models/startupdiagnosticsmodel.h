@@ -64,7 +64,7 @@ public:
     bool project(bool success, QString failure = {}, QString warning_heading = {}, QString error_prefix = {}, bool normalize = true);
     bool resetInput();
     void retryPublication();
-    void closeAdmission();
+    void close();
 Q_SIGNALS:
     void changed();
     void finished();

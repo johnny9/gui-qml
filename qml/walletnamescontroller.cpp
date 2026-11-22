@@ -189,7 +189,7 @@ void WalletNamesController::setLocationError(const QString& error)
     Q_EMIT locationChanged();
 }
 
-void WalletNamesController::closeAdmission()
+void WalletNamesController::close()
 {
     if (m_closed) return;
     m_closed = true;

@@ -1234,7 +1234,7 @@ private Q_SLOTS:
             QVERIFY(!review->parent());
             QCOMPARE(QQmlEngine::objectOwnership(review), QQmlEngine::CppOwnership);
         }
-        model->closeAdmission(); QCOMPARE(destroyed, 0); QVERIFY(drained.empty());
+        model->close(); QCOMPARE(destroyed, 0); QVERIFY(drained.empty());
         for (const int expected : {32, 64, 65}) {
             if (mode == 1) QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
             else {
@@ -1309,7 +1309,7 @@ private Q_SLOTS:
             handled = true;
             QCOMPARE(original->preparationState(), WalletQmlModel::PreparationState::PreparationFailed);
             if (mode == QStringLiteral("delete")) delete model.release();
-            else if (mode == QStringLiteral("close")) original->closeAdmission();
+            else if (mode == QStringLiteral("close")) original->close();
             else successor = original->requestPrepareTransactionWithPassphrase(QStringLiteral("secret"));
         });
         const auto disconnect = qScopeGuard([&] { QObject::disconnect(connection); });
@@ -1670,7 +1670,7 @@ private Q_SLOTS:
         }
         changed.clear();
         if (destroy) delete model.release();
-        else original->closeAdmission();
+        else original->close();
         QCOMPARE(effects, 0);
         if (destroy) QVERIFY(!original);
         else QVERIFY(!original->observationsAllowed());
@@ -1694,7 +1694,7 @@ private Q_SLOTS:
         connect(model.get(),&WalletQmlModel::transactionErrorChanged,this,[&]{
             if(handled)return;
             handled=true;actual_error=original->transactionError();
-            if(destroy)model.reset();else original->closeAdmission();
+            if(destroy)model.reset();else original->close();
         });
         const auto send=StartSend(*original);QVERIFY(send);QCOMPARE(send->state(),SendOperation::State::Failed);
         QVERIFY(handled);QVERIFY(actual_error.contains(QStringLiteral("Review a transaction")));
@@ -1711,7 +1711,7 @@ private Q_SLOTS:
         QSignalSpy notices{model.get(),&WalletQmlModel::currentTransactionChanged};bool handled{false},coherent{false};
         connect(review,&QObject::destroyed,this,[&]{
             handled=true;coherent=original&&!original->currentTransaction()&&!original->currentTransactionCanSend()&&!original->currentTransactionCanBroadcast()&&original->currentTransactionReviewMessage().isEmpty();
-            if(destroy)model.reset();else original->closeAdmission();
+            if(destroy)model.reset();else original->close();
         });
         original->discardCurrentTransaction();QVERIFY(handled);QVERIFY(coherent);QCOMPARE(notices.count(),0);
         if(destroy)QVERIFY(!original);else QVERIFY(!original->observationsAllowed());
@@ -3192,7 +3192,7 @@ private Q_SLOTS:
         QSignalSpy changed{original.data(), &WalletQmlModel::currentTransactionChanged};
         const auto callback = [&] {
             requested_path = retargeted_path;
-            if (action == 0) original->closeAdmission();
+            if (action == 0) original->close();
             else if (action == 1) fixture.model.reset();
             else original->discardCurrentTransaction();
         };
@@ -3428,7 +3428,7 @@ private Q_SLOTS:
         QSignalSpy failed{original.data(), &WalletQmlModel::externalSignerApprovalFailed};
         qsizetype phase_at_withdrawal{-1};
         const auto callback = [&] {
-            if (action == 0) original->closeAdmission();
+            if (action == 0) original->close();
             else if (action == 1) fixture.model.reset();
             else {
                 original->discardCurrentTransaction();
@@ -3654,7 +3654,7 @@ private Q_SLOTS:
         const auto revoke = [&] {
             if (revoked) return;
             revoked = true;
-            if (quiet) model->closeAdmission(); else model->discardCurrentTransaction();
+            if (quiet) model->close(); else model->discardCurrentTransaction();
         };
         const auto status_connection = connect(model.get(), &WalletQmlModel::transactionErrorChanged, this, [&] {
             if (!child && !model->transactionError().isEmpty()) revoke();
@@ -5968,7 +5968,7 @@ void WalletQmlModelTests::receivingAddressResumeOwnsOriginalIntent()
         QCOMPARE(wallet->unlock_calls, 0);
         QVERIFY(initial && initial->active());
     } else if (scenario == 7) {
-        model->closeAdmission();
+        model->close();
         if (initial) initial->answer(QStringLiteral("secret"));
         QTest::qWait(50);
         QCOMPARE(wallet->get_new_destination_calls, 1);

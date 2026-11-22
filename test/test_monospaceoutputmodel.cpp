@@ -113,7 +113,7 @@ private Q_SLOTS:
         std::atomic<int> presentation_off_gui{0};
         const auto cleanup = qScopeGuard([&] {
             release.release();
-            model.closeAdmission();
+            model.close();
             services.close();
             const auto drained = std::make_shared<std::atomic_bool>(false);
             utility->whenDrained([drained] { *drained = true; });
@@ -144,7 +144,7 @@ private Q_SLOTS:
         QVERIFY(trace->deliveries.load() > 0);
         QCOMPARE(presentation_off_gui.load(), 0);
         QCOMPARE(model.data(model.index(129, 0), MonospaceOutputModel::PlainContentRole).toString(), QStringLiteral("worker needle 129"));
-        model.closeAdmission();
+        model.close();
         QTRY_COMPARE_WITH_TIMEOUT(services.pendingRetirements(), size_t{0}, 10000);
         QVERIFY(trace->cleanup_effects.load() > 0);
         QCOMPARE(trace->cleanup_on_gui.load(), 0);
@@ -156,7 +156,7 @@ private Q_SLOTS:
         RoleSource source;
         MonospaceOutputModel model;
         model.setServices(ports.services());
-        const auto cleanup = qScopeGuard([&] { model.closeAdmission(); ports.settle(); ports.services()->retryRetirements(); });
+        const auto cleanup = qScopeGuard([&] { model.close(); ports.settle(); ports.services()->retryRetirements(); });
         QSignalSpy source_changed(&model, &MonospaceOutputModel::sourceModelChanged);
         model.setContentRole(QStringLiteral("body"));
         model.setLeftRole(QStringLiteral("left"));
@@ -208,7 +208,7 @@ private Q_SLOTS:
         Source source; source.lines = {QStringLiteral("needle")};
         MonospaceOutputModel model;
         model.setServices(ports.services()); model.setSourceModel(&source);
-        const auto cleanup = qScopeGuard([&] { model.closeAdmission(); ports.settle(); ports.services()->retryRetirements(); });
+        const auto cleanup = qScopeGuard([&] { model.close(); ports.settle(); ports.services()->retryRetirements(); });
         QCoreApplication::processEvents();
         QVERIFY(model.busy()); QCOMPARE(model.rowCount(), 0);
         std::function<void()> held_publication;
@@ -241,7 +241,7 @@ private Q_SLOTS:
         for (int i = 0; i < 130; ++i) source.lines.append(QStringLiteral("needle %1 needle").arg(i));
         MonospaceOutputModel model;
         model.setServices(ports.services()); model.setSourceModel(&source);
-        const auto cleanup = qScopeGuard([&] { model.closeAdmission(); ports.settle(); ports.services()->retryRetirements(); });
+        const auto cleanup = qScopeGuard([&] { model.close(); ports.settle(); ports.services()->retryRetirements(); });
         QCoreApplication::processEvents();
         QCOMPARE(source.reads, 32); // Each GUI turn captures at most32 source rows.
         ports.env.drain();
@@ -292,7 +292,7 @@ private Q_SLOTS:
         Source source; source.lines = {QStringLiteral("needle")};
         MonospaceOutputModel model;
         model.setServices(ports.services()); model.setSourceModel(&source);
-        const auto cleanup = qScopeGuard([&] { model.closeAdmission(); ports.settle(); ports.services()->retryRetirements(); });
+        const auto cleanup = qScopeGuard([&] { model.close(); ports.settle(); ports.services()->retryRetirements(); });
         QCoreApplication::processEvents();
         if (kind != 0) { ports.settle(); QCOMPARE(model.rowCount(), 1); }
         QSignalSpy copied(&model, &MonospaceOutputModel::copyFinished);
@@ -315,7 +315,7 @@ private Q_SLOTS:
         Source source; source.lines = {QStringLiteral("retained output")};
         MonospaceOutputModel model;
         model.setServices(ports.services()); model.setSourceModel(&source);
-        const auto cleanup = qScopeGuard([&] { ports.reject_retirement = false; model.closeAdmission(); ports.settle(); ports.services()->retryRetirements(); });
+        const auto cleanup = qScopeGuard([&] { ports.reject_retirement = false; model.close(); ports.settle(); ports.services()->retryRetirements(); });
         QCoreApplication::processEvents(); ports.settle(); QCOMPARE(model.rowCount(), 1);
         ports.reject_retirement = true;
         model.setActive(false); model.setActive(true);
@@ -349,7 +349,7 @@ private Q_SLOTS:
             ports.releaseAll();
             ports.env.publishAll();
         };
-        const auto cleanup = qScopeGuard([&] { model.closeAdmission(); settle(); ports.services()->retryRetirements(); });
+        const auto cleanup = qScopeGuard([&] { model.close(); settle(); ports.services()->retryRetirements(); });
         QCoreApplication::processEvents(); // Bounded GUI role capture only.
         QCOMPARE(model.rowCount(), 0);
         QVERIFY(!worker.quiescent());

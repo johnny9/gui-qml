@@ -855,7 +855,7 @@ void WalletQmlController::unloadWallets()
     beginShutdown();
 }
 
-void WalletQmlController::closeAdmission()
+void WalletQmlController::close()
 {
     m_shutdown_gate->store(true); // O(1): fences every original wallet and form owner.
     m_wallet_load_error.clear();
@@ -863,16 +863,16 @@ void WalletQmlController::closeAdmission()
     // The compatibility facade lends this one current operation's text model.
     // Close that bounded projection synchronously; the registry still retires
     // every other retained form in its ordinary bounded shutdown batches.
-    m_creations->closeAdmission();
+    m_creations->close();
     m_wallet_load_in_progress = false;
     m_command_state = WalletOperationState::WalletOperationClosed;
-    m_registry->closeAdmission();
+    m_registry->close();
     m_command.reset(); m_command_owner.reset(); m_command_backend.reset();
     m_open_resolution.reset(); m_open_resolution_wallet.clear();
     m_deferred_command_publication = 0;
     m_deferred_notification_publication = false;
-    m_names->closeAdmission();
-    if (m_empty_wallet) m_empty_wallet->closeAdmission(); // One fixed sentinel, independent of inventory size.
+    m_names->close();
+    if (m_empty_wallet) m_empty_wallet->close(); // One fixed sentinel, independent of inventory size.
 }
 void WalletQmlController::setRetirementPostForTesting(std::function<void(std::function<void()>)> post)
 {
@@ -881,7 +881,7 @@ void WalletQmlController::setRetirementPostForTesting(std::function<void(std::fu
 void WalletQmlController::beginShutdown()
 {
     if (std::exchange(m_shutdown_started, true)) return;
-    closeAdmission();
+    close();
     std::function<void(std::function<void()>)> notification_retirement;
     if (m_load_subscription) m_load_subscription->retire();
     if (m_load_subscription) {
@@ -897,7 +897,7 @@ void WalletQmlController::beginShutdown()
     m_empty_wallet->setParent(nullptr);
     m_registry->beginRetirement(std::move(m_services.owned_executor), std::move(notification_retirement));
     const QPointer<WalletQmlController> observer{this};
-    m_selection->closeAdmission(); if (!observer) return;
+    m_selection->close(); if (!observer) return;
     m_selection->clear(); if (!observer) return;
     if (target_changed) { Q_EMIT closeTargetChanged(); if (!observer) return; }
     Q_EMIT initializedChanged(); if (!observer) return;
@@ -1400,7 +1400,7 @@ void WalletQmlController::offerWalletLoadWarnings(const QString& wallet, const Q
     auto* notice = WalletOperationModel::OpenNotice(m_creations->operationServices(), m_command_id, wallet, warnings, m_command_owner, m_result_wallet);
     if (!guard) { notice->deleteLater(); return; }
     const QPointer<WalletOperationModel> original{notice};
-    m_registry->registerForm(notice, [original] { if (original) original->closeAdmission(); });
+    m_registry->registerForm(notice, [original] { if (original) original->close(); });
     connect(notice, &QObject::destroyed, this, [this, notice] { m_registry->forgetForm(notice); });
     Q_EMIT walletLoadWarningsOffered(notice);
 }

@@ -677,7 +677,7 @@ void QmlInitExecutorApiTests::asynchronousRetirementPrecedesInterrupt()
     QmlShutdownCoordinator coordinator{executor};
     bool fenced{false}, began{false};
     std::function<void()> acknowledge;
-    coordinator.addStopHook([&] { executor.closeAdmission(); });
+    coordinator.addStopHook([&] { executor.close(); });
     coordinator.addStopHook([&] { fenced = true; });
     coordinator.addBeforeInterruptTask([&](std::function<void()> done) {
         QVERIFY(fenced);
