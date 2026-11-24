@@ -13,7 +13,7 @@
 #include <memory>
 #include <optional>
 
-class WalletQmlModel;
+class WalletModel;
 class TransactionReviewModel;
 namespace walletsend {
 class CommitConsent;
@@ -28,7 +28,7 @@ struct SendResultText {
 };
 SendResultText DescribeSendResult(const walletsend::Result& result, bool sign_only);
 
-/** A send of one WalletQmlModel review. It owns its walletsend::SendTask:
+/** A send of one WalletModel review. It owns its walletsend::SendTask:
  * prompts and the outcome of that work are this operation's alone. Effects on
  * the wallet and the review after the work finishes are the wallet's, so they
  * happen even when the operation is gone. */
@@ -36,7 +36,7 @@ class WalletSendHandle final : public SendOperation
 {
     Q_OBJECT
 public:
-    WalletSendHandle(WalletQmlModel& wallet, bool sign_only, QObject* parent = nullptr);
+    WalletSendHandle(WalletModel& wallet, bool sign_only, QObject* parent = nullptr);
     ~WalletSendHandle() override;
 
     //! Starts the work for the wallet's current review. False when the wallet
@@ -52,7 +52,7 @@ public:
     void workFinished(const walletsend::Result& result, bool review_current);
 
 private:
-    QPointer<WalletQmlModel> m_wallet;
+    QPointer<WalletModel> m_wallet;
     QPointer<TransactionReviewModel> m_review;
     quint64 m_attempt_id{0};
     quint64 m_review_id{0};
@@ -61,12 +61,12 @@ private:
     std::shared_ptr<walletsend::CommitConsent> m_consent;
 };
 
-/** WalletQmlModel's TransactionReviewInterface. */
+/** WalletModel's TransactionReviewInterface. */
 class WalletTransactionReview final : public TransactionReviewInterface
 {
     Q_OBJECT
 public:
-    explicit WalletTransactionReview(WalletQmlModel& wallet);
+    explicit WalletTransactionReview(WalletModel& wallet);
     QObject* currentReview() const override;
     bool currentTransactionIsImportedPsbt() const override;
     bool currentTransactionCanSend() const override;
@@ -87,7 +87,7 @@ public:
     QString reviewError() const override;
 
 private:
-    QPointer<WalletQmlModel> m_wallet;
+    QPointer<WalletModel> m_wallet;
 };
 
 #endif // BITCOIN_QML_MODELS_WALLETSENDHANDLE_H

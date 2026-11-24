@@ -305,7 +305,7 @@
           "constant": false
         },
         "resultWallet": {
-          "type": "WalletQmlModel*",
+          "type": "WalletModel*",
           "constant": false
         },
         "canOpenResult": {
@@ -374,7 +374,7 @@
       "writable": {},
       "required": {
         "selectedWallet": {
-          "type": "WalletQmlModel*",
+          "type": "WalletModel*",
           "constant": false
         },
         "pending": {

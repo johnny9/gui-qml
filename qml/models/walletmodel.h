@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_QML_MODELS_WALLETQMLMODEL_H
-#define BITCOIN_QML_MODELS_WALLETQMLMODEL_H
+#ifndef BITCOIN_QML_MODELS_WALLETMODEL_H
+#define BITCOIN_QML_MODELS_WALLETMODEL_H
 
 #include <qml/models/backuppolicyoperation.h>
 #include <qml/models/walletbackupmodel.h>
@@ -81,7 +81,7 @@ class WalletTransactionReview;
 class WalletSendDraft;
 class WalletCloseQuestion;
 
-class WalletQmlModel : public QObject, public ReviewOwner
+class WalletModel : public QObject, public ReviewOwner
 {
     Q_OBJECT
     Q_INTERFACES(ReviewOwner)
@@ -190,7 +190,7 @@ private:
     Q_PROPERTY(bool isEncrypted READ isEncrypted NOTIFY securityStateChanged)
     Q_PROPERTY(bool isLocked READ isLocked NOTIFY securityStateChanged)
     Q_PROPERTY(QString keyScheme READ keyScheme NOTIFY openingMetadataChanged)
-    Q_PROPERTY(WalletQmlModel::KeyScheme keySchemeKind READ keySchemeKind NOTIFY openingMetadataChanged)
+    Q_PROPERTY(WalletModel::KeyScheme keySchemeKind READ keySchemeKind NOTIFY openingMetadataChanged)
     Q_PROPERTY(QString privateKeysStatus READ privateKeysStatus NOTIFY openingMetadataChanged)
     Q_PROPERTY(QString externalSignerStatus READ externalSignerStatus NOTIFY openingMetadataChanged)
     Q_PROPERTY(bool canManagePassphrase READ canManagePassphrase NOTIFY openingMetadataChanged)
@@ -227,12 +227,12 @@ private:
     Q_PROPERTY(PsbtQmlModel* importedPsbt READ importedPsbt CONSTANT)
 
 public:
-    WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node = nullptr, QObject* parent = nullptr);
-    WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
+    WalletModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node = nullptr, QObject* parent = nullptr);
+    WalletModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
                    FeeReadServices fee_services, QObject* parent = nullptr);
-    WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
+    WalletModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
                    FeeReadServices fee_services, psbtfee::Services proof_services, QObject* parent = nullptr);
-    WalletQmlModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
+    WalletModel(std::unique_ptr<interfaces::Wallet> wallet, interfaces::Node* node,
                    FeeReadServices fee_services, psbtfee::Services proof_services, backup::Services backup_services,
                    QObject* parent = nullptr);
     struct Services {
@@ -252,13 +252,13 @@ public:
         std::unique_ptr<interfaces::Handler> unload_handler{};
         Services services{};
     };
-    WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
+    WalletModel(SharedWallet wallet, interfaces::Node* node,
                    FeeReadServices fee_services, psbtfee::Services proof_services, backup::Services backup_services,
                    QObject* parent = nullptr);
-    WalletQmlModel(interfaces::Node* node, QObject* parent = nullptr);
-    WalletQmlModel(interfaces::Node* node, Services services, QObject* parent);
-    WalletQmlModel(QObject *parent = nullptr);
-    ~WalletQmlModel();
+    WalletModel(interfaces::Node* node, QObject* parent = nullptr);
+    WalletModel(interfaces::Node* node, Services services, QObject* parent);
+    WalletModel(QObject *parent = nullptr);
+    ~WalletModel();
 
     QString name() const;
     QString rpcName() const { return m_rpc_name; }
@@ -553,7 +553,7 @@ private:
         std::shared_ptr<void> label_lifetime;
         bool valid{false};
         std::shared_ptr<QObject> bridge;
-        QPointer<WalletQmlModel> observer;
+        QPointer<WalletModel> observer;
         std::shared_ptr<const int> ticket;
     };
     SentLabelCapture captureSentRecipientLabels(const std::shared_ptr<const walletopening::Session::Action>& action);
@@ -793,29 +793,29 @@ private:
 class WalletCloseQuestion final : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(WalletQmlModel* wallet READ wallet CONSTANT)
+    Q_PROPERTY(WalletModel* wallet READ wallet CONSTANT)
 public:
-    explicit WalletCloseQuestion(WalletQmlModel* wallet) : QObject(wallet), m_wallet(wallet) {}
-    WalletQmlModel* wallet() const { return m_wallet; }
+    explicit WalletCloseQuestion(WalletModel* wallet) : QObject(wallet), m_wallet(wallet) {}
+    WalletModel* wallet() const { return m_wallet; }
     Q_INVOKABLE void accept() { if (m_wallet) m_wallet->answerCloseQuestion(this, true); }
     Q_INVOKABLE void decline() { if (m_wallet) m_wallet->answerCloseQuestion(this, false); }
 private:
-    const QPointer<WalletQmlModel> m_wallet;
+    const QPointer<WalletModel> m_wallet;
 };
 
 class AddressLabelEditorModel final : public TextEditSessionModel {
     Q_OBJECT
-    Q_PROPERTY(WalletQmlModel* wallet READ wallet NOTIFY walletChanged)
+    Q_PROPERTY(WalletModel* wallet READ wallet NOTIFY walletChanged)
 public:
-    AddressLabelEditorModel(WalletQmlModel* wallet, QString address, Ports ports, QObject* parent)
+    AddressLabelEditorModel(WalletModel* wallet, QString address, Ports ports, QObject* parent)
         : TextEditSessionModel(std::move(address), std::move(ports), parent), m_wallet(wallet) {
         if (wallet) connect(wallet, &QObject::destroyed, this, [this] { Q_EMIT walletChanged(); });
     }
-    WalletQmlModel* wallet() const { return m_wallet; }
+    WalletModel* wallet() const { return m_wallet; }
 Q_SIGNALS:
     void walletChanged();
 private:
-    const QPointer<WalletQmlModel> m_wallet;
+    const QPointer<WalletModel> m_wallet;
 };
 
-#endif // BITCOIN_QML_MODELS_WALLETQMLMODEL_H
+#endif // BITCOIN_QML_MODELS_WALLETMODEL_H

@@ -127,11 +127,11 @@
 #include <qml/models/walletoperationpresentationmodel.h>
 #include <qml/models/coinslistmodel.h>
 #include <qml/models/sendrecipientslistmodel.h>
-#include <qml/models/walletqmlmodel.h>
+#include <qml/models/walletmodel.h>
 #include <qml/models/walletimporttarget.h>
 #include <qml/models/transactionreviewmodel.h>
 #include <qml/models/fileexportoperation.h>
-#include <qml/walletqmlcontroller.h>
+#include <qml/walletcontroller.h>
 #endif
 
 #include <algorithm>
@@ -516,7 +516,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterType<PaymentRequestDeleteController>("org.bitcoincore.qt", 1, 0, "PaymentRequestDeleteController");
     qmlRegisterType<PaymentRequestViewController>("org.bitcoincore.qt", 1, 0, "PaymentRequestViewController");
     qmlRegisterType<ActivityFilterProxyModel>("org.bitcoincore.qt", 1, 0, "ActivityFilterProxyModel");
-    qmlRegisterUncreatableType<TransactionActivityModel>("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Owned by WalletQmlModel");
+    qmlRegisterUncreatableType<TransactionActivityModel>("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Owned by WalletModel");
     qmlRegisterUncreatableType<ActivityDetailModel>("org.bitcoincore.qt", 1, 0, "ActivityDetailModel", "Owned by an Activity view");
     qmlRegisterType<ActivityDetailController>("org.bitcoincore.qt", 1, 0, "ActivityDetailController");
     qRegisterMetaType<MessageSigningError>(); qRegisterMetaType<MessageVerificationSnapshot>();
@@ -557,8 +557,8 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterType<FeeBumpController>("org.bitcoincore.qt", 1, 0, "FeeBumpController");
     qmlRegisterUncreatableType<WalletSecurityModel>("org.bitcoincore.qt", 1, 0, "WalletSecurityModel", "Owned by a wallet opening");
     qmlRegisterUncreatableType<SecurityOperationModel>("org.bitcoincore.qt", 1, 0, "SecurityOperationModel", "Owned by a security command");
-    qmlRegisterUncreatableType<WalletQmlModel>("org.bitcoincore.qt", 1, 0, "WalletQmlModel",
-                                               "WalletQmlModel cannot be instantiated from QML");
+    qmlRegisterUncreatableType<WalletModel>("org.bitcoincore.qt", 1, 0, "WalletModel",
+                                               "WalletModel cannot be instantiated from QML");
     qmlRegisterUncreatableType<WalletCloseQuestion>("org.bitcoincore.qt", 1, 0, "WalletCloseQuestion", "Owned by a wallet");
     qmlRegisterUncreatableType<TransactionReviewModel>("org.bitcoincore.qt", 1, 0, "TransactionReviewModel",
                                                           "TransactionReviewModel cannot be instantiated from QML");
@@ -591,7 +591,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
         qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, type, "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletSecurityModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "SecurityOperationModel", "Wallet support is not compiled");
-    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletQmlModel", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletCloseQuestion", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "TransactionReviewModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletListModel", "Wallet support is not compiled");
@@ -1394,20 +1394,20 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         // -nodebuglogfile are honoured rather than assuming <datadir>/debug.log.
         DebugLogModel debug_log_model{runtime.log_file, runtime.log_enabled, executor, presentation_post};
 #ifdef ENABLE_WALLET
-        std::unique_ptr<WalletQmlController> wallet_controller;
+        std::unique_ptr<WalletController> wallet_controller;
         if (wallet_enabled) {
-            WalletQmlController::Services wallet_services;
+            WalletController::Services wallet_services;
             wallet_services.executor = &executor;
             wallet_services.post = presentation_post;
             const auto wallet_cleanup = std::make_shared<execution::SerialQueue>(executor.makeQueue(execution::Lane::Utility));
             wallet_services.make_wallet_services = [&executor, wallet_cleanup](bool) {
-                WalletQmlModel::Services services;
+                WalletModel::Services services;
                 services.core = std::make_shared<execution::SerialQueue>(executor.makeQueue(execution::Lane::Core));
                 services.outcomes = std::make_shared<execution::SerialQueue>(executor.makeQueue(execution::Lane::Utility));
                 services.cleanup = wallet_cleanup;
                 return services;
             };
-            wallet_controller = std::make_unique<WalletQmlController>(*node, walletopening::ChainPreferences(*chain),
+            wallet_controller = std::make_unique<WalletController>(*node, walletopening::ChainPreferences(*chain),
                 walletopening::FeePolicy{[chain = chain.get()] { return chain->relayMinFee().GetFeePerK(); }},
                 std::move(wallet_services));
             bitcoin_uri_model.setExportCoordinator(wallet_controller->backupInstallCoordinator());
@@ -1453,7 +1453,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
 #ifdef ENABLE_WALLET
         if (wallet_controller) {
             shutdown_coordinator.addStopHook([&] { wallet_controller->close(); });
-            shutdown_coordinator.addParticipant(wallet_controller.get(), &WalletQmlController::walletsDrained,
+            shutdown_coordinator.addParticipant(wallet_controller.get(), &WalletController::walletsDrained,
                                                 [&] { wallet_controller->beginShutdown(); });
         }
 #endif
@@ -1611,13 +1611,13 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             shutdown_coordinator.addAfterInterruptTask([&](std::function<void()> done) {
                 wallet_list_model->whenRetired(std::move(done));
             });
-            QObject::connect(wallet_controller.get(), &WalletQmlController::walletLoadStateChanged,
+            QObject::connect(wallet_controller.get(), &WalletController::walletLoadStateChanged,
                              wallet_list_model.get(), &WalletListModel::setWalletLoadState);
-            QObject::connect(wallet_controller.get(), &WalletQmlController::walletLoadStateChanged,
+            QObject::connect(wallet_controller.get(), &WalletController::walletLoadStateChanged,
                              wallet_list_model.get(), [controller = wallet_controller.get(), catalog = wallet_list_model.get()](const QString& id, WalletListModel::LoadState, const QString&) {
                                  catalog->setOpenWallet(id, controller->walletForName(id));
                              });
-            QObject::connect(wallet_controller.get(), &WalletQmlController::walletOperationChanged,
+            QObject::connect(wallet_controller.get(), &WalletController::walletOperationChanged,
                              wallet_list_model.get(), [controller = wallet_controller.get(), catalog = wallet_list_model.get()] {
                                  const auto* opening = controller->commandOpening();
                                  if (opening && opening->operationId()) catalog->setOperationId(opening->target(), opening->busy() ? QString::number(opening->operationId()) : QString{});
@@ -1629,7 +1629,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
                                  catalog->setOperationId(operation->targetWalletId(), operation->busy() ? QString::number(operation->sequence()) : QString{});
                                  if (operation->terminal() && operation->result().effect != WalletOperationResult::NoEffect) catalog->listWalletDir();
                              });
-            QObject::connect(wallet_controller.get(), &WalletQmlController::walletInfoChanged,
+            QObject::connect(wallet_controller.get(), &WalletController::walletInfoChanged,
                              wallet_list_model.get(), &WalletListModel::setWalletInfo);
             QObject::connect(wallet_controller->names(), &WalletNamesController::namesChanged,
                              wallet_list_model.get(), &WalletListModel::refreshDisplayNames);
@@ -1642,8 +1642,8 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             // picker was ever opened) has nowhere to land. Re-publish open wallets'
             // info every time the model resets so newly created rows pick it up.
             QObject::connect(wallet_list_model.get(), &QAbstractItemModel::modelReset,
-                             wallet_controller.get(), &WalletQmlController::publishOpenWalletsInfo);
-            QObject::connect(wallet_controller.get(), &WalletQmlController::initializedChanged,
+                             wallet_controller.get(), &WalletController::publishOpenWalletsInfo);
+            QObject::connect(wallet_controller.get(), &WalletController::initializedChanged,
                              wallet_list_model.get(), [controller = wallet_controller.get(), list_model = wallet_list_model.get()]() {
                                  if (controller->initialized()) {
                                      list_model->setBackendAvailability(WalletListModel::BackendAvailability::Available);

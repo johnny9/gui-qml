@@ -11,7 +11,7 @@ import "../controls"
 Item {
     id: root
 
-    property int approvalState: WalletQmlModel.ApprovalInitial
+    property int approvalState: WalletModel.ApprovalInitial
     property string errorMessage: ""
     property string reviewMessage: ""
     property bool signerNotFound: false
@@ -19,13 +19,13 @@ Item {
     property string statusObjectName: ""
     readonly property string reviewState: {
         switch (root.approvalState) {
-        case WalletQmlModel.ApprovalWaiting: return "waiting"
-        case WalletQmlModel.ApprovalOtherReview: return "busy"
-        case WalletQmlModel.ApprovalSigned: return "signed"
-        case WalletQmlModel.ApprovalPartiallySigned: return "partiallySigned"
-        case WalletQmlModel.ApprovalFailed: return "error"
-        case WalletQmlModel.ApprovalUncertain: return "uncertain"
-        case WalletQmlModel.ApprovalUnverified: return "unverified"
+        case WalletModel.ApprovalWaiting: return "waiting"
+        case WalletModel.ApprovalOtherReview: return "busy"
+        case WalletModel.ApprovalSigned: return "signed"
+        case WalletModel.ApprovalPartiallySigned: return "partiallySigned"
+        case WalletModel.ApprovalFailed: return "error"
+        case WalletModel.ApprovalUncertain: return "uncertain"
+        case WalletModel.ApprovalUnverified: return "unverified"
         default: return "initial"
         }
     }

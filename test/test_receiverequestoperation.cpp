@@ -5,7 +5,7 @@
 #include <qml/models/paymentrequesteditormodel.h>
 #include <qml/models/requestimageexportoperation.h>
 #include <qml/models/requestsharingmodel.h>
-#include <qml/models/walletqmlmodel.h>
+#include <qml/models/walletmodel.h>
 #include <qml/models/walletreceivemodel.h>
 #include <qml/walletsettings.h>
 #include <test/mocks/walletmodelservices.h>
@@ -81,7 +81,7 @@ struct Fixture {
     QJsonArray trace;
     ManualNodeObservations env{[this](execution::Lane lane) { trace.append(int(lane)); }};
     std::shared_ptr<Wallet> wallet{std::make_shared<Wallet>()};
-    std::unique_ptr<WalletQmlModel> model{new WalletQmlModel{
+    std::unique_ptr<WalletModel> model{new WalletModel{
         WalletWithQueues(wallet, env.executor(), {}, "request-consumer"), nullptr,
         FeeReadServices{}, psbtfee::Services{}, backup::Services{}}};
     Fixture()

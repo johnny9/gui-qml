@@ -8,7 +8,7 @@
 #include <qml/models/bitcoinuri.h>
 #include <qml/executor.h>
 #ifdef ENABLE_WALLET
-#include <qml/models/walletqmlmodel.h>
+#include <qml/models/walletmodel.h>
 #endif
 #include <QTimer>
 #include <qml/guipresentation.h>
@@ -126,13 +126,13 @@ void BitcoinUriModel::setExportCoordinator(std::shared_ptr<backup::InstallCoordi
     m_operations->export_coordinator = std::move(coordinator);
 }
 
-PaymentImportOperation* BitcoinUriModel::requestImportText(const QString& text, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
+PaymentImportOperation* BitcoinUriModel::requestImportText(const QString& text, WalletModel* wallet, SendRecipient* recipient, QObject* owner)
 {
     const QPointer<BitcoinUriModel> self{this}; const QPointer<QObject> original_owner{owner};
     const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
     return self && original_owner ? self->requestImport({paymentimport::Input::Kind::Text, text}, target, original_owner) : nullptr;
 }
-PaymentImportOperation* BitcoinUriModel::requestImportFile(const QString& path, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
+PaymentImportOperation* BitcoinUriModel::requestImportFile(const QString& path, WalletModel* wallet, SendRecipient* recipient, QObject* owner)
 {
     const QPointer<BitcoinUriModel> self{this}; const QPointer<QObject> original_owner{owner};
     const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
@@ -143,20 +143,20 @@ PaymentImportOperation* BitcoinUriModel::requestImport(paymentimport::Input inpu
 {
     return createImport(std::move(input), std::move(target), owner, std::move(creation));
 }
-PaymentImportOperation* BitcoinUriModel::captureImport(WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
+PaymentImportOperation* BitcoinUriModel::captureImport(WalletModel* wallet, SendRecipient* recipient, QObject* owner)
 {
     const QPointer<BitcoinUriModel> self{this}; const QPointer<QObject> original_owner{owner};
     const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
     return self && original_owner ? self->createImport({}, target, original_owner) : nullptr;
 }
-PaymentImportOperation* BitcoinUriModel::requestImportDrop(int urlCount, const QUrl& firstUrl, const QString& text, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
+PaymentImportOperation* BitcoinUriModel::requestImportDrop(int urlCount, const QUrl& firstUrl, const QString& text, WalletModel* wallet, SendRecipient* recipient, QObject* owner)
 {
     paymentimport::Input input{paymentimport::Input::Kind::Drop, text}; input.url_count = urlCount; input.url = firstUrl;
     const QPointer<BitcoinUriModel> self{this}; const QPointer<QObject> original_owner{owner};
     const auto target = wallet ? wallet->importTarget(recipient) : nullptr;
     return self && original_owner ? self->requestImport(std::move(input), target, original_owner) : nullptr;
 }
-PaymentImportOperation* BitcoinUriModel::requestImportPaste(const QString& text, InputField field, WalletQmlModel* wallet, SendRecipient* recipient, QObject* owner)
+PaymentImportOperation* BitcoinUriModel::requestImportPaste(const QString& text, InputField field, WalletModel* wallet, SendRecipient* recipient, QObject* owner)
 {
     paymentimport::Input input{paymentimport::Input::Kind::Text, text};
     if (field != InputField::AddressField && field != InputField::AmountField && field != InputField::PrivateNoteField) return nullptr;

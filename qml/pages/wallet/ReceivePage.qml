@@ -10,7 +10,7 @@ import "../../controls"
 
 Page {
     id: root
-    property WalletQmlModel wallet: null
+    property WalletModel wallet: null
     property bool walletViewActive: true
     readonly property WalletReceiveModel receive: wallet ? wallet.receive : null
     // Without a loaded wallet there is nothing to receive into.

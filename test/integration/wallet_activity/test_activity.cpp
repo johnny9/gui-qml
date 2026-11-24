@@ -75,7 +75,7 @@ class ActivityIntegrationTests : public QObject
 {
     Q_OBJECT
     BitcoinQmlApplication& m_app;
-    WalletQmlModel* m_wallet{nullptr};
+    WalletModel* m_wallet{nullptr};
     ActivityFilterProxyModel* m_filter{nullptr};
     QString m_request_address;
     QString m_request_id;

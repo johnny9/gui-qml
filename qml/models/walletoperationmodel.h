@@ -10,8 +10,8 @@
 #include <QObject>
 #include <QPointer>
 #include <QQmlListProperty>
-class WalletQmlModel;
-Q_MOC_INCLUDE("qml/models/walletqmlmodel.h")
+class WalletModel;
+Q_MOC_INCLUDE("qml/models/walletmodel.h")
 class WalletCreationModel;
 class WalletOperationModel;
 class WalletOperationPrompt final : public QObject {
@@ -81,8 +81,8 @@ class WalletOperationModel final : public QObject, public WalletOperationPresent
     Q_PROPERTY(bool acceptedForDelivery READ acceptedForDelivery CONSTANT)
     Q_PROPERTY(WalletOperationError error READ error NOTIFY changed)
     Q_PROPERTY(WalletOperationResult result READ result NOTIFY changed)
-    Q_PROPERTY(WalletQmlModel* resultWallet READ resultWallet NOTIFY changed)
-    Q_PROPERTY(QQmlListProperty<WalletQmlModel> resultWallets READ resultWallets NOTIFY changed)
+    Q_PROPERTY(WalletModel* resultWallet READ resultWallet NOTIFY changed)
+    Q_PROPERTY(QQmlListProperty<WalletModel> resultWallets READ resultWallets NOTIFY changed)
     Q_PROPERTY(bool canOpenResult READ canOpenResult NOTIFY changed)
     Q_PROPERTY(bool canCancel READ canCancel NOTIFY changed)
     Q_PROPERTY(bool canRetry READ canRetry NOTIFY changed)
@@ -115,7 +115,7 @@ public:
     };
     static WalletOperationModel* Make(Services services, walletcreation::Request request);
     static WalletOperationModel* Make(Services services, walletrestoration::Request request);
-    static WalletOperationModel* OpenNotice(Services services, quint64 id, QString target, QString warnings, std::shared_ptr<const void> lifetime, WalletQmlModel* original);
+    static WalletOperationModel* OpenNotice(Services services, quint64 id, QString target, QString warnings, std::shared_ptr<const void> lifetime, WalletModel* original);
     //! A finished open of \p target that failed with \p error.
     static WalletOperationModel* OpenFailure(Services services, quint64 id, QString target, const QString& error);
     ~WalletOperationModel() override;
@@ -132,8 +132,8 @@ public:
     bool acceptedForDelivery() const { return m_accepted; }
     WalletOperationError error() const { return m_frame.error; }
     WalletOperationResult result() const { return m_frame.result; }
-    WalletQmlModel* resultWallet() const;
-    QQmlListProperty<WalletQmlModel> resultWallets();
+    WalletModel* resultWallet() const;
+    QQmlListProperty<WalletModel> resultWallets();
     bool canOpenResult() const;
     bool canCancel() const { return phase() == Requested || phase() == Validating || phase() == AwaitingConfirmation || phase() == AwaitingPassphrase; }
     bool canRetry() const { return false; }
@@ -174,7 +174,7 @@ Q_SIGNALS:
 private:
     friend class WalletQmlControllerTests; // Captures an original outcome owner; never forges its state.
     friend class WalletCreationModel;
-    friend class WalletQmlController;
+    friend class WalletController;
     friend class WalletCreationController;
     friend class WalletOperationPrompt;
     WalletOperationModel(Services services, walletcreation::Request request);
@@ -193,8 +193,8 @@ private:
     std::shared_ptr<walletcreation::OperationOwner> m_owner;
     walletcreation::Frame m_frame;
     std::shared_ptr<walletpublication::CatalogReservation> m_ticket;
-    QPointer<WalletQmlModel> m_result_wallet;
-    std::vector<QPointer<WalletQmlModel>> m_result_wallets;
+    QPointer<WalletModel> m_result_wallet;
+    std::vector<QPointer<WalletModel>> m_result_wallets;
     QMetaObject::Connection m_available, m_destroyed;
     WalletOperationText m_errors{false, this}, m_warnings{true, this};
     WalletOperationPrompt* m_prompt{nullptr};

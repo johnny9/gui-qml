@@ -86,13 +86,13 @@
 #include <qml/models/transaction.h>
 #include <qml/models/transactionactivitymodel.h>
 #include <qml/models/walletlistmodel.h>
-#include <qml/models/walletqmlmodel.h>
+#include <qml/models/walletmodel.h>
 #include <qml/models/walletimporttarget.h>
 #include <qml/models/transactionreviewmodel.h>
 #include <qml/qmlfiledialog.h>
 #include <qml/nativelistmodel.h>
 #include <qml/urlopener.h>
-#include <qml/walletqmlcontroller.h>
+#include <qml/walletcontroller.h>
 
 #include <QtQml/qqml.h>
 
@@ -507,10 +507,10 @@ struct SecurityOperationModelForeign {
     QML_UNCREATABLE("Owned by a security command")
 };
 
-struct WalletQmlModelForeign {
+struct WalletModelForeign {
     Q_GADGET
-    QML_FOREIGN(WalletQmlModel)
-    QML_NAMED_ELEMENT(WalletQmlModel)
+    QML_FOREIGN(WalletModel)
+    QML_NAMED_ELEMENT(WalletModel)
     QML_UNCREATABLE("Owned by the application")
 };
 
@@ -727,9 +727,9 @@ struct FlowDetailsModelForeign {
     QML_UNCREATABLE("Owned by a transaction review")
 };
 
-struct WalletQmlControllerForeign {
+struct WalletControllerForeign {
     Q_GADGET
-    QML_FOREIGN(WalletQmlController)
+    QML_FOREIGN(WalletController)
     QML_ANONYMOUS
 };
 

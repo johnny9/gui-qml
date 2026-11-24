@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <qml/models/walletqmlmodel.h>
+#include <qml/models/walletmodel.h>
 #include <test/qt_test_registry.h>
 
 #include <QMetaMethod>
@@ -14,7 +14,7 @@ class WalletQmlModelSurfaceTests : public QObject
 {
     Q_OBJECT
 private Q_SLOTS:
-    //! WalletQmlModel exposes data and wallet-wide state; wallet actions
+    //! WalletModel exposes data and wallet-wide state; wallet actions
     //! belong to a page controller's interface. This list only shrinks.
     void walletQmlModelSurfaceOnlyShrinks()
     {
@@ -27,7 +27,7 @@ private Q_SLOTS:
             "setCustomFeeTarget", "setDefaultReceiveAddressType", "useMaximum", "useMaximumFor",
         };
         QSet<QByteArray> found;
-        const auto* meta = &WalletQmlModel::staticMetaObject;
+        const auto* meta = &WalletModel::staticMetaObject;
         for (int i = meta->methodOffset(); i < meta->methodCount(); ++i) {
             const auto method = meta->method(i);
             if (method.methodType() == QMetaMethod::Method && method.access() == QMetaMethod::Public) found.insert(method.name());
@@ -40,7 +40,7 @@ private Q_SLOTS:
         for (const auto& name : found) if (!allowed.contains(name)) added << QString::fromLatin1(name);
         for (const auto& name : allowed) if (!found.contains(name)) removed << QString::fromLatin1(name);
         QVERIFY2(added.isEmpty(), qPrintable("New wallet action; add it to a page controller's interface instead: " + added.join(", ")));
-        QVERIFY2(removed.isEmpty(), qPrintable("Gone from WalletQmlModel; remove it from this list: " + removed.join(", ")));
+        QVERIFY2(removed.isEmpty(), qPrintable("Gone from WalletModel; remove it from this list: " + removed.join(", ")));
     }
 };
 

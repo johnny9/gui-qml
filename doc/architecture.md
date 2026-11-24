@@ -9,7 +9,7 @@ when a change already touches it; don't rename for its own sake.
 | Term | Meaning |
 |---|---|
 | **Model** | Data-backed: domain data, item rows or drafts, with change notifications. It lives as long as its data and holds no page state. |
-| **Controller** | State and actions for one use case. QML binds to its state and calls its actions. An *app controller* coordinates across the application (`WalletQmlController`); a *page controller* belongs to one page and is declared by it. |
+| **Controller** | State and actions for one use case. QML binds to its state and calls its actions. An *app controller* coordinates across the application (`WalletController`); a *page controller* belongs to one page and is declared by it. |
 | **Operation** | One domain request with a lifecycle. It keeps its final state once finished. |
 | **Interface** | An abstract class a controller depends on to reach the wallet or node. Production code implements it; tests use a fake. Name it with an `Interface` suffix. |
 
@@ -23,19 +23,19 @@ The QML pages and components are the views.
 
 ```
 ApplicationModels                      composition root
-├─ app controllers                     WalletQmlController, DesktopTrayIconController
-│   └─ WalletQmlController             the wallet list: opening, selecting, closing
+├─ app controllers                     WalletController, DesktopTrayIconController
+│   └─ WalletController             the wallet list: opening, selecting, closing
 │       ├─ creation                    WalletCreationController: create, restore, migrate
 │       └─ names                       WalletNamesController: display names, wallet folder
 ├─ app models                          NodeModel, ChainModel, PeerListModel, SettingsModel, …
-└─ WalletQmlModel (one per wallet)     wallet data; implements the wallet interfaces
+└─ WalletModel (one per wallet)     wallet data; implements the wallet interfaces
     ├─ data models                     activity, addresses, coins, receive requests
     ├─ drafts                          send recipients, fee selection
     └─ wallet-wide state               balances, the busy state, effects after a commit
 
 QML page
 └─ page controller                     declared by the page
-    ├─ uses interfaces                 implemented by WalletQmlModel or NodeModel
+    ├─ uses interfaces                 implemented by WalletModel or NodeModel
     └─ owns operations                 the requests its page starts
 ```
 
@@ -109,7 +109,7 @@ Every page belongs to one scope: a wallet, the node, or the app.
 4. **Loading or unloading one wallet never recreates another wallet's
    pages.**
 
-`WalletQmlModelSurfaceTests` checks that `WalletQmlModel` gains no new wallet
+`WalletQmlModelSurfaceTests` checks that `WalletModel` gains no new wallet
 actions: its list of invokables and operation properties only shrinks.
 
 ## Declarative QML
@@ -148,7 +148,7 @@ controller's work.
 ## Example: sending a reviewed transaction
 
 ```
-WalletQmlModel
+WalletModel
  ├─ draft                 SendRecipientsListModel, fees
  └─ currentReview         TransactionReview (model)
 

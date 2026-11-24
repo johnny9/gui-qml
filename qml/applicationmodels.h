@@ -25,7 +25,7 @@
 #include <qml/presentationservices.h>
 #ifdef ENABLE_WALLET
 #include <qml/models/walletlistmodel.h>
-#include <qml/walletqmlcontroller.h>
+#include <qml/walletcontroller.h>
 #endif
 
 #include <QObject>
@@ -51,7 +51,7 @@ class ApplicationModels : public QObject
     Q_PROPERTY(DebugLogModel* debugLogModel READ debugLogModel CONSTANT)
     Q_PROPERTY(RpcConsoleModel* rpcConsoleModel READ rpcConsoleModel CONSTANT)
 #ifdef ENABLE_WALLET
-    Q_PROPERTY(WalletQmlController* walletController READ walletController CONSTANT)
+    Q_PROPERTY(WalletController* walletController READ walletController CONSTANT)
     Q_PROPERTY(SignerDiscoveryModel* signers READ signers NOTIFY signersChanged)
 #else
     Q_PROPERTY(QObject* walletController READ walletController CONSTANT)
@@ -93,7 +93,7 @@ public:
     RpcConsoleModel* rpcConsoleModel() const { return m_context ? m_context->contextProperty(QStringLiteral("rpcConsoleModel")).value<RpcConsoleModel*>() : nullptr; }
 #ifdef ENABLE_WALLET
     SignerDiscoveryModel* signers() const { const auto* controller = walletController(); return controller ? controller->creation()->signers() : nullptr; }
-    WalletQmlController* walletController() const { return m_context ? m_context->contextProperty(QStringLiteral("walletController")).value<WalletQmlController*>() : nullptr; }
+    WalletController* walletController() const { return m_context ? m_context->contextProperty(QStringLiteral("walletController")).value<WalletController*>() : nullptr; }
 #else
     QObject* walletController() const { return nullptr; }
     QObject* signers() const { return nullptr; }

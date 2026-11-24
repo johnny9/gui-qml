@@ -15,7 +15,7 @@
 class SendOperation;
 
 /** What a TransactionReviewController needs from a wallet: the transaction
- * under review and a way to act on it. WalletQmlModel implements it; tests
+ * under review and a way to act on it. WalletModel implements it; tests
  * use a fake. */
 class TransactionReviewInterface : public WalletAvailabilityInterface
 {

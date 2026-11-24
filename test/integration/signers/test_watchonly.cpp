@@ -161,7 +161,7 @@ private Q_SLOTS:
     {
         QFETCH(bool, conflict); QFETCH(bool, disabled);
         if (conflict) qmltest::Call(m_app, &interfaces::Node::updateRwSetting, std::string{"signer"}, common::SettingsValue{std::string{"/missing/r15-persistent-override"}});
-        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller);
+        auto* controller = qmltest::Model<WalletController>(m_app, "walletController"); QVERIFY(controller);
         controller->creation()->refreshSigners(); QTRY_VERIFY(!SignerPending(controller->creation()));
         QCOMPARE(controller->creation()->canCreateExternalSignerWallet(), !disabled);
         if (!disabled) {
@@ -175,7 +175,7 @@ private Q_SLOTS:
     void actualSignerProcessPreservesErrorsAndRefreshesWithoutReentry()
     {
         SignerProcessFixture fixture;
-        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller);
+        auto* controller = qmltest::Model<WalletController>(m_app, "walletController"); QVERIFY(controller);
         auto* discovery = controller->creation()->signers(); QVERIFY(discovery); QTRY_VERIFY(discovery->configurationKnown());
         discovery->editPath(fixture.command()); QVERIFY(discovery->apply());
         QTRY_VERIFY(!discovery->pending()); QVERIFY2(discovery->fresh(), qPrintable(discovery->error().message));
@@ -200,7 +200,7 @@ private Q_SLOTS:
     {
         auto* first = qmltest::CreateWallet(m_app, "first-software"); QVERIFY(first);
         auto* second = qmltest::CreateWallet(m_app, "second-software"); QVERIFY(second);
-        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller); QVERIFY(controller->selectWallet(first));
+        auto* controller = qmltest::Model<WalletController>(m_app, "walletController"); QVERIFY(controller); QVERIFY(controller->selectWallet(first));
         auto* discovery = controller->creation()->signers(); QVERIFY(discovery); QTRY_VERIFY(discovery->configurationKnown());
         SignerProcessFixture fixture; fixture.set(true, "00000001", {});
         bool released{false}; const auto cleanup = qScopeGuard([&] { if (!released && QFileInfo::exists(fixture.entered)) fixture.release(); });
@@ -227,7 +227,7 @@ private Q_SLOTS:
     {
         auto* first = qmltest::CreateWallet(m_app, "picker-first"); QVERIFY(first);
         auto* second = qmltest::CreateWallet(m_app, "picker-second"); QVERIFY(second);
-        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller); QVERIFY(controller->selectWallet(first));
+        auto* controller = qmltest::Model<WalletController>(m_app, "walletController"); QVERIFY(controller); QVERIFY(controller->selectWallet(first));
         auto* options = qmltest::Model<SettingsModel>(m_app, "optionsModel"); QVERIFY(options);
         SignerProcessFixture fixture; fixture.set(true, "00000001", {});
         bool released{false}; const auto cleanup = qScopeGuard([&] { if (!released && QFileInfo::exists(fixture.entered)) fixture.release(); });
@@ -258,7 +258,7 @@ private Q_SLOTS:
         const auto family_a = ReadDescriptorFamily(m_app, keys_a->name()), family_b = ReadDescriptorFamily(m_app, keys_b->name());
         QVERIFY(family_a.strings != family_b.strings);
         QVERIFY2(family_a.fingerprint != family_b.fingerprint, "This fixture needs two distinct protocol hints; fingerprints are not assumed unique wallet/device identifiers.");
-        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller);
+        auto* controller = qmltest::Model<WalletController>(m_app, "walletController"); QVERIFY(controller);
         auto* discovery = controller->creation()->signers(); QVERIFY(discovery); QTRY_VERIFY(discovery->configurationKnown());
         SignerProcessFixture fixture; fixture.receive = family_a.receive; fixture.internal = family_a.internal;
         fixture.set(false, family_a.fingerprint, {}, scenario == 1 || scenario == 2);
@@ -333,7 +333,7 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "createWalletReadyDoneButton"));
         auto* wallet = qmltest::WaitForWallet(m_app, "watchonly");
         QVERIFY(wallet);
-        QCOMPARE(wallet->keySchemeKind(), WalletQmlModel::KeyScheme::WatchOnly);
+        QCOMPARE(wallet->keySchemeKind(), WalletModel::KeyScheme::WatchOnly);
         QVERIFY(!wallet->canManagePassphrase());
         QVERIFY(!qmltest::Rpc(m_app, "getwalletinfo", {}, wallet->name()).find_value("private_keys_enabled").get_bool());
         // Keep one mature input and one immature reward without 99 unused rewards.
@@ -371,12 +371,12 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "sendTransactionReviewSaveButton"));
         QTRY_VERIFY(QFileInfo{path}.size() > 0);
         // The file can land before the save outcome is published; wait for it.
-        QTRY_COMPARE(wallet->psbtActionState(), WalletQmlModel::PsbtActionState::PsbtSaved);
+        QTRY_COMPARE(wallet->psbtActionState(), WalletModel::PsbtActionState::PsbtSaved);
         QCOMPARE(wallet->psbtSavedPath(), path);
         QVERIFY(!AwaitCommittedSend(*wallet));
         const auto broadcast = wallet->requestBroadcastCurrentTransaction();
         QVERIFY(AwaitPsbtAction(*wallet, broadcast));
-        QCOMPARE(wallet->psbtActionState(), WalletQmlModel::PsbtActionState::PsbtFailed);
+        QCOMPARE(wallet->psbtActionState(), WalletModel::PsbtActionState::PsbtFailed);
         QCOMPARE(qmltest::Rpc(m_app, "getrawmempool").size(), 0U);
         PartiallySignedTransaction psbt{CMutableTransaction{}, /*version=*/2};
         QCOMPARE(PsbtQmlModel::LoadPsbtFromFile(path, psbt), QString{});
@@ -408,7 +408,7 @@ private Q_SLOTS:
         const auto underivable = QString::fromStdString(EncodeExtPubKey(key));
         QVERIFY(DecodeExtPubKey(underivable.toStdString()).pubkey.IsValid());
 
-        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller);
+        auto* controller = qmltest::Model<WalletController>(m_app, "walletController"); QVERIFY(controller);
         const QDir wallet_dir{QString::fromStdString(qmltest::Call(m_app, [](interfaces::Node* node) { return node->walletLoader().getWalletDir(); }))};
         const QString name{QStringLiteral("xpub-import-fails")};
         const auto path = wallet_dir.filePath(name);
@@ -453,7 +453,7 @@ private Q_SLOTS:
 
     void invalidXpubDoesNotCreateWallet()
     {
-        auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController");
+        auto* controller = qmltest::Model<WalletController>(m_app, "walletController");
         QVERIFY(controller);
         OutcomeSpy created{controller->creation(), OutcomeSpy::Kind::Created};
         const QPointer<WalletOperationModel> operation{controller->creation()->create(WalletCreationModel::WatchOnly, "invalid", "not an extended public key")}; QVERIFY(operation);

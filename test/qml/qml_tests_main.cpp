@@ -2794,7 +2794,7 @@ private:
 };
 
 //! Follows the mock wallet's PSBT action slot the way WalletPsbtOperation
-//! follows WalletQmlModel's.
+//! follows WalletModel's.
 class MockPsbtOperation final : public PsbtOperation
 {
     Q_OBJECT
@@ -2889,7 +2889,7 @@ private:
 };
 
 //! Follows the mock wallet's preparation the way WalletPreparationOperation
-//! follows WalletQmlModel's.
+//! follows WalletModel's.
 class MockPreparationOperation final : public PreparationOperation
 {
     Q_OBJECT
@@ -8142,7 +8142,7 @@ public Q_SLOTS:
         qmlRegisterType<WalletPasswordController>("org.bitcoincore.qt", 1, 0, "WalletPasswordController");
         qmlRegisterUncreatableType<WalletBackupInterface>("org.bitcoincore.qt", 1, 0, "WalletBackupInterface", "A wallet");
         qmlRegisterType<WalletBackupController>("org.bitcoincore.qt", 1, 0, "WalletBackupController");
-        qmlRegisterUncreatableType<MockWalletQmlModel>("org.bitcoincore.qt", 1, 0, "WalletQmlModel", "Test stub type");
+        qmlRegisterUncreatableType<MockWalletQmlModel>("org.bitcoincore.qt", 1, 0, "WalletModel", "Test stub type");
         qmlRegisterUncreatableType<MockWalletNamesController>("org.bitcoincore.qt", 1, 0, "WalletNamesController", "Test stub type");
         qmlRegisterUncreatableType<MockWalletCloseQuestion>("org.bitcoincore.qt", 1, 0, "WalletCloseQuestion", "Test stub type");
         qmlRegisterSingletonInstance<MockBitcoinUri>("org.bitcoincore.qt", 1, 0, "BitcoinUri", &bitcoin_uri);

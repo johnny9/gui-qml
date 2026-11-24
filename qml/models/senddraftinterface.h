@@ -15,7 +15,7 @@
 #include <optional>
 
 /** What a SendDraftController needs from a wallet: its send draft and the
- * actions that turn it into a review. WalletQmlModel implements it; tests use
+ * actions that turn it into a review. WalletModel implements it; tests use
  * a fake. */
 class SendDraftInterface : public WalletAvailabilityInterface
 {
