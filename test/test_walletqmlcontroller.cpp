@@ -15,7 +15,7 @@
 #include <qml/walletidentity.h>
 #include <qml/walletsettings.h>
 #include <qml/models/psbtqmlmodel.h>
-#include <qml/models/walletqmlmodeltransaction.h>
+#include <qml/models/transactionreviewmodel.h>
 #include <qml/models/walletselectionmodel.h>
 #include <qml/models/walletoperationpresentationmodel.h>
 #include <scheduler.h>
@@ -2151,8 +2151,8 @@ void WalletQmlControllerTests::manualReviewRetirementGatesFinalNativeDrain()
     controller->initialize(); QTRY_VERIFY(controller->initialized()); QTRY_COMPARE(controller->openWallets().size(), 1);
     auto* wallet = controller->walletForName("reviews"); QVERIFY(wallet);
     wallet->setReviewRetirementPostForTesting([&review_turns](auto callback) { review_turns.push_back(std::move(callback)); });
-    std::vector<QPointer<WalletQmlModelTransaction>> reviews;
-    for (int i = 0; i < 65; ++i) { walletreview::Snapshot value; value.amount = 1000; reviews.emplace_back(new WalletQmlModelTransaction(value, wallet->opening(), [](auto callback) { QTimer::singleShot(0, QCoreApplication::instance(), std::move(callback)); }, wallet)); }
+    std::vector<QPointer<TransactionReviewModel>> reviews;
+    for (int i = 0; i < 65; ++i) { walletreview::Snapshot value; value.amount = 1000; reviews.emplace_back(new TransactionReviewModel(value, wallet->opening(), [](auto callback) { QTimer::singleShot(0, QCoreApplication::instance(), std::move(callback)); }, wallet)); }
     QSignalSpy drained(controller.get(), &WalletQmlController::walletsDrained);
     controller->beginShutdown(); QTRY_VERIFY(!review_turns.empty()); QVERIFY(drained.empty());
     int batches{0};

@@ -76,7 +76,7 @@ void WalletPreparationOperation::follow()
     }
 }
 
-WalletSendDraftInterface::WalletSendDraftInterface(WalletQmlModel& wallet)
+WalletSendDraft::WalletSendDraft(WalletQmlModel& wallet)
     : SendDraftInterface(&wallet), m_wallet{&wallet}
 {
     connect(&wallet, &WalletQmlModel::availableChanged, this, &SendDraftInterface::availableChanged);
@@ -102,12 +102,12 @@ WalletSendDraftInterface::WalletSendDraftInterface(WalletQmlModel& wallet)
     }
 }
 
-bool WalletSendDraftInterface::available() const
+bool WalletSendDraft::available() const
 {
     return m_wallet && m_wallet->available();
 }
 
-QString WalletSendDraftInterface::draftRevision() const
+QString WalletSendDraft::draftRevision() const
 {
     if (!m_wallet) return {};
     const auto* recipients = m_wallet->sendRecipientList();
@@ -115,12 +115,12 @@ QString WalletSendDraftInterface::draftRevision() const
     return (recipients ? recipients->revision() : QString{}) + QLatin1Char(':') + (coins ? coins->selectionToken() : QString{});
 }
 
-bool WalletSendDraftInterface::selectionPending() const
+bool WalletSendDraft::selectionPending() const
 {
     return m_wallet && m_wallet->coinsListModel() && m_wallet->coinsListModel()->selectionPending();
 }
 
-bool WalletSendDraftInterface::draftReady() const
+bool WalletSendDraft::draftReady() const
 {
     const auto* wallet = m_wallet.data();
     if (!wallet) return false;
@@ -133,12 +133,12 @@ bool WalletSendDraftInterface::draftReady() const
         (!wallet->customFeeEnabled() || wallet->customFeeRateValid());
 }
 
-bool WalletSendDraftInterface::sweepsWallet() const
+bool WalletSendDraft::sweepsWallet() const
 {
     return m_wallet && m_wallet->sendDraftSweepsWallet();
 }
 
-void WalletSendDraftInterface::resetDraft()
+void WalletSendDraft::resetDraft()
 {
     if (!available() || m_wallet->preparationBusy() || m_wallet->psbtActionBusy()) return;
     const QPointer<WalletQmlModel> wallet{m_wallet};
@@ -149,7 +149,7 @@ void WalletSendDraftInterface::resetDraft()
     if (wallet) coins->update();
 }
 
-PreparationOperation* WalletSendDraftInterface::startPreparation(std::optional<QString> passphrase)
+PreparationOperation* WalletSendDraft::startPreparation(std::optional<QString> passphrase)
 {
     if (!m_wallet) return nullptr;
     auto operation = std::make_unique<WalletPreparationOperation>(*m_wallet);
@@ -157,7 +157,7 @@ PreparationOperation* WalletSendDraftInterface::startPreparation(std::optional<Q
     return operation.release();
 }
 
-PsbtOperation* WalletSendDraftInterface::startImport(const QString& path)
+PsbtOperation* WalletSendDraft::startImport(const QString& path)
 {
     if (!m_wallet) return nullptr;
     auto operation = std::make_unique<WalletPsbtOperation>(*m_wallet, PsbtOperation::Kind::Import);
@@ -167,6 +167,6 @@ PsbtOperation* WalletSendDraftInterface::startImport(const QString& path)
 
 SendDraftInterface* WalletQmlModel::sendDraft() const
 {
-    if (!m_send_draft) m_send_draft = new WalletSendDraftInterface(*const_cast<WalletQmlModel*>(this));
+    if (!m_send_draft) m_send_draft = new WalletSendDraft(*const_cast<WalletQmlModel*>(this));
     return m_send_draft;
 }

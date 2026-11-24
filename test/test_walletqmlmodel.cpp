@@ -41,7 +41,7 @@
 #include <qml/bitcoinunits.h>
 #include <qml/walletsend.h>
 #include <test/mocks/receiverequesttest.h>
-#include <qml/models/walletqmlmodeltransaction.h>
+#include <qml/models/transactionreviewmodel.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
 #include <test/mocks/mocknode.h>
@@ -1158,8 +1158,8 @@ private Q_SLOTS:
         snapshot.fee = 2;
         snapshot.recipients.push_back({VALID_MAINNET_ADDRESS, QStringLiteral("reviewed label"), snapshot.amount, true});
         snapshot.presentation = walletreview::FormatRecipients(snapshot.recipients, 0);
-        WalletQmlModelTransaction review{snapshot, opening, presentation::QueuedPost()};
-        QSignalSpy rows_changed{&review, &WalletQmlModelTransaction::reviewedRecipientsChanged};
+        TransactionReviewModel review{snapshot, opening, presentation::QueuedPost()};
+        QSignalSpy rows_changed{&review, &TransactionReviewModel::reviewedRecipientsChanged};
 
         struct Hold { QSemaphore entered, release; };
         const auto hold = std::make_shared<Hold>();
@@ -1205,7 +1205,7 @@ private Q_SLOTS:
         auto [wallet, model] = MakePasswordWalletModel(); Q_UNUSED(wallet);
         std::deque<std::function<void()>> turns;
         int destroyed{0}, posts{0}; bool shutdown_from_destructor{false};
-        std::vector<QPointer<WalletQmlModelTransaction>> reviews;
+        std::vector<QPointer<TransactionReviewModel>> reviews;
         model->setReviewRetirementPostForTesting([&](auto turn) {
             ++posts;
             if (mode != 1) turns.push_back(std::move(turn));
@@ -1223,7 +1223,7 @@ private Q_SLOTS:
         });
         for (int row = 0; row < 65; ++row) {
             walletreview::Snapshot snapshot;
-            auto* review = new WalletQmlModelTransaction(snapshot, model->opening(), presentation::QueuedPost(), model.get());
+            auto* review = new TransactionReviewModel(snapshot, model->opening(), presentation::QueuedPost(), model.get());
             reviews.emplace_back(review);
             connect(review, &QObject::destroyed, this, [&] {
                 ++destroyed;
@@ -1259,7 +1259,7 @@ private Q_SLOTS:
         auto [wallet, model] = MakePasswordWalletModel();
         Q_UNUSED(wallet);
         walletreview::Snapshot snapshot;
-        auto* review = new WalletQmlModelTransaction(snapshot, model->opening(), presentation::QueuedPost(), model.get());
+        auto* review = new TransactionReviewModel(snapshot, model->opening(), presentation::QueuedPost(), model.get());
         const auto native_drained = WatchWalletNativeDrain(*model);
         QSignalSpy finished{model.get(), &WalletQmlModel::shutdownFinished};
         bool nested{false};
@@ -1405,7 +1405,7 @@ private Q_SLOTS:
         QVERIFY(model.currentTransaction());
         QVERIFY(model.currentTransactionCanSend());
         QVERIFY(!model.currentTransactionNeedsRevalidation());
-        const QPointer<WalletQmlModelTransaction> approved{model.currentTransaction()};
+        const QPointer<TransactionReviewModel> approved{model.currentTransaction()};
         const auto initial_create_calls = create_calls.load();
         QVERIFY(initial_create_calls > 0);
 
@@ -1493,7 +1493,7 @@ private Q_SLOTS:
             model.property("receiveRequestsLoaded").toBool() && !model.receiveRequestReconciliationPending(); }, 5000));
         SetPasswordRecipient(model, 1'000, pump);
         QVERIFY(AwaitPreparation(model, QStringLiteral("secret"), pump));
-        const QPointer<WalletQmlModelTransaction> approved{model.currentTransaction()}; QVERIFY(approved);
+        const QPointer<TransactionReviewModel> approved{model.currentTransaction()}; QVERIFY(approved);
         QVERIFY(model.currentTransactionCanSend()); QVERIFY(!model.currentTransactionNeedsRevalidation());
         auto* recipient = model.sendRecipientList()->currentRecipient();
         const auto target = model.sendRecipientList()->importTarget(recipient); QVERIFY(target);
@@ -1618,7 +1618,7 @@ private Q_SLOTS:
         }, 5000));
         SetPasswordRecipient(model, 1'000, pump);
         QVERIFY(AwaitPreparation(model, QStringLiteral("secret"), pump));
-        const QPointer<WalletQmlModelTransaction> approved{model.currentTransaction()};
+        const QPointer<TransactionReviewModel> approved{model.currentTransaction()};
         QVERIFY(approved);
         const auto original_transaction = approved->getWtx();
         QVERIFY(original_transaction);
@@ -1719,7 +1719,7 @@ private Q_SLOTS:
     void reentrantDiscardSuccessorKeepsItsFormAndStatus()
     {
         auto [wallet,model]=MakePasswordWalletModel();Q_UNUSED(wallet);SetPasswordRecipient(*model,1'000);QVERIFY(AwaitPreparation(*model,"secret"));
-        auto* review=model->currentTransaction();QVERIFY(review);std::unique_ptr<WalletSendOperation> successor;bool empty_at_boundary{false};
+        auto* review=model->currentTransaction();QVERIFY(review);std::unique_ptr<WalletSendHandle> successor;bool empty_at_boundary{false};
         connect(review,&QObject::destroyed,this,[&]{
             empty_at_boundary=!model->currentTransaction();
             successor=StartSend(*model); // Explicit new failed intent owns its status.
@@ -1737,7 +1737,7 @@ private Q_SLOTS:
         wallet->txin_is_mine_fn=[](const CTxIn&){return true;};
         wallet->fill_psbt_fn=[signed_document](const common::PSBTFillOptions& options,size_t* count,PartiallySignedTransaction& candidate,bool& complete){if(count)*count=2;complete=options.sign;if(options.sign)candidate=signed_document;return std::optional<common::PSBTError>{};};
         QTemporaryDir directory;QVERIFY(directory.isValid());QCOMPARE(AwaitPsbtImport(*model,WritePsbt(document,directory,"reentrant-status.psbt")),WalletQmlModel::PsbtImportResult::WalletCanSign);
-        bool handled{false},coherent{false},successor_started{false};std::unique_ptr<WalletSendOperation> successor;QList<bool> unlock_notices;
+        bool handled{false},coherent{false},successor_started{false};std::unique_ptr<WalletSendHandle> successor;QList<bool> unlock_notices;
         connect(model.get(),&WalletQmlModel::transactionNeedsUnlockChanged,this,[&]{unlock_notices<<model->transactionNeedsUnlock();});
         connect(model.get(),&WalletQmlModel::transactionErrorChanged,this,[&]{
             if(handled||model->transactionError().isEmpty())return;
@@ -1966,7 +1966,7 @@ private Q_SLOTS:
         QCOMPARE(wallet->commit_calls, 1); QCOMPARE(original_operation->state(), SendOperation::State::Pending);
         model->discardCurrentTransaction(); SetPasswordRecipient(*model, 2'000,[gui]{while(gui->publish()) {}});
         QVERIFY(AwaitPreparation(*model, "secret", [gui] { while (gui->publish()) {} }));
-        const QPointer<WalletQmlModelTransaction> successor{model->currentTransaction()}; const auto txid = successor->txid();
+        const QPointer<TransactionReviewModel> successor{model->currentTransaction()}; const auto txid = successor->txid();
         for (auto& notice : old_notices) notice();
         while (gui->publish()) {}
         QCOMPARE(original_operation->state(), SendOperation::State::Cancelled);
@@ -2116,7 +2116,7 @@ private Q_SLOTS:
     {
         auto [wallet, model] = MakePasswordWalletModel(); SetPasswordRecipient(*model, 1'000);
         model->sendRecipientList()->currentRecipient()->setLabel("approved note");
-        QVERIFY(AwaitPreparation(*model, "secret")); QPointer<WalletQmlModelTransaction> original{model->currentTransaction()};
+        QVERIFY(AwaitPreparation(*model, "secret")); QPointer<TransactionReviewModel> original{model->currentTransaction()};
         QSemaphore claimed,release;
         wallet->commit_fn=[&]{claimed.release();release.acquire();};
         const auto unblock=qScopeGuard([&]{release.release();});
@@ -2992,7 +2992,7 @@ private Q_SLOTS:
         };
         QTemporaryDir directory;
         QString successor_error;
-        quint64 successor_command{0}; std::unique_ptr<WalletSendOperation> successor_send;
+        quint64 successor_command{0}; std::unique_ptr<WalletSendHandle> successor_send;
         bool adoption_seen{false};
         ManualPsbtModel fixture{env, wallet,
             [&actual](const COutPoint& point) { return std::optional<CTxOut>{actual.at(point)}; }};
@@ -3114,7 +3114,7 @@ private Q_SLOTS:
         QVERIFY(model->requestImportPsbtFromFile(WritePsbt(prior, directory, "prior-unproven.psbt")));
         fixture.settle();
         QVERIFY(model->currentTransaction()); QVERIFY(!model->currentTransaction()->feeKnown());
-        const QPointer<WalletQmlModelTransaction> old_review{model->currentTransaction()};
+        const QPointer<TransactionReviewModel> old_review{model->currentTransaction()};
         lookup_enabled = true;
         model->setNode(nullptr); // Refine the previous immutable review before the new import publishes.
         env.drain();
@@ -3519,7 +3519,7 @@ private Q_SLOTS:
         auto& model = *fixture.model;
         QVERIFY(model.requestImportPsbtFromFile(WritePsbt(unsigned_document, directory, "held-device.psbt")));
         fixture.settle();
-        const QPointer<WalletQmlModelTransaction> review{model.currentTransaction()}; QVERIFY(review);
+        const QPointer<TransactionReviewModel> review{model.currentTransaction()}; QVERIFY(review);
         const auto reviewed_fee = review->reviewedFee();
         QSignalSpy succeeded{&model, &WalletQmlModel::externalSignerApprovalSucceeded};
         QSignalSpy failed{&model, &WalletQmlModel::externalSignerApprovalFailed};
@@ -3582,7 +3582,7 @@ private Q_SLOTS:
         QVERIFY(directory.isValid());
         QVERIFY(model->requestImportPsbtFromFile(WritePsbt(document, directory, "frozen-broadcast.psbt"))); fixture.settle();
         QVERIFY(model->currentTransaction()); QVERIFY(model->currentTransactionCanBroadcast());
-        const QPointer<WalletQmlModelTransaction> review{model->currentTransaction()};
+        const QPointer<TransactionReviewModel> review{model->currentTransaction()};
         const auto ticket = model->requestBroadcastCurrentTransaction(); QVERIFY(ticket);
         auto* recipient = model->sendRecipientList()->currentRecipient(); QVERIFY(recipient);
         const auto edit = [&] { recipient->address()->setAddress(VALID_MAINNET_ADDRESS, 0); recipient->amount()->setSatoshi(7'000); };
@@ -3715,7 +3715,7 @@ private Q_SLOTS:
         const auto raw = psbtwork::SerializeRaw(document);
         QVERIFY(model->requestImportPsbtFromFile(WritePsbt(document, directory, "refine-source.psbt"))); fixture.settle();
         QVERIFY(model->currentTransaction()); QVERIFY(!model->currentTransaction()->feeKnown());
-        const QPointer<WalletQmlModelTransaction> original_review{model->currentTransaction()};
+        const QPointer<TransactionReviewModel> original_review{model->currentTransaction()};
         const auto path = directory.filePath("refine-export.psbt");
         files->hold=true;
         const auto ticket = model->requestSaveCurrentTransactionAsPsbt(path); QVERIFY(ticket);
@@ -3730,7 +3730,7 @@ private Q_SLOTS:
         fixture.settle();
         QVERIFY(model->currentTransaction()); QVERIFY(model->currentTransaction() != original_review.data());
         QVERIFY(model->currentTransaction()->feeKnown()); QVERIFY(model->psbtActionBusy());
-        const QPointer<WalletQmlModelTransaction> refined_review{model->currentTransaction()};
+        const QPointer<TransactionReviewModel> refined_review{model->currentTransaction()};
         QSignalSpy current{model.get(), &WalletQmlModel::currentTransactionChanged};
         QSignalSpy action{model.get(), &WalletQmlModel::psbtActionChanged};
         for(int phase=0;phase<3;++phase){QVERIFY(files->publish());QVERIFY(model->psbtActionBusy());}
@@ -3872,7 +3872,7 @@ private Q_SLOTS:
         auto* previous = model->currentTransaction(); QVERIFY(previous); QVERIFY(!previous->feeKnown());
         previous->setReviewFeeDetails(12, "5");
         const auto frozen = previous->reviewedRecipients(); const auto labels = previous->recipientLabels();
-        QSignalSpy old_fee_notifications{previous, &WalletQmlModelTransaction::feeChanged};
+        QSignalSpy old_fee_notifications{previous, &TransactionReviewModel::feeChanged};
         model->sendRecipientList()->currentRecipient()->setLabel("edited draft");
         model->sendRecipientList()->currentRecipient()->amount()->setSatoshi(1'200'000);
         const auto replacement = psbtfeefixture::Legacy(0, false);
@@ -5886,7 +5886,7 @@ void WalletQmlModelTests::receivingAddressResumeOwnsOriginalIntent()
     QTRY_VERIFY(reservation->prompt());
     QPointer<ReceiveAuthorizationPrompt> initial{reservation->prompt()};
     QVERIFY(initial->active());
-    QCOMPARE(reservation->phase(), ReceiveReservationModel::Authorizing);
+    QCOMPARE(reservation->phase(), AddressReservationModel::Authorizing);
     QCOMPARE(wallet->get_new_destination_calls, 1);
     QCOMPARE(wallet->unlock_calls, 0);
 
@@ -7414,10 +7414,10 @@ void WalletQmlModelTests::receiptNotificationCannotReadCoreOnGui()
     wallet->saved_receive_requests["1"] = ReceiveRequestHistoryModel::SerializeEntry(entry);
     model->reloadReceiveRequests(); execution.drain(); QCoreApplication::processEvents();
     QObject owner;
-    const QPointer<RequestOpenOperation> open{model->receive()->openRequest(QStringLiteral("1"), &owner)};
+    const QPointer<PaymentRequestOpenOperation> open{model->receive()->openRequest(QStringLiteral("1"), &owner)};
     QVERIFY(open);
     for (int i{0}; i < 20 && open->pending(); ++i) { execution.drain(); QCoreApplication::processEvents(); }
-    QCOMPARE(open->state(), RequestOpenOperation::State::Opened);
+    QCOMPARE(open->state(), PaymentRequestOpenOperation::State::Opened);
     QPointer<PaymentRequestEditorModel> detail{open->editor()};
     QVERIFY(detail);
     CMutableTransaction tx;
@@ -7747,7 +7747,7 @@ void WalletQmlModelTests::openingRequestRemainsResponsiveDuringLargeHistoryScan(
     QObject owner;
     QElapsedTimer timer;
     timer.start();
-    const QPointer<RequestOpenOperation> open{model->receive()->openRequest(QStringLiteral("1"), &owner)};
+    const QPointer<PaymentRequestOpenOperation> open{model->receive()->openRequest(QStringLiteral("1"), &owner)};
     QVERIFY(open);
     QVERIFY2(timer.elapsed() < 250, "Opening a saved request blocked on the wallet history scan");
     // The GUI keeps running while the scan is held.
@@ -7757,7 +7757,7 @@ void WalletQmlModelTests::openingRequestRemainsResponsiveDuringLargeHistoryScan(
     QVERIFY(!scan_finished->load());
     scan_gate->release();
     QTRY_VERIFY_WITH_TIMEOUT(!open->pending(), 20'000);
-    QCOMPARE(open->state(), RequestOpenOperation::State::Opened);
+    QCOMPARE(open->state(), PaymentRequestOpenOperation::State::Opened);
     QPointer<PaymentRequestEditorModel> detail{open->editor()};
     QVERIFY(detail);
     QTRY_VERIFY_WITH_TIMEOUT(!model->receiveRequestReconciliationPending(), 20'000);
@@ -7945,7 +7945,7 @@ void WalletQmlModelTests::commitPaymentRequestOnLockedWalletSignalsNeedsUnlock()
     auto* reservation = model->receive()->reservation();
     QVERIFY(model->receive()->ensureAddress());
     QTRY_VERIFY(reservation->prompt());
-    QCOMPARE(reservation->phase(), ReceiveReservationModel::Authorizing);
+    QCOMPARE(reservation->phase(), AddressReservationModel::Authorizing);
     // The prompt explains the locked attempt; no password was tried yet.
     QVERIFY(reservation->prompt()->active());
     QVERIFY(reservation->prompt()->errorText().contains(QStringLiteral("locked")));

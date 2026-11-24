@@ -237,7 +237,7 @@ private Q_SLOTS:
         draft->setAddress(address); draft->amount()->setSatoshi(COIN / 4);
         QTRY_VERIFY(!wallet->sendRecipientList()->validationPending());
         QCOMPARE(AwaitPsbtImport(*wallet, paths[0]), WalletQmlModel::PsbtImportResult::WalletCanSign);
-        const QPointer<WalletQmlModelTransaction> original{wallet->currentTransaction()}; QVERIFY(original);
+        const QPointer<TransactionReviewModel> original{wallet->currentTransaction()}; QVERIFY(original);
         const auto original_id = original->txid(), original_fee = original->fee();
         const auto original_flow = wallet->currentTransactionFlow();
         const bool can_send = wallet->currentTransactionCanSend(), can_broadcast = wallet->currentTransactionCanBroadcast();
@@ -998,7 +998,7 @@ private Q_SLOTS:
             QVERIFY(AwaitPsbtAction(*wallet, import));
         }
         QCOMPARE(wallet->psbtImportResult(), WalletQmlModel::PsbtImportResult::WalletCanSign);
-        std::unique_ptr<WalletSendOperation> sign;
+        std::unique_ptr<WalletSendHandle> sign;
         {
             HeldWalletLock lock{m_app, wallet->name()};
             timer.restart();

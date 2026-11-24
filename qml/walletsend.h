@@ -83,11 +83,11 @@ struct Result {
 };
 /** One accepted reviewed transaction, with its original opening and result.
  * Neither the effect nor consuming its outcome depends on GUI delivery. */
-class Operation : public std::enable_shared_from_this<Operation>
+class SendTask : public std::enable_shared_from_this<SendTask>
 {
 public:
     using Notify = std::function<void(Notice)>;
-    Operation(std::shared_ptr<walletopening::Session> opening,
+    SendTask(std::shared_ptr<walletopening::Session> opening,
               std::shared_ptr<walletrequests::Store> notes, Notify notify)
         : m_opening(std::move(opening)), m_notes(std::move(notes)), m_notify(std::move(notify)) {}
     execution::SubmitResult start(Request request, std::shared_ptr<const walletopening::Session::Action> action = {});

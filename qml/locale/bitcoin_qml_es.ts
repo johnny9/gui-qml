@@ -1167,19 +1167,19 @@ Que los usuarios ejecuten nodos es lo que hace que bitcoin sea tan resistente y 
     </message>
 </context>
 <context>
-    <name>OptionsQmlModel</name>
+    <name>SettingsModel</name>
     <message>
-        <location filename="../models/options_model.cpp" line="321"/>
+        <location filename="../models/settingsmodel.cpp" line="321"/>
         <source>The configured signer path does not exist.</source>
         <translation type="unfinished">La ruta configurada del firmante no existe.</translation>
     </message>
     <message>
-        <location filename="../models/options_model.cpp" line="324"/>
+        <location filename="../models/settingsmodel.cpp" line="324"/>
         <source>The configured signer path is not a file.</source>
         <translation type="unfinished">La ruta configurada del firmante no es un archivo.</translation>
     </message>
     <message>
-        <location filename="../models/options_model.cpp" line="327"/>
+        <location filename="../models/settingsmodel.cpp" line="327"/>
         <source>The configured signer path is not executable.</source>
         <translation type="unfinished">La ruta configurada del firmante no es ejecutable.</translation>
     </message>
@@ -1512,7 +1512,7 @@ Que los usuarios ejecuten nodos es lo que hace que bitcoin sea tan resistente y 
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../models/options_model.cpp" line="437"/>
+        <location filename="../models/settingsmodel.cpp" line="437"/>
         <source>System default</source>
         <translation type="unfinished">Predeterminado del sistema</translation>
     </message>

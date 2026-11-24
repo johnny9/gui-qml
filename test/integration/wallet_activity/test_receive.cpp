@@ -31,7 +31,7 @@
 #include <QPersistentModelIndex>
 #include <QQmlEngine>
 #include <qml/models/texteditsessionmodel.h>
-#include <qml/models/options_model.h>
+#include <qml/models/settingsmodel.h>
 #include <streams.h>
 #include <core_io.h>
 #include <rpc/util.h>
@@ -256,7 +256,7 @@ private Q_SLOTS:
         auto* wallet = encrypted ? qmltest::CreateLockedHardenedWallet(m_app, "typed-roundtrip", "roundtrip password")
                                  : qmltest::CreateWallet(m_app, "typed-roundtrip");
         QVERIFY(wallet); auto* receive = wallet->receive(); QVERIFY(receive);
-        auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel"); QVERIFY(options); options->setDisplayUnit(0);
+        auto* options = qmltest::Model<SettingsModel>(m_app, "optionsModel"); QVERIFY(options); options->setDisplayUnit(0);
         QVERIFY(qmltest::Click(m_app, "receiveTabButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "receivePage"));
         QTRY_VERIFY(receive->reservation()->available() && receive->editor()->canSave());
@@ -398,7 +398,7 @@ private Q_SLOTS:
         }
         QVERIFY(saw_unknown); QVERIFY(saw_proven);
         QVERIFY(receive->chooseAddressType("bech32")); QVERIFY(!receive->editor()->canSave());
-        QTRY_COMPARE(receive->reservation()->phase(), ReceiveReservationModel::Failed);
+        QTRY_COMPARE(receive->reservation()->phase(), AddressReservationModel::Failed);
         QVERIFY(!receive->reservation()->available()); QVERIFY(!receive->reservation()->prompt()); QCOMPARE(receive->reservation()->address(), original);
         receive->editor()->save(); QTRY_VERIFY(!receive->editor()->busy());
         const auto stored = qmltest::Call(m_app, [name](interfaces::Node* node) {
@@ -475,8 +475,8 @@ private Q_SLOTS:
         // Opening Receive gets an address of the supported type on the first
         // attempt, with no error and no manual switch.
         auto* receive = wallet->receive(); QVERIFY(receive); QVERIFY(receive->ensureAddress());
-        QTRY_VERIFY(receive->reservation()->phase() == ReceiveReservationModel::Ready || receive->reservation()->phase() == ReceiveReservationModel::Failed);
-        QCOMPARE(receive->reservation()->phase(), ReceiveReservationModel::Ready);
+        QTRY_VERIFY(receive->reservation()->phase() == AddressReservationModel::Ready || receive->reservation()->phase() == AddressReservationModel::Failed);
+        QCOMPARE(receive->reservation()->phase(), AddressReservationModel::Ready);
         QCOMPARE(receive->reservation()->lastGeneratedAddressType(), expected.front());
         QTRY_VERIFY(receive->reservation()->available() && receive->editor()->canSave());
         const auto address = receive->reservation()->address(); QVERIFY(!address.isEmpty());
@@ -497,8 +497,8 @@ private Q_SLOTS:
         if (unsupported != remaining.end()) {
             const QString& type{*unsupported};
             QVERIFY(receive->chooseAddressType(type));
-            QTRY_VERIFY(receive->reservation()->phase() == ReceiveReservationModel::Ready || receive->reservation()->phase() == ReceiveReservationModel::Failed);
-            QCOMPARE(receive->reservation()->phase(), ReceiveReservationModel::Failed);
+            QTRY_VERIFY(receive->reservation()->phase() == AddressReservationModel::Ready || receive->reservation()->phase() == AddressReservationModel::Failed);
+            QCOMPARE(receive->reservation()->phase(), AddressReservationModel::Failed);
             QCOMPARE(receive->reservation()->generationError(), ReceiveError::Code::TypeUnavailable);
             QTRY_VERIFY(!offered().contains(type));
             QVERIFY(offered().contains(expected.front()));
@@ -982,7 +982,7 @@ private Q_SLOTS:
         const auto restore = qScopeGuard([previous] { QLocale::setDefault(previous); });
         QLocale::setDefault(QLocale("de_DE"));
         auto* wallet = qmltest::CreateWallet(m_app); QVERIFY(wallet);
-        auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel"); QVERIFY(options); options->setDisplayUnit(unit);
+        auto* options = qmltest::Model<SettingsModel>(m_app, "optionsModel"); QVERIFY(options); options->setDisplayUnit(unit);
         QVERIFY(qmltest::Click(m_app, "receiveTabButton"));
         QVERIFY(qmltest::WaitForVisible(m_app, "receivePage"));
         QTRY_VERIFY(wallet->receive()->reservation()->available());
@@ -1582,7 +1582,7 @@ private Q_SLOTS:
         QVERIFY(qmltest::Click(m_app, "activityTabButton"));
         QVERIFY(qmltest::Click(m_app, "receiveTabButton"));
         QVERIFY(!popup->property("opened").toBool());
-        QCOMPARE(wallet->receive()->reservation()->phase(), ReceiveReservationModel::Cancelled);
+        QCOMPARE(wallet->receive()->reservation()->phase(), AddressReservationModel::Cancelled);
         QVERIFY(qmltest::Click(m_app, "receiveRetryAddressButton"));
         QTRY_VERIFY(popup->property("opened").toBool());
         QVERIFY(qmltest::SetText(m_app, "receivePassphraseField", "wrong password"));

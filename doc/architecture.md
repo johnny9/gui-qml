@@ -27,7 +27,7 @@ ApplicationModels                      composition root
 │   └─ WalletQmlController             the wallet list: opening, selecting, closing
 │       ├─ creation                    WalletCreationController: create, restore, migrate
 │       └─ names                       WalletNamesController: display names, wallet folder
-├─ app models                          NodeModel, ChainModel, PeerListModel, OptionsQmlModel, …
+├─ app models                          NodeModel, ChainModel, PeerListModel, SettingsModel, …
 └─ WalletQmlModel (one per wallet)     wallet data; implements the wallet interfaces
     ├─ data models                     activity, addresses, coins, receive requests
     ├─ drafts                          send recipients, fee selection
@@ -100,7 +100,7 @@ Every page belongs to one scope: a wallet, the node, or the app.
    controller is bound to one wallet; a second binding is rejected and
    disables it until its page is recreated.
 3. **The wallet exposes data and wallet-wide state, never an operation shared
-   between pages.** Its interfaces (`WalletInterface` subclasses) start a new
+   between pages.** Its interfaces (`WalletAvailabilityInterface` subclasses) start a new
    operation for the controller that asks. Wallet-wide limits and unresolved
    effects (a backup still writing, a fee bump whose outcome is unknown) are
    kept by the wallet until the backend resolves them, not by the page, so

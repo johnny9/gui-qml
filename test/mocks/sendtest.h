@@ -6,7 +6,7 @@
 #define BITCOIN_QML_TEST_MOCKS_SENDTEST_H
 
 #include <qml/models/walletqmlmodel.h>
-#include <qml/models/walletsendoperation.h>
+#include <qml/models/walletsendhandle.h>
 #include <qml/walletsend.h>
 #include <QtTest/QtTest>
 
@@ -15,10 +15,10 @@
 
 //! Starts a send of the model's current review, as a review page would.
 //! Null when the wallet can't start one now.
-inline std::unique_ptr<WalletSendOperation> StartSend(WalletQmlModel& model, bool sign_only = false,
+inline std::unique_ptr<WalletSendHandle> StartSend(WalletQmlModel& model, bool sign_only = false,
                                                       std::optional<QString> passphrase = {})
 {
-    auto operation = std::make_unique<WalletSendOperation>(model, sign_only);
+    auto operation = std::make_unique<WalletSendHandle>(model, sign_only);
     if (!operation->start(std::move(passphrase))) return nullptr;
     return operation;
 }

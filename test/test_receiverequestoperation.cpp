@@ -106,9 +106,9 @@ struct Fixture {
     PaymentRequestEditorModel* open(const QString& id)
     {
         QObject owner;
-        const QPointer<RequestOpenOperation> operation{model->receive()->openRequest(id, &owner)};
+        const QPointer<PaymentRequestOpenOperation> operation{model->receive()->openRequest(id, &owner)};
         for (int round{0}; round < 16 && operation && operation->pending(); ++round) settle();
-        return operation && operation->state() == RequestOpenOperation::State::Opened ? operation->editor() : nullptr;
+        return operation && operation->state() == PaymentRequestOpenOperation::State::Opened ? operation->editor() : nullptr;
     }
     //! The Receive page's draft once its address is reserved.
     PaymentRequestEditorModel* draft()

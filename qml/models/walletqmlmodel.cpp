@@ -30,7 +30,7 @@
 #include <qml/models/sendrecipient.h>
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/signverifymessagemodel.h>
-#include <qml/models/walletqmlmodeltransaction.h>
+#include <qml/models/transactionreviewmodel.h>
 #include <qml/models/transactionflow.h>
 #include <qml/util.h>
 
@@ -405,8 +405,8 @@ WalletQmlModel::WalletQmlModel(SharedWallet wallet, interfaces::Node* node,
         receive_ports.receipts = m_receipt_projection;
         m_receive = new WalletReceiveModel(2, std::move(receive_ports), this);
         // The store watches the shown address, so a payment to it marks it used.
-        connect(m_receive->reservation(), &ReceiveReservationModel::changed, this, &WalletQmlModel::refreshReceiveRequestPayments);
-        connect(m_receive->reservation(), &ReceiveReservationModel::changed, this, [this] {
+        connect(m_receive->reservation(), &AddressReservationModel::changed, this, &WalletQmlModel::refreshReceiveRequestPayments);
+        connect(m_receive->reservation(), &AddressReservationModel::changed, this, [this] {
             if (!m_receive->reservation()->generationPersisted()) return;
             const auto type = m_receive->reservation()->lastGeneratedAddressType();
             if ((type != QStringLiteral("legacy") && type != QStringLiteral("p2sh-segwit") && type != QStringLiteral("bech32") && type != QStringLiteral("bech32m")) || m_proven_receive_types.contains(type)) return;
@@ -463,13 +463,13 @@ WalletQmlModel::WalletQmlModel(QObject* parent)
 }
 
 struct WalletQmlModel::ReviewRetirement : std::enable_shared_from_this<ReviewRetirement> {
-    std::map<WalletQmlModelTransaction*, QPointer<WalletQmlModelTransaction>> reviews;
+    std::map<TransactionReviewModel*, QPointer<TransactionReviewModel>> reviews;
     std::shared_ptr<QObject> bridge{presentation::MakeGuiObject()};
     std::function<void(std::function<void()>)> post{presentation::ReliablePost(
         [bridge = bridge](auto callback) { QMetaObject::invokeMethod(bridge.get(), std::move(callback), Qt::QueuedConnection); })};
     std::function<void()> done;
     bool closing{false}, scheduled{false};
-    void add(WalletQmlModelTransaction* review) {
+    void add(TransactionReviewModel* review) {
         reviews.emplace(review, review);
         // This registry retires views in bounded turns. QObject parenting
         // would also delete an in-flight view if its destroyed handler closes
@@ -509,7 +509,7 @@ void WalletQmlModel::setReviewRetirementPostForTesting(std::function<void(std::f
     if (!m_review_retirement) m_review_retirement = std::make_shared<ReviewRetirement>();
     m_review_retirement->post = presentation::ReliablePost(std::move(post));
 }
-void WalletQmlModel::registerReview(WalletQmlModelTransaction* review)
+void WalletQmlModel::registerReview(TransactionReviewModel* review)
 {
     if (!m_review_retirement) m_review_retirement = std::make_shared<ReviewRetirement>();
     m_review_retirement->add(review);
@@ -1125,12 +1125,12 @@ void WalletQmlModel::applyPsbtFeeProof(const std::shared_ptr<const psbtfee::FeeR
     m_psbt_fee_pending = false;
     if (!result.failed && result.proof) m_current_transaction->setFeeProof(std::move(result.proof));
     const bool known = !result.failed && m_current_transaction->feeProof() && m_current_transaction->feeProof()->amount.has_value();
-    QPointer<WalletQmlModelTransaction> previous;
+    QPointer<TransactionReviewModel> previous;
     bool attempt_changed{false};
     if (known) {
         // Publish a complete value projection. Observers of the old document
         // cannot close or replace it halfway through fee-amount notifications.
-        auto* authenticated = new WalletQmlModelTransaction(*m_current_transaction, *m_current_transaction->feeProof()->amount, this);
+        auto* authenticated = new TransactionReviewModel(*m_current_transaction, *m_current_transaction->feeProof()->amount, this);
         if (result.analysis) {
             authenticated->setAssessedPsbt(std::shared_ptr<const PartiallySignedTransaction>{result.analysis, result.analysis->assessment.get()});
             authenticated->setNodePolicyStatus(result.node_policy_status, result.analysis->node_state == psbtpolicy::State::Blocked);
@@ -1558,7 +1558,7 @@ bool WalletQmlModel::changeWalletPassphrase(const QString& old_passphrase, const
 
 void WalletQmlModel::createFeeBumps()
 {
-    m_fee_bumps = new FeeBumps([this] { return available(); }, [this](QObject* parent) -> FeeBumpOperation* {
+    m_fee_bumps = new FeeBumpModel([this] { return available(); }, [this](QObject* parent) -> FeeBumpOperation* {
         auto* attempt = new BumpTransactionModel(parent);
         attempt->setSecurityStateChangedFn([this]() { refreshSecurityState(); });
         if (m_opening) {
@@ -1568,16 +1568,16 @@ void WalletQmlModel::createFeeBumps()
         }
         return attempt;
     }, this);
-    connect(this, &WalletQmlModel::availableChanged, m_fee_bumps, &FeeBumps::refresh);
+    connect(this, &WalletQmlModel::availableChanged, m_fee_bumps, &FeeBumpModel::refresh);
 }
 
 void WalletQmlModel::createBackups()
 {
-    m_backups = new WalletBackups([this] { return available(); },
+    m_backups = new WalletBackupModel([this] { return available(); },
         [this](const QString& path, QString& why, std::function<void(backup::Snapshot)> outcome) {
             return startBackup(path, why, std::move(outcome));
         }, this);
-    connect(this, &WalletQmlModel::availableChanged, m_backups, &WalletBackups::refresh);
+    connect(this, &WalletQmlModel::availableChanged, m_backups, &WalletBackupModel::refresh);
 }
 
 BackupFileOperation* WalletQmlModel::startBackup(const QString& path, QString& why, std::function<void(backup::Snapshot)> outcome)
@@ -2161,7 +2161,7 @@ transactionattempt::CurrentFacts WalletQmlModel::preparationFacts() const
     };
 }
 
-bool WalletQmlModel::setCurrentTransaction(WalletQmlModelTransaction* transaction, bool from_preparation)
+bool WalletQmlModel::setCurrentTransaction(TransactionReviewModel* transaction, bool from_preparation)
 {
     if (m_current_transaction == transaction) return false;
     m_imported_review_owner = 0; m_imported_review_child = 0;
@@ -2514,8 +2514,8 @@ void WalletQmlModel::applyPreparationResolution(transactionattempt::Result resol
         return;
     }
 
-    WalletQmlModelTransaction* prepared{nullptr};
-    try { prepared = new WalletQmlModelTransaction(resolution.snapshot.candidate, opening, m_fee_read_services.post, this); }
+    TransactionReviewModel* prepared{nullptr};
+    try { prepared = new TransactionReviewModel(resolution.snapshot.candidate, opening, m_fee_read_services.post, this); }
     catch (const std::exception&) {
         m_transaction_attempt->discard(ticket, transactionattempt::Phase::Failed, {});
         m_preparation_projection.phase = transactionattempt::Phase::Failed;
@@ -2567,7 +2567,7 @@ quint64 WalletQmlModel::approveExternalSignerTransaction()
         preparationBusy() || sendBusy() || m_sending_commit->load() || !available() || !m_opening || !m_current_transaction ||
         !m_current_transaction->getWtx() || !m_signer_approval_operation || m_approval_id == std::numeric_limits<quint64>::max()) return 0;
     const QPointer<WalletQmlModel> observer{this};
-    const QPointer<WalletQmlModelTransaction> review{m_current_transaction};
+    const QPointer<TransactionReviewModel> review{m_current_transaction};
     const auto opening = m_opening;
     const auto owner = m_signer_approval_operation;
     const auto reviewed = review->getWtx();
@@ -2770,7 +2770,7 @@ void WalletQmlModel::setSendRunning(bool running)
     Q_EMIT sendOperationChanged();
 }
 
-void WalletQmlModel::declineSendPrompt(const std::shared_ptr<walletsend::Operation>& work)
+void WalletQmlModel::declineSendPrompt(const std::shared_ptr<walletsend::SendTask>& work)
 {
     if (!work || work != m_send_operation) return;
     const auto stage = work->stage();
@@ -2790,7 +2790,7 @@ std::shared_ptr<const paymentimport::TargetPort> WalletQmlModel::importTarget(Se
     const auto payment = m_send_recipients->importTarget(recipient);
     if (!payment) return {};
     const QPointer<WalletQmlModel> observer{this};
-    const QPointer<WalletQmlModelTransaction> original_review{m_current_transaction};
+    const QPointer<TransactionReviewModel> original_review{m_current_transaction};
     const auto opening = m_opening;
     const auto current = m_import_review_current;
     const auto view = m_psbt_view_epoch, review_identity = m_current_review_identity;
@@ -2820,8 +2820,8 @@ std::shared_ptr<const paymentimport::TargetPort> WalletQmlModel::importTarget(Se
             // These aliases keep every Core value's final release on its Native
             // lease, including after the original import owner acknowledges.
             const auto review = std::shared_ptr<const walletreview::Snapshot>{imported, imported->review.get()};
-            WalletQmlModelTransaction* transaction{nullptr};
-            try { transaction = new WalletQmlModelTransaction(review, opening, observer->m_fee_read_services.post, observer); }
+            TransactionReviewModel* transaction{nullptr};
+            try { transaction = new TransactionReviewModel(review, opening, observer->m_fee_read_services.post, observer); }
             catch (const std::exception&) {
                 if (observer && current->load()) {
                     observer->m_psbt_action_state = PsbtActionState::PsbtFailed;
@@ -3047,7 +3047,7 @@ quint64 WalletQmlModel::startPsbtAction(PsbtActionKind kind, const QString& requ
     const bool replacing_import = kind == PsbtActionKind::Import && m_psbt_action_kind == PsbtActionKind::Import;
     if ((psbtActionBusy() && !replacing_import) || preparationBusy() || sendBusy() || securityBusy() || m_sending_commit->load() || signerApprovalBusy() || m_closed || (m_opening && !available())) return 0;
     const QPointer<WalletQmlModel> observer{this};
-    const QPointer<WalletQmlModelTransaction> review{m_current_transaction};
+    const QPointer<TransactionReviewModel> review{m_current_transaction};
     const bool had_review = bool(review);
     const auto opening = m_opening;
     const auto core = m_psbt_fee_services.core;
@@ -3295,7 +3295,7 @@ void WalletQmlModel::publishPsbtAction()
     const auto owns_action = [&] {
         return observer && observationsAllowed() && m_psbt_action == original_action && m_psbt_action_id == original_id;
     };
-    QPointer<WalletQmlModelTransaction> projected_review{m_current_transaction};
+    QPointer<TransactionReviewModel> projected_review{m_current_transaction};
     bool had_projected_review{bool(projected_review)};
     bool document_view{original_kind != PsbtActionKind::Import && m_psbt_action_had_document};
     bool original_review_matches{true};
@@ -3375,8 +3375,8 @@ void WalletQmlModel::publishPsbtAction()
                 m_imported_psbt_model->setMatchedTxid(imported.txid);
                 if (!observer) return;
             } else if (imported.review) {
-                WalletQmlModelTransaction* transaction{nullptr};
-                try { transaction = new WalletQmlModelTransaction(imported.review, m_opening, m_fee_read_services.post, this); }
+                TransactionReviewModel* transaction{nullptr};
+                try { transaction = new TransactionReviewModel(imported.review, m_opening, m_fee_read_services.post, this); }
                 catch (const std::exception&) {
                     if (!owns_view()) return;
                     m_psbt_action_state = PsbtActionState::PsbtFailed;
@@ -3405,7 +3405,7 @@ void WalletQmlModel::publishPsbtAction()
                 m_psbt_import_result = imported.review->node_policy_blocked ? PsbtImportResult::ReviewPending
                     : imported.review->can_send ? PsbtImportResult::WalletCanSign : PsbtImportResult::WalletCannotSign;
                 m_psbt_action_state = PsbtActionState::PsbtImported;
-                const QPointer<WalletQmlModelTransaction> imported_review{transaction};
+                const QPointer<TransactionReviewModel> imported_review{transaction};
                 const auto owns_import = [&] {
                     return observer && observationsAllowed() && m_psbt_action == original_action &&
                         m_psbt_action_id == original_id && m_psbt_view_epoch == original_view &&
@@ -3430,7 +3430,7 @@ void WalletQmlModel::publishPsbtAction()
         if (owns_status() && original_kind == PsbtActionKind::Import && m_imported_psbt_model) { m_imported_psbt_model->setError(m_psbt_action_error); if (!owns_view()) return; }
     }
     if (!owns_view()) return;
-    const auto notified_review = QPointer<WalletQmlModelTransaction>{m_current_transaction};
+    const auto notified_review = QPointer<TransactionReviewModel>{m_current_transaction};
     const bool had_notified_review = bool(notified_review);
     Q_EMIT currentTransactionChanged();
     if (!owns_action() || m_psbt_view_epoch != original_view ||

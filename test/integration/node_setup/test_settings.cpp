@@ -7,7 +7,7 @@
 #include <qml/models/core_settings_model.h>
 #include <qml/models/settingseditormodel.h>
 #include <qml/models/desktopwindowbehaviormodel.h>
-#include <qml/models/options_model.h>
+#include <qml/models/settingsmodel.h>
 #include <qml/models/rpcconsolemodel.h>
 #include <qml/models/settings_keys.h>
 #include <qml/models/nodemodel.h>
@@ -89,7 +89,7 @@ public Q_SLOTS:
 private Q_SLOTS:
     void acceptedSettingsWritePersistsWhenQuittingDuringRuntimeQuestion()
     {
-        auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel");
+        auto* options = qmltest::Model<SettingsModel>(m_app, "optionsModel");
         auto& node_model = m_app.nodeModel();
         QVERIFY(options);
         QTRY_VERIFY(options->settingsReady());
@@ -121,7 +121,7 @@ private Q_SLOTS:
 
     void acceptedSettingsWritePersistsWhenQuittingDuringBlockingRpc()
     {
-        auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel");
+        auto* options = qmltest::Model<SettingsModel>(m_app, "optionsModel");
         auto* console = qmltest::Model<RpcConsoleModel>(m_app, "rpcConsoleModel");
         QVERIFY(options && console);
         QTRY_VERIFY(options->settingsReady());
@@ -185,7 +185,7 @@ private Q_SLOTS:
     // text field that still has the focus when the window closes.
     void quitDropsAnUnsavedNumberSettingDraft()
     {
-        auto* options=qmltest::Model<OptionsQmlModel>(m_app,"optionsModel");QVERIFY(options);QTRY_VERIFY(options->settingsReady());QTRY_VERIFY(!options->settingsPending());
+        auto* options=qmltest::Model<SettingsModel>(m_app,"optionsModel");QVERIFY(options);QTRY_VERIFY(options->settingsReady());QTRY_VERIFY(!options->settingsPending());
         QVERIFY(savedSetting("dbcache").isNull());
         QVERIFY(qmltest::SelectSettings(m_app,"storage"));auto* editor=settingsEditor();QVERIFY(editor);QTRY_VERIFY(editor->fresh());
         QVERIFY(qmltest::SetText(m_app,"dbcacheSettingInput","450"));QTRY_VERIFY(editor->canSave());
@@ -194,7 +194,7 @@ private Q_SLOTS:
     }
     void quitDropsAFocusedTextSettingEdit()
     {
-        auto* options=qmltest::Model<OptionsQmlModel>(m_app,"optionsModel");QVERIFY(options);QTRY_VERIFY(options->settingsReady());QTRY_VERIFY(!options->settingsPending());
+        auto* options=qmltest::Model<SettingsModel>(m_app,"optionsModel");QVERIFY(options);QTRY_VERIFY(options->settingsReady());QTRY_VERIFY(!options->settingsPending());
         const auto urls_before=QSettings{}.value(SettingsKeys::THIRD_PARTY_TRANSACTION_URLS);
         QVERIFY(qmltest::SelectSettings(m_app,"display"));QVERIFY(qmltest::WaitForVisible(m_app,"displaySettingsPage"));
         QVERIFY(qmltest::Click(m_app,"displayTransactionUrlsRow"));
@@ -208,7 +208,7 @@ private Q_SLOTS:
 
     void databaseCacheUsesCoreDefaultAndKeepsExplicitOverride()
     {
-        auto* options=qmltest::Model<OptionsQmlModel>(m_app,"optionsModel");QVERIFY(options);QTRY_VERIFY(options->settingsReady());QTRY_VERIFY(!options->settingsPending());
+        auto* options=qmltest::Model<SettingsModel>(m_app,"optionsModel");QVERIFY(options);QTRY_VERIFY(options->settingsReady());QTRY_VERIFY(!options->settingsPending());
         const auto expected=node::GetDefaultDBCache()/1_MiB;
         QCOMPARE(options->dbcacheSizeMiB(),int(expected));QVERIFY(options->maxDbcacheSizeMiB()>=1636);
         QVERIFY(qmltest::Call(m_app,&interfaces::Node::getPersistentSetting,"dbcache").isNull());
@@ -282,7 +282,7 @@ private Q_SLOTS:
 
     void externalPreferencesRefreshTheOpenDisplayAndWindowModels()
     {
-        auto* options=qmltest::Model<OptionsQmlModel>(m_app,"optionsModel");
+        auto* options=qmltest::Model<SettingsModel>(m_app,"optionsModel");
         auto* behavior=qmltest::Model<DesktopWindowBehaviorModel>(m_app,"desktopWindowBehaviorModel");QVERIFY(options);QVERIFY(behavior);
         QTRY_VERIFY(options->settingsReady());QTRY_VERIFY(behavior->settingsReady());
         QVERIFY(qmltest::SelectSettings(m_app,"display"));auto* picker=qmltest::WaitForVisible(m_app,"displayUnitPicker");QVERIFY(picker);

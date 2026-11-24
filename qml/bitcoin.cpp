@@ -63,8 +63,8 @@
 #include <qml/models/sendimportmodel.h>
 #include <qml/models/preparationoperation.h>
 #include <qml/models/psbtoperation.h>
-#include <qml/models/requestdeletecontroller.h>
-#include <qml/models/requestviewcontroller.h>
+#include <qml/models/paymentrequestdeletecontroller.h>
+#include <qml/models/paymentrequestviewcontroller.h>
 #include <qml/models/senddraftcontroller.h>
 #include <qml/models/feebumpcontroller.h>
 #include <qml/models/walletbackupcontroller.h>
@@ -87,14 +87,14 @@
 #include <qml/models/desktoptrayiconcontroller.h>
 #include <qml/models/desktopwindowbehaviormodel.h>
 #include <qml/models/onboardingoptionsmodel.h>
-#include <qml/models/options_model.h>
+#include <qml/models/settingsmodel.h>
 #include <qml/models/uipreferences.h>
 #include <qml/models/peerdetailsmodel.h>
 #include <qml/models/peercommandmodel.h>
 #include <qml/models/peercommandcontroller.h>
 #include <qml/models/peercommandoperation.h>
 #include <qml/models/peerselectionmodel.h>
-#include <qml/models/peerlistsortproxy.h>
+#include <qml/models/peerlistproxymodel.h>
 #include <qml/models/peerlistmodel.h>
 #include <qml/models/rpcconsolemodel.h>
 #include <qml/models/settings_keys.h>
@@ -129,7 +129,7 @@
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/walletimporttarget.h>
-#include <qml/models/walletqmlmodeltransaction.h>
+#include <qml/models/transactionreviewmodel.h>
 #include <qml/models/fileexportoperation.h>
 #include <qml/walletqmlcontroller.h>
 #endif
@@ -464,7 +464,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<PeerDetailsModel>("org.bitcoincore.qt", 1, 0, "PeerDetailsModel", "");
     qmlRegisterUncreatableType<PeerCommandModel>("org.bitcoincore.qt", 1, 0, "PeerCommandModel", "Application peer commands");
     qmlRegisterUncreatableType<PeerCommandOperation>("org.bitcoincore.qt", 1, 0, "PeerCommandOperation", "Captured peer command");
-    qmlRegisterUncreatableType<PeerCommandTarget>("org.bitcoincore.qt", 1, 0, "PeerCommandTarget", "A peer");
+    qmlRegisterUncreatableType<PeerActionsInterface>("org.bitcoincore.qt", 1, 0, "PeerActionsInterface", "A peer");
     qmlRegisterType<PeerCommandController>("org.bitcoincore.qt", 1, 0, "PeerCommandController");
     qmlRegisterType<PeerSelectionModel>("org.bitcoincore.qt", 1, 0, "PeerSelectionModel");
     qRegisterMetaType<PeerCommandResult>();
@@ -478,7 +478,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableMetaObject(SettingsSaveResult::staticMetaObject,"org.bitcoincore.qt",1,0,"SettingsSaveResult","Retained settings outcome");
     qRegisterMetaType<SettingsSaveResult>();
     qmlRegisterUncreatableType<SettingsEditorModel>("org.bitcoincore.qt",1,0,"SettingsEditorModel","Owned by the settings form");
-    qmlRegisterUncreatableType<SettingsEditorSource>("org.bitcoincore.qt",1,0,"SettingsEditorSource","The options");
+    qmlRegisterUncreatableType<SettingsEditorFactoryInterface>("org.bitcoincore.qt",1,0,"SettingsEditorFactoryInterface","The options");
     qmlRegisterType<SettingsNavigationController>("org.bitcoincore.qt",1,0,"SettingsNavigationController");
     qmlRegisterUncreatableType<SettingsEntryModel>("org.bitcoincore.qt",1,0,"SettingsEntryModel","Owned by a settings editor");
     qmlRegisterUncreatableType<CoreSettingsModel>("org.bitcoincore.qt",1,0,"CoreSettingsModel","Owned by settings");
@@ -513,8 +513,8 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<TextEditClosePrompt>("org.bitcoincore.qt", 1, 0, "TextEditClosePrompt", "Owned by an editor");
     qRegisterMetaType<TextEditError>(); qRegisterMetaType<TextEditSaveResult>(); qRegisterMetaType<TextEditConflict>(); qRegisterMetaType<QList<TextEditConflict>>();
 #ifdef ENABLE_WALLET
-    qmlRegisterType<RequestDeleteController>("org.bitcoincore.qt", 1, 0, "RequestDeleteController");
-    qmlRegisterType<RequestViewController>("org.bitcoincore.qt", 1, 0, "RequestViewController");
+    qmlRegisterType<PaymentRequestDeleteController>("org.bitcoincore.qt", 1, 0, "PaymentRequestDeleteController");
+    qmlRegisterType<PaymentRequestViewController>("org.bitcoincore.qt", 1, 0, "PaymentRequestViewController");
     qmlRegisterType<ActivityFilterProxyModel>("org.bitcoincore.qt", 1, 0, "ActivityFilterProxyModel");
     qmlRegisterUncreatableType<TransactionActivityModel>("org.bitcoincore.qt", 1, 0, "TransactionActivityModel", "Owned by WalletQmlModel");
     qmlRegisterUncreatableType<ActivityDetailModel>("org.bitcoincore.qt", 1, 0, "ActivityDetailModel", "Owned by an Activity view");
@@ -560,8 +560,8 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterUncreatableType<WalletQmlModel>("org.bitcoincore.qt", 1, 0, "WalletQmlModel",
                                                "WalletQmlModel cannot be instantiated from QML");
     qmlRegisterUncreatableType<WalletCloseQuestion>("org.bitcoincore.qt", 1, 0, "WalletCloseQuestion", "Owned by a wallet");
-    qmlRegisterUncreatableType<WalletQmlModelTransaction>("org.bitcoincore.qt", 1, 0, "WalletQmlModelTransaction",
-                                                          "WalletQmlModelTransaction cannot be instantiated from QML");
+    qmlRegisterUncreatableType<TransactionReviewModel>("org.bitcoincore.qt", 1, 0, "TransactionReviewModel",
+                                                          "TransactionReviewModel cannot be instantiated from QML");
     qmlRegisterUncreatableType<WalletListModel>("org.bitcoincore.qt", 1, 0, "WalletListModel",
                                                 "WalletListModel cannot be instantiated from QML");
 #else
@@ -572,7 +572,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "SignVerifyMessageModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "MessageSigningPrompt", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "AddressListModel", "Wallet support is not compiled");
-    for (const auto* type : {"WalletReceiveModel", "RequestDeleteController", "RequestViewController", "PaymentRequestEditorModel", "ReceiveReservationModel", "ReceiveAuthorizationPrompt", "RequestSharingModel", "ShareOperationModel", "RequestImageExportOperation", "ReceiveError", "ReceiveTypeStatus", "SharingError", "RequestImageExportError"})
+    for (const auto* type : {"WalletReceiveModel", "PaymentRequestDeleteController", "PaymentRequestViewController", "PaymentRequestEditorModel", "AddressReservationModel", "ReceiveAuthorizationPrompt", "RequestSharingModel", "ShareOperationModel", "RequestImageExportOperation", "ReceiveError", "ReceiveTypeStatus", "SharingError", "RequestImageExportError"})
         qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, type, "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "ReceiveRequestOperation", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "Transaction", "Wallet support is not compiled");
@@ -593,7 +593,7 @@ void RegisterQmlTypes(AppMode& app_mode, BuildInfo& build_info, Clipboard& clipb
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "SecurityOperationModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletQmlModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletCloseQuestion", "Wallet support is not compiled");
-    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletQmlModelTransaction", "Wallet support is not compiled");
+    qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "TransactionReviewModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletListModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletSelectionModel", "Wallet support is not compiled");
     qmlRegisterTypeNotAvailable("org.bitcoincore.qt", 1, 0, "WalletNamesController", "Wallet support is not compiled");
@@ -1369,7 +1369,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             }
         }, [core_exit_status](int status) { core_exit_status->store(status); }, lifecycle_failed};
         QObject::connect(&init_executor,&QmlInitExecutor::phaseChanged,&node_model,[&]{node_model.setLifecyclePhase(init_executor.phase());});
-        QmlShutdownCoordinator shutdown_coordinator{init_executor};
+        ShutdownCoordinator shutdown_coordinator{init_executor};
         QPointer<QQuickWindow> main_window;
         bool shutdown_requested{false};
         bool shutdown_finished{false};
@@ -1389,7 +1389,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             QObject::disconnect(&init_executor,nullptr,&desktop_intent_model,nullptr);
             QObject::disconnect(&desktop_intent_model,nullptr,&app,nullptr);
         });
-        QObject::connect(&shutdown_coordinator, &QmlShutdownCoordinator::finished, &app, [&] { shutdown_finished = true; });
+        QObject::connect(&shutdown_coordinator, &ShutdownCoordinator::finished, &app, [&] { shutdown_finished = true; });
         // Read the file the node actually writes, so -debuglogfile=<file> and
         // -nodebuglogfile are honoured rather than assuming <datadir>/debug.log.
         DebugLogModel debug_log_model{runtime.log_file, runtime.log_enabled, executor, presentation_post};
@@ -1425,7 +1425,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
 #endif
         QObject::connect(&node_model, &NodeModel::requestedInitialize, &init_executor, &QmlInitExecutor::initialize);
         QObject::connect(&node_model, &NodeModel::requestedShutdown,
-                         &shutdown_coordinator, &QmlShutdownCoordinator::requestShutdown);
+                         &shutdown_coordinator, &ShutdownCoordinator::requestShutdown);
         shutdown_coordinator.addStopHook([&] {
             if(desktop_service)desktop_service->close();
             desktop_intent_model.close();
@@ -1441,7 +1441,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         shutdown_coordinator.addBeforeInterruptTask([&](std::function<void()> done) {
             presentation_services.whenRetired(&shutdown_coordinator, std::move(done));
         });
-        QObject::connect(&shutdown_coordinator, &QmlShutdownCoordinator::shutdownStarted, &node_model, [&] {
+        QObject::connect(&shutdown_coordinator, &ShutdownCoordinator::shutdownStarted, &node_model, [&] {
             shutdown_requested = true;
             for (auto* window : QGuiApplication::allWindows()) {
                 if (auto* quick_window = qobject_cast<QQuickWindow*>(window)) quick_window->contentItem()->setEnabled(false);
@@ -1537,7 +1537,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         shutdown_coordinator.addStopHook([&] { peer_model.close(); });
         QObject::connect(&node_model, &NodeModel::chainStateReady,
                          &peer_model, &PeerListModel::backendInitialized);
-        PeerListSortProxy peer_model_sort_proxy{nullptr};
+        PeerListProxyModel peer_model_sort_proxy{nullptr};
         shutdown_coordinator.addStopHook([&] { peer_model_sort_proxy.close(); });
         peer_model_sort_proxy.setSourceModel(&peer_model);
 
@@ -1553,7 +1553,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
             peer_model.refresh(); ban_list_model.refresh();
         });
 
-        QObject::connect(&shutdown_coordinator, &QmlShutdownCoordinator::shutdownStarted, &peer_model, [&] {
+        QObject::connect(&shutdown_coordinator, &ShutdownCoordinator::shutdownStarted, &peer_model, [&] {
             peer_model.beginShutdown();
             ban_list_model.beginShutdown();
             block_clock_model.close();
@@ -1655,9 +1655,9 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         }
 #endif
 
-        OptionsQmlModel options_model(*node, gArgs, presentation_post, &executor, &presentation_services);
+        SettingsModel options_model(*node, gArgs, presentation_post, &executor, &presentation_services);
         shutdown_coordinator.addStopHook([&] { options_model.close(); });
-        shutdown_coordinator.addBeforeInterruptParticipant(&options_model, &OptionsQmlModel::shutdownFinished,
+        shutdown_coordinator.addBeforeInterruptParticipant(&options_model, &SettingsModel::shutdownFinished,
                                             [&] { options_model.beginShutdown(); });
 #ifdef ENABLE_WALLET
         if (wallet_controller) {
@@ -1667,7 +1667,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         }
         if (wallet_list_model) {
             wallet_list_model->setDisplayUnit(options_model.displayUnit());
-            QObject::connect(&options_model, &OptionsQmlModel::displayUnitChanged,
+            QObject::connect(&options_model, &SettingsModel::displayUnitChanged,
                              wallet_list_model.get(), &WalletListModel::setDisplayUnit);
         }
 #endif
@@ -1681,7 +1681,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         if (options_model.settingsReady()) install_language(options_model.language());
 
         // Retranslate the QML UI immediately when the user picks a new language.
-        QObject::connect(&options_model, &OptionsQmlModel::languageChanged, [&]() {
+        QObject::connect(&options_model, &SettingsModel::languageChanged, [&]() {
             install_language(options_model.language());
             engine->retranslate();
         });
@@ -1707,7 +1707,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         const auto shutdown_before_startup_return = [&] {
             pre_init_onboarding_context.close();
             QEventLoop loop;
-            QObject::connect(&shutdown_coordinator, &QmlShutdownCoordinator::finished, &loop, &QEventLoop::quit);
+            QObject::connect(&shutdown_coordinator, &ShutdownCoordinator::finished, &loop, &QEventLoop::quit);
             node_model.requestShutdown();
             while (!shutdown_finished) loop.exec();
         };
@@ -1743,7 +1743,7 @@ int BitcoinQmlApplication::run(int argc, char* argv[])
         const auto exit_main_event_loop = [] {
             QCoreApplication::exit(0);
         };
-        QObject::connect(&shutdown_coordinator, &QmlShutdownCoordinator::finished,
+        QObject::connect(&shutdown_coordinator, &ShutdownCoordinator::finished,
                          qGuiApp, exit_main_event_loop, Qt::QueuedConnection);
 
 #ifdef ENABLE_TEST_AUTOMATION

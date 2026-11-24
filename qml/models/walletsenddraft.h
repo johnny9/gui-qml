@@ -31,11 +31,11 @@ private:
 };
 
 /** WalletQmlModel's SendDraftInterface. */
-class WalletSendDraftInterface final : public SendDraftInterface
+class WalletSendDraft final : public SendDraftInterface
 {
     Q_OBJECT
 public:
-    explicit WalletSendDraftInterface(WalletQmlModel& wallet);
+    explicit WalletSendDraft(WalletQmlModel& wallet);
     bool available() const override;
     QString draftRevision() const override;
     bool selectionPending() const override;

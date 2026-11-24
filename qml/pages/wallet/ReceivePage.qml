@@ -82,7 +82,7 @@ Page {
             NeutralButton {
                 objectName: "receiveRetryAddressButton"
                 text: qsTr("Retry address")
-                visible: root.receive !== null && (root.receive.reservation.phase === ReceiveReservationModel.Failed || root.receive.reservation.phase === ReceiveReservationModel.Cancelled)
+                visible: root.receive !== null && (root.receive.reservation.phase === AddressReservationModel.Failed || root.receive.reservation.phase === AddressReservationModel.Cancelled)
                 onClicked: root.receive.reservation.retry()
             }
             ReceiveRequestEditorCard {

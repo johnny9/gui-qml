@@ -7,7 +7,7 @@
 
 #include <qml/models/paymentrequesteditormodel.h>
 #include <qml/models/receiptreconciliationmodel.h>
-#include <qml/models/receivereservationmodel.h>
+#include <qml/models/addressreservationmodel.h>
 #include <qml/models/receiverequestoperation.h>
 #include <qml/models/walletqmlmodel.h>
 #include <qml/models/walletreceivemodel.h>
@@ -102,9 +102,9 @@ inline QPointer<PaymentRequestEditorModel> OpenTypedRequest(WalletQmlModel& wall
     auto* receive = wallet.receive();
     if (!receive) return {};
     QObject owner;
-    const QPointer<RequestOpenOperation> operation{receive->openRequest(id, &owner)};
+    const QPointer<PaymentRequestOpenOperation> operation{receive->openRequest(id, &owner)};
     if (!operation || !QTest::qWaitFor([&] { return !operation || !operation->pending(); }, timeout_ms) || !operation) return {};
-    return operation->state() == RequestOpenOperation::State::Opened ? operation->editor() : nullptr;
+    return operation->state() == PaymentRequestOpenOperation::State::Opened ? operation->editor() : nullptr;
 }
 
 #endif // BITCOIN_QML_TEST_MOCKS_RECEIVEREQUESTTEST_H

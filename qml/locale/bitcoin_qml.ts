@@ -1155,19 +1155,19 @@ Users running nodes is what makes bitcoin so resilient and trustworthy.</source>
     </message>
 </context>
 <context>
-    <name>OptionsQmlModel</name>
+    <name>SettingsModel</name>
     <message>
-        <location filename="../models/options_model.cpp" line="321"/>
+        <location filename="../models/settingsmodel.cpp" line="321"/>
         <source>The configured signer path does not exist.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../models/options_model.cpp" line="324"/>
+        <location filename="../models/settingsmodel.cpp" line="324"/>
         <source>The configured signer path is not a file.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../models/options_model.cpp" line="327"/>
+        <location filename="../models/settingsmodel.cpp" line="327"/>
         <source>The configured signer path is not executable.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1500,7 +1500,7 @@ Users running nodes is what makes bitcoin so resilient and trustworthy.</source>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../models/options_model.cpp" line="437"/>
+        <location filename="../models/settingsmodel.cpp" line="437"/>
         <source>System default</source>
         <translation type="unfinished"></translation>
     </message>

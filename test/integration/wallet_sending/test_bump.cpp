@@ -7,7 +7,7 @@
 #include <test/integration/fixture/test_wallet.h>
 #include <test/mocks/messagebumptest.h>
 #include <rpc/util.h>
-#include <qml/models/options_model.h>
+#include <qml/models/settingsmodel.h>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -255,7 +255,7 @@ private Q_SLOTS:
     // and follows a global display-unit change while it is open.
     void speedUpFeesFollowTheGlobalDisplayUnit()
     {
-        auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel"); QVERIFY(options);
+        auto* options = qmltest::Model<SettingsModel>(m_app, "optionsModel"); QVERIFY(options);
         const auto restore = qScopeGuard([options] { options->setDisplayUnit(0); });
         auto* destination = qmltest::CreateWallet(m_app, "unit_destination"); QVERIFY(destination);
         const auto address = qmltest::NewAddress(m_app, destination->name());

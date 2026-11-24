@@ -17,7 +17,7 @@ Page {
     title: qsTr("Review transaction")
 
     property WalletQmlModel wallet: null
-    readonly property WalletQmlModelTransaction transaction: wallet ? wallet.currentTransaction : null
+    readonly property TransactionReviewModel transaction: wallet ? wallet.currentTransaction : null
     readonly property var flowDetails: wallet ? wallet.currentTransactionFlowDetails : null
     readonly property bool detailsContextValid: wallet !== null && wallet.available && transaction !== null
         && flowDetails !== null && flowDetails.context === transaction

@@ -25,7 +25,7 @@
 #include <QInputMethodEvent>
 #include <core_io.h>
 #include <util/string.h>
-#include <qml/models/options_model.h>
+#include <qml/models/settingsmodel.h>
 
 #include <algorithm>
 #include <atomic>
@@ -417,7 +417,7 @@ private Q_SLOTS:
         QFETCH(int, unit); QFETCH(QString, text); QFETCH(int, producer);
         auto* wallet = qmltest::CreateWallet(m_app, "boundary"); QVERIFY(wallet);
         QVERIFY(qmltest::Click(m_app, "sendTabButton"));
-        auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel"); QVERIFY(options); options->setDisplayUnit(unit);
+        auto* options = qmltest::Model<SettingsModel>(m_app, "optionsModel"); QVERIFY(options); options->setDisplayUnit(unit);
         auto* input = qmltest::WaitForVisible(m_app, "sendAmountInput"); QVERIFY(input);
         auto* amount = wallet->sendRecipientList()->currentRecipient()->amount();
         QTRY_COMPARE(int(amount->unit()), unit);
@@ -528,7 +528,7 @@ private Q_SLOTS:
         const auto restore = qScopeGuard([previous] { QLocale::setDefault(previous); });
         QLocale::setDefault(QLocale("de_DE"));
         const auto setup = prepareSweep(false); QVERIFY(setup);
-        auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel"); QVERIFY(options); options->setDisplayUnit(unit);
+        auto* options = qmltest::Model<SettingsModel>(m_app, "optionsModel"); QVERIFY(options); options->setDisplayUnit(unit);
         QVERIFY(qmltest::SetText(m_app, "sendAddressInput", setup->address));
         auto* input = qmltest::WaitForVisible(m_app, "sendAmountInput"); QVERIFY(input);
         QTRY_VERIFY(qmltest::Click(m_app, "sendAmountInput") && input->property("activeFocus").toBool());
@@ -1185,7 +1185,7 @@ private Q_SLOTS:
     // amount rows and the final "Send all available funds?" warning switch to BTC.
     void sendAllReviewFollowsAGlobalDisplayUnitChange()
     {
-        auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel"); QVERIFY(options);
+        auto* options = qmltest::Model<SettingsModel>(m_app, "optionsModel"); QVERIFY(options);
         const auto restore = qScopeGuard([options] { options->setDisplayUnit(0); });
         const auto setup = prepareSweep(false); QVERIFY(setup); auto* wallet = setup->wallet;
         options->setDisplayUnit(3); QTRY_COMPARE(wallet->displayUnit(), 3);
@@ -1343,7 +1343,7 @@ private Q_SLOTS:
     // wallet; only wallet content changes do.
     void displayUnitChangeDoesNotRefreshTheCoinList()
     {
-        auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel"); QVERIFY(options);
+        auto* options = qmltest::Model<SettingsModel>(m_app, "optionsModel"); QVERIFY(options);
         const auto restore = qScopeGuard([options] { options->setDisplayUnit(0); });
         auto* hidden = qmltest::CreateWallet(m_app, "unit-hidden"); QVERIFY(hidden); QVERIFY(qmltest::FundWallet(m_app, *hidden));
         auto* coins = hidden->coinsListModel(); QVERIFY(coins); coins->update(); QTRY_VERIFY(!coins->loading() && coins->coinCount() == 1);

@@ -11,7 +11,7 @@
 #include <test/integration/fixture/test_wallet.h>
 #include <qml/models/psbtqmlmodel.h>
 #include <qml/models/signertransaction.h>
-#include <qml/models/options_model.h>
+#include <qml/models/settingsmodel.h>
 #include <key_io.h>
 #include <pubkey.h>
 #include <rpc/util.h>
@@ -191,7 +191,7 @@ private Q_SLOTS:
         discovery->editPath("this-signer-executable-does-not-exist-r15"); QVERIFY(discovery->apply());
         QTRY_VERIFY(!discovery->saving()); QCOMPARE(discovery->editError().code, SignerDiscoveryError::InvalidPath);
         QCOMPARE(discovery->effectivePath(), fixture.command()); QCOMPARE(fixture.calls(), 3);
-        auto* legacy = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel"); QVERIFY(legacy);
+        auto* legacy = qmltest::Model<SettingsModel>(m_app, "optionsModel"); QVERIFY(legacy);
         legacy->setExternalSignerPath("another-missing-signer-executable-r15");
         QTRY_VERIFY(!legacy->settingsPending()); QVERIFY(!legacy->settingsError().isEmpty());
         QCOMPARE(legacy->externalSignerPath(), discovery->effectivePath()); QCOMPARE(fixture.calls(), 3);
@@ -228,7 +228,7 @@ private Q_SLOTS:
         auto* first = qmltest::CreateWallet(m_app, "picker-first"); QVERIFY(first);
         auto* second = qmltest::CreateWallet(m_app, "picker-second"); QVERIFY(second);
         auto* controller = qmltest::Model<WalletQmlController>(m_app, "walletController"); QVERIFY(controller); QVERIFY(controller->selectWallet(first));
-        auto* options = qmltest::Model<OptionsQmlModel>(m_app, "optionsModel"); QVERIFY(options);
+        auto* options = qmltest::Model<SettingsModel>(m_app, "optionsModel"); QVERIFY(options);
         SignerProcessFixture fixture; fixture.set(true, "00000001", {});
         bool released{false}; const auto cleanup = qScopeGuard([&] { if (!released && QFileInfo::exists(fixture.entered)) fixture.release(); });
         options->setExternalSignerPath(fixture.command()); QTRY_VERIFY(!options->settingsPending()); QVERIFY(options->settingsError().isEmpty());

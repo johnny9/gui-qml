@@ -6,8 +6,8 @@
 #define BITCOIN_QML_MODELS_WALLETQMLMODEL_H
 
 #include <qml/models/backuppolicyoperation.h>
-#include <qml/models/walletbackups.h>
-#include <qml/models/feebumps.h>
+#include <qml/models/walletbackupmodel.h>
+#include <qml/models/feebumpmodel.h>
 #include <qml/models/fileexportoperation.h>
 #include <qml/models/psbtfeeservices.h>
 #include <qml/models/senddraftinterface.h>
@@ -35,7 +35,7 @@
 #include <qml/models/sendrecipientslistmodel.h>
 #include <qml/models/signverifymessagemodel.h>
 #include <qml/models/transactionactivitymodel.h>
-#include <qml/models/walletqmlmodeltransaction.h>
+#include <qml/models/transactionreviewmodel.h>
 #include <qml/models/walletbalancereader.h>
 #include <qml/models/walletreceivemodel.h>
 
@@ -70,15 +70,15 @@ namespace interfaces {
 class Node;
 } // namespace interfaces
 
-namespace walletsend { class Operation; class CommitConsent; }
+namespace walletsend { class SendTask; class CommitConsent; }
 namespace walletsigning { class ApprovalOwner; struct ApprovalSnapshot; }
 namespace walletprepare { struct Request; struct Result; }
 
 class PsbtQmlModel;
 class TransactionReviewInterface;
-class WalletSendOperation;
-class WalletTransactionReviewInterface;
-class WalletSendDraftInterface;
+class WalletSendHandle;
+class WalletTransactionReview;
+class WalletSendDraft;
 class WalletCloseQuestion;
 
 class WalletQmlModel : public QObject, public ReviewOwner
@@ -155,7 +155,7 @@ private:
     Q_PROPERTY(bool receiveRequestsLoaded MEMBER m_request_storage_loaded NOTIFY receiveRequestStorageChanged)
     Q_PROPERTY(bool receiveRequestsBusy MEMBER m_request_storage_busy NOTIFY receiveRequestStorageChanged)
     Q_PROPERTY(QString receiveRequestStorageError MEMBER m_request_storage_error NOTIFY receiveRequestStorageChanged)
-    Q_PROPERTY(WalletQmlModelTransaction* currentTransaction READ currentTransaction NOTIFY currentTransactionChanged)
+    Q_PROPERTY(TransactionReviewModel* currentTransaction READ currentTransaction NOTIFY currentTransactionChanged)
     Q_PROPERTY(QVariantMap currentTransactionFlow READ currentTransactionFlowPreview NOTIFY currentTransactionFlowChanged)
     Q_PROPERTY(FlowDetailsModel* currentTransactionFlowDetails READ currentTransactionFlowDetails CONSTANT)
     Q_PROPERTY(bool sendDraftSweepsWallet READ sendDraftSweepsWallet NOTIFY feeEstimateRevisionChanged)
@@ -288,14 +288,14 @@ public:
 
     TransactionActivityModel* transactionActivityModel();
     AddressListModel* addressListModel() const { return m_address_list_model; }
-    FeeBumps* feeBumps() const { return m_fee_bumps; }
+    FeeBumpModel* feeBumps() const { return m_fee_bumps; }
     CoinsListModel* coinsListModel() const { return m_coins_list_model; }
     SendRecipientsListModel* sendRecipientList() const { return m_send_recipients; }
     SignVerifyMessageModel* signVerifyMessageModel() const { return m_sign_verify_message_model; }
     ReceiveRequestHistoryModel* receiveRequests() const { return m_receive_requests; }
     bool receiveRequestReconciliationPending() const;
     QString receiveRequestReconciliationError() const { return m_receipt_projection ? m_receipt_projection->errorText() : QString{}; }
-    WalletQmlModelTransaction* currentTransaction() const { return m_current_transaction; }
+    TransactionReviewModel* currentTransaction() const { return m_current_transaction; }
     QVariantMap currentTransactionFlow() const;
     QVariantMap currentTransactionFlowPreview() const;
     FlowDetailsModel* currentTransactionFlowDetails() const { return m_flow_details; }
@@ -333,7 +333,7 @@ public:
     TransactionReviewInterface* transactionReview() const;
     SendDraftInterface* sendDraft() const;
     //! The wallet's latest send work.
-    std::shared_ptr<walletsend::Operation> sendOperation() const { return m_send_operation; }
+    std::shared_ptr<walletsend::SendTask> sendOperation() const { return m_send_operation; }
     quint64 requestBroadcastCurrentTransaction();
     quint64 requestRecheckCurrentTransaction();
     Q_INVOKABLE QVariantList availableReceiveAddressTypes() const;
@@ -347,7 +347,7 @@ public:
     QString securityError() const;
     Q_INVOKABLE bool encryptWallet(const QString& passphrase);
     Q_INVOKABLE bool changeWalletPassphrase(const QString& old_passphrase, const QString& new_passphrase);
-    WalletBackups* backups() const { return m_backups; }
+    WalletBackupModel* backups() const { return m_backups; }
     FileExportOperationModel* fileExportOperation() const { return m_file_export_operation; }
     Q_INVOKABLE void clearSettingsError();
     Q_INVOKABLE bool setDefaultReceiveAddressType(const QString& address_type);
@@ -382,7 +382,7 @@ public:
     QString signerApprovalError() const;
     bool signerApprovalSignerNotFound() const;
     void close();
-    void registerReview(WalletQmlModelTransaction* review) override;
+    void registerReview(TransactionReviewModel* review) override;
     void setReviewRetirementPostForTesting(std::function<void(std::function<void()>)> post);
     void beginShutdown(bool remove_wallet = false);
     void removeWallet();
@@ -496,7 +496,7 @@ Q_SIGNALS:
     void transactionChanged(const QString& txid, int change);
 
 private:
-    using CurrentTransactionSource = WalletQmlModelTransaction::Source;
+    using CurrentTransactionSource = TransactionReviewModel::Source;
 
     void initializeBackend(bool detached = false);
     void initializeBalanceReader();
@@ -524,27 +524,27 @@ private:
                                     std::shared_ptr<execution::OwnedCommand<walletprepare::Result>> command);
     void publishPreparation();
     void invalidatePreparation();
-    bool setCurrentTransaction(WalletQmlModelTransaction* transaction, bool from_preparation = false);
+    bool setCurrentTransaction(TransactionReviewModel* transaction, bool from_preparation = false);
     transactionattempt::CurrentFacts preparationFacts() const;
     ReceiveRequestOperation* submitRequest(walletrequests::Command command);
     void publishRequestHistory();
     void refreshReceiveRequestPayments();
-    friend class WalletSendOperation;
+    friend class WalletSendHandle;
     void setSendRunning(bool running);
     //! Applies a finished send's effects on the wallet and its review, then
     //! tells the operation, if it still exists.
     //! Empties the send draft and its manual coin selection after a commit.
     void clearSentDraft();
-    void finishSendWork(const std::shared_ptr<walletsend::Operation>& work, const QPointer<WalletQmlModelTransaction>& review,
-                        bool sign_only, const QPointer<WalletSendOperation>& operation);
+    void finishSendWork(const std::shared_ptr<walletsend::SendTask>& work, const QPointer<TransactionReviewModel>& review,
+                        bool sign_only, const QPointer<WalletSendHandle>& operation);
     //! Answers a prompt of send work whose operation is gone.
-    void declineSendPrompt(const std::shared_ptr<walletsend::Operation>& work);
-    mutable WalletTransactionReviewInterface* m_transaction_review{nullptr};
-    mutable WalletSendDraftInterface* m_send_draft{nullptr};
+    void declineSendPrompt(const std::shared_ptr<walletsend::SendTask>& work);
+    mutable WalletTransactionReview* m_transaction_review{nullptr};
+    mutable WalletSendDraft* m_send_draft{nullptr};
     bool m_send_running{false};
-    std::shared_ptr<walletsend::Operation> m_send_operation;
+    std::shared_ptr<walletsend::SendTask> m_send_operation;
     std::shared_ptr<walletsend::CommitConsent> m_send_consent;
-    QPointer<WalletQmlModelTransaction> m_send_review;
+    QPointer<TransactionReviewModel> m_send_review;
     bool m_send_sign_only{false};
     struct SentLabelCapture {
         std::shared_ptr<walletrequests::Store> store;
@@ -559,7 +559,7 @@ private:
     SentLabelCapture captureSentRecipientLabels(const std::shared_ptr<const walletopening::Session::Action>& action);
     void publishSentRecipientLabels();
     std::shared_ptr<walletrequests::Operation> m_sent_labels_operation;
-    std::weak_ptr<walletsend::Operation> m_sent_labels_work;
+    std::weak_ptr<walletsend::SendTask> m_sent_labels_work;
     bool m_sent_labels_pending{false};
     QString m_sent_labels_error, m_sent_labels_txid;
     const std::shared_ptr<std::atomic_bool> m_sending_commit{std::make_shared<std::atomic_bool>(false)};
@@ -602,7 +602,7 @@ private:
     quint64 m_imported_review_owner{0}, m_imported_review_child{0};
     std::weak_ptr<const PartiallySignedTransaction> m_psbt_action_document;
     bool m_psbt_action_had_document{false};
-    QPointer<WalletQmlModelTransaction> m_psbt_action_review;
+    QPointer<TransactionReviewModel> m_psbt_action_review;
     bool m_psbt_action_had_review{false};
     QString m_psbt_action_error;
     QString m_psbt_action_path;
@@ -647,7 +647,7 @@ private:
     interfaces::Node* m_node{nullptr};
     TransactionActivityModel* m_transaction_activity_model{nullptr};
     AddressListModel* m_address_list_model{nullptr};
-    FeeBumps* m_fee_bumps{nullptr};
+    FeeBumpModel* m_fee_bumps{nullptr};
     void createFeeBumps();
     CoinsListModel* m_coins_list_model{nullptr};
     SendRecipientsListModel* m_send_recipients{nullptr};
@@ -663,7 +663,7 @@ private:
     QString m_request_storage_error;
     ReceiptReconciliationModel* m_receipt_projection{nullptr};
     void publishReceipts();
-    WalletQmlModelTransaction* m_current_transaction{nullptr};
+    TransactionReviewModel* m_current_transaction{nullptr};
     // Send draft intent when an imported review opened; a newer draft survives its close (#762).
     std::optional<quint64> m_import_draft_revision;
     wallet::CCoinControl m_coin_control;
@@ -687,7 +687,7 @@ private:
     void publishPsbtFeeProof();
     void applyPsbtFeeProof(const std::shared_ptr<const psbtfee::FeeRequest>& token, psbtfee::Resolution result, bool publish = true);
     backup::Services m_backup_services;
-    WalletBackups* m_backups{nullptr};
+    WalletBackupModel* m_backups{nullptr};
     BackupFileOperation* startBackup(const QString& path, QString& why, std::function<void(backup::Snapshot)> outcome);
     void createBackups();
     QPointer<FileExportOperationModel> m_file_export_operation;
@@ -754,7 +754,7 @@ private:
     };
     std::shared_ptr<ReviewFlowInput> m_flow_input{std::make_shared<ReviewFlowInput>()};
     std::shared_ptr<execution::SnapshotQuery<ReviewFlowResult>> m_flow_query;
-    QPointer<WalletQmlModelTransaction> m_flow_review;
+    QPointer<TransactionReviewModel> m_flow_review;
     CTransactionRef m_flow_transaction;
     std::shared_ptr<const PartiallySignedTransaction> m_flow_document;
     std::shared_ptr<const psbtfee::Analysis> m_flow_proof;
