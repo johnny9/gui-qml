@@ -18,7 +18,7 @@
 
 #include <qml/bitcoinunits.h>
 #include <qml/models/transactionflow.h>
-#include <qml/models/walletqmlmodel.h>
+#include <qml/models/walletmodel.h>
 
 #include <core_io.h>
 
@@ -171,10 +171,10 @@ struct TransactionActivityModel::Mailbox {
     }
 };
 
-TransactionActivityModel::TransactionActivityModel(WalletQmlModel* wallet)
+TransactionActivityModel::TransactionActivityModel(WalletModel* wallet)
     : TransactionActivityModel(wallet, Services{}) {}
 
-TransactionActivityModel::TransactionActivityModel(WalletQmlModel* wallet, Services services)
+TransactionActivityModel::TransactionActivityModel(WalletModel* wallet, Services services)
     : QAbstractListModel(wallet), m_wallet_model(wallet), m_display_unit(wallet->displayUnit()),
       m_opening(wallet->opening()), m_services(std::move(services)),
       m_export_installs(wallet->fileInstallCoordinator() ? wallet->fileInstallCoordinator() : std::make_shared<backup::InstallCoordinator>()), m_mailbox(std::make_shared<Mailbox>())
@@ -188,8 +188,8 @@ TransactionActivityModel::TransactionActivityModel(WalletQmlModel* wallet, Servi
     if (!m_services.cancel_poll) m_services.cancel_poll = [this] { m_timer.stop(); };
     m_apply_timer.setSingleShot(true);
     connect(&m_apply_timer, &QTimer::timeout, this, &TransactionActivityModel::applyPatches);
-    connect(wallet, &WalletQmlModel::transactionChanged, this, &TransactionActivityModel::updateTransaction);
-    connect(wallet, &WalletQmlModel::addressListChanged, this, [this] {
+    connect(wallet, &WalletModel::transactionChanged, this, &TransactionActivityModel::updateTransaction);
+    connect(wallet, &WalletModel::addressListChanged, this, [this] {
         ++m_generation; ++m_reader_revisions.labels; m_pending.labels = true; schedule();
     });
     auto* requests = wallet->receiveRequests();
@@ -198,8 +198,8 @@ TransactionActivityModel::TransactionActivityModel(WalletQmlModel* wallet, Servi
     connect(requests, &QAbstractItemModel::rowsInserted, this, rebuild);
     connect(requests, &QAbstractItemModel::rowsRemoved, this, rebuild);
     connect(requests, &QAbstractItemModel::dataChanged, this, rebuild);
-    connect(wallet, &WalletQmlModel::displayUnitChanged, this, &TransactionActivityModel::setDisplayUnit);
-    connect(wallet, &WalletQmlModel::walletUnloaded, this, &TransactionActivityModel::stop);
+    connect(wallet, &WalletModel::displayUnitChanged, this, &TransactionActivityModel::setDisplayUnit);
+    connect(wallet, &WalletModel::walletUnloaded, this, &TransactionActivityModel::stop);
     reload(); armPoll();
 }
 

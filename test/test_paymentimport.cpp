@@ -795,7 +795,7 @@ private Q_SLOTS:
         std::deque<std::function<void()>> target_gui, source_gui;
         FeeReadServices fees; fees.post = [&](auto post) { target_gui.push_back(std::move(post)); };
         auto wallet = std::make_shared<MockWallet>();
-        WalletQmlModel model{WalletWithQueues(wallet, commands.executor()), nullptr, fees, {}, {}};
+        WalletModel model{WalletWithQueues(wallet, commands.executor()), nullptr, fees, {}, {}};
         ManualWalletDrain drain{commands, &model};
         BitcoinUriModel importer; QObject view;
         importer.setServices([&](auto post) { source_gui.push_back(std::move(post)); }, &sources.executor());
@@ -846,7 +846,7 @@ private Q_SLOTS:
         ManualStartupExecution sources; std::deque<std::function<void()>> target_gui, source_gui;
         FeeReadServices fees; fees.post = [&](auto post) { target_gui.push_back(std::move(post)); };
         auto wallet = std::make_shared<MockWallet>();
-        WalletQmlModel model{WalletWithQueues(wallet, commands.executor()), nullptr, fees, {}, {}};
+        WalletModel model{WalletWithQueues(wallet, commands.executor()), nullptr, fees, {}, {}};
         ManualWalletDrain drain{commands, &model}; BitcoinUriModel importer; QObject view;
         importer.setServices([&](auto post) { source_gui.push_back(std::move(post)); }, &sources.executor());
         const auto publish = [](auto& queue) { while (!queue.empty()) { auto turn = std::move(queue.front()); queue.pop_front(); turn(); } };
@@ -879,7 +879,7 @@ private Q_SLOTS:
     void appliedDraftReceiptStaysOnOriginalUtilityQueueThroughClose()
     {
         const auto node_free_wallet = std::make_shared<MockWallet>();
-        WalletQmlModel model{WalletQmlModel::SharedWallet{node_free_wallet}, nullptr, {}, {}, {}};
+        WalletModel model{WalletModel::SharedWallet{node_free_wallet}, nullptr, {}, {}, {}};
         const auto native_drained = WatchWalletNativeDrain(model);
         const auto cleanup = qScopeGuard([&] {
             model.beginShutdown();

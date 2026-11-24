@@ -7,7 +7,7 @@
 
 #include <QObject>
 
-class WalletQmlModelTransaction;
+class TransactionReviewModel;
 
 // GUI lifetime registration only. A review does not depend on its owner's
 // wallet facade or gain access to wallet/domain operations through this port.
@@ -15,7 +15,7 @@ class ReviewOwner
 {
 public:
     virtual ~ReviewOwner() = default;
-    virtual void registerReview(WalletQmlModelTransaction* review) = 0;
+    virtual void registerReview(TransactionReviewModel* review) = 0;
 };
 
 Q_DECLARE_INTERFACE(ReviewOwner, "org.bitcoincore.qt.reviewowner/1.0")

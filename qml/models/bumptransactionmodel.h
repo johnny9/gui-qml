@@ -15,7 +15,7 @@
 #include <QString>
 
 /** A fee bump attempt (FeeBumpOperation) on one wallet opening. The wallet's
- * FeeBumps creates one per review. Attempt and commit ids are C++-only. */
+ * FeeBumpModel creates one per review. Attempt and commit ids are C++-only. */
 class BumpTransactionModel : public FeeBumpOperation
 {
     Q_OBJECT

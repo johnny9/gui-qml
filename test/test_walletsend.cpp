@@ -145,7 +145,7 @@ struct Fixture {
             retirement.drain();
         } while (!commands.quiescent() || !retirement.quiescent());
     }
-    std::shared_ptr<walletsend::Operation> operation() { return std::make_shared<walletsend::Operation>(opening, notes, [this](auto) { ++notifications; }); }
+    std::shared_ptr<walletsend::SendTask> operation() { return std::make_shared<walletsend::SendTask>(opening, notes, [this](auto) { ++notifications; }); }
 };
 }
 
@@ -848,7 +848,7 @@ private Q_SLOTS:
     void committedTransactionRemainsTruthfulWhenTheNotesStoreIsAbsent()
     {
         Fixture f;
-        auto operation = std::make_shared<walletsend::Operation>(f.opening, nullptr, [&f](auto) { ++f.notifications; });
+        auto operation = std::make_shared<walletsend::SendTask>(f.opening, nullptr, [&f](auto) { ++f.notifications; });
         auto request = SignedRequest(); const auto reviewed = request.reviewed->GetHash();
         request.notes.insert("1BoatSLRHtKNngkdXEeobR76b53LETtpyT", "outgoing note");
         QVERIFY(operation->start(std::move(request))); QCOMPARE(f.wallet->commits, 0);
@@ -1416,7 +1416,7 @@ private Q_SLOTS:
         auto wallet = std::make_shared<RealWallet>(state);wallet->encrypted=true;wallet->expected_password=std::string(40'000,'r');auto client = opening->start(wallet).borrower; QVERIFY(client);
         auto captured=secretinput::Capture(opening,QString::fromStdString(wallet->expected_password));QVERIFY(captured);
         auto request=PsbtRequest();request.captured_passphrase=captured.input;
-        auto operation = std::make_shared<walletsend::Operation>(opening, nullptr, [state](auto) { state->outcome = QThread::currentThread(); state->consumed.release(); });
+        auto operation = std::make_shared<walletsend::SendTask>(opening, nullptr, [state](auto) { state->outcome = QThread::currentThread(); state->consumed.release(); });
         QVERIFY(operation->start(std::move(request)));captured.input.reset();
         QVERIFY(state->entered.tryAcquire(1, 5000)); QVERIFY(state->effect.load() != QThread::currentThread());
         QCOMPARE(wallet->unlocks,1);QVERIFY(wallet->unlock_thread.load()!=QThread::currentThread());
@@ -1522,7 +1522,7 @@ private Q_SLOTS:
     }
     void publicationFailureCannotOverwriteAConfirmedCommit()
     {
-        Fixture f; auto operation = std::make_shared<walletsend::Operation>(f.opening, f.notes, [](auto) { throw std::runtime_error{"publication transport failed"}; });
+        Fixture f; auto operation = std::make_shared<walletsend::SendTask>(f.opening, f.notes, [](auto) { throw std::runtime_error{"publication transport failed"}; });
         QVERIFY(operation->start(SignedRequest())); f.commands.drain();
         QVERIFY(operation->result()->committed); QCOMPARE(operation->result()->error, Error::None); QCOMPARE(f.wallet->commits, 1);
         QVERIFY(operation->result()->publication_failed);
@@ -1726,7 +1726,7 @@ private Q_SLOTS:
         QVERIFY(registered.borrower);
         auto request = PsbtRequest();
         request.intent = walletsend::Intent::SignOnly;
-        auto operation = std::make_shared<walletsend::Operation>(opening, nullptr, [state](auto notice) {
+        auto operation = std::make_shared<walletsend::SendTask>(opening, nullptr, [state](auto notice) {
             if (notice == walletsend::Notice::Finished) { state->outcome = QThread::currentThread(); state->finished.release(); }
         });
         QVERIFY(operation->start(std::move(request)));
