@@ -58,7 +58,12 @@ if (command == "enumerate" and state["hold"]) or (command == "getdescriptors" an
         server.bind(("127.0.0.1", 0))
         server.listen(1)
         server.settimeout(20)
-        Path(state["entered"]).write_text(json.dumps({"port": server.getsockname()[1], "command": command, "requested": requested}))
+        # The test polls for this file and reads it at once: publish it
+        # complete by renaming, never as an empty file being written.
+        entered = Path(state["entered"])
+        partial = entered.with_name(entered.name + ".partial")
+        partial.write_text(json.dumps({"port": server.getsockname()[1], "command": command, "requested": requested}))
+        partial.replace(entered)
         connection, _ = server.accept()
         with connection:
             connection.settimeout(20)
