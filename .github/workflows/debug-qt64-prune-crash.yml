@@ -1,0 +1,128 @@
+name: Debug Qt 6.4 prune crash
+
+# Throwaway workflow: reproduce the intermittent SIGSEGV after
+# settings.*.manualPruneIsShownAndTurnsOffOnlyAfterTheRebuildWarning on the
+# Ubuntu 24.04 / Qt 6.4.2 configuration and capture enough to root-cause it.
+
+on:
+  push:
+    branches: ['debug/**']
+  workflow_dispatch:
+
+jobs:
+  repro:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      TEST_NAME: manualPruneIsShownAndTurnsOffOnlyAfterTheRebuildWarning
+      LOOPS: '30'
+      QT_QPA_PLATFORM: minimal
+      QT_QUICK_BACKEND: software
+      QML_DISABLE_DISK_CACHE: '1'
+      BITCOIN_QML_TEST_NO_ANIMATIONS: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential tzdata cmake ninja-build pkg-config \
+            libsqlite3-dev zlib1g-dev libboost-all-dev \
+            qt6-svg-dev qt6-base-dev qt6-base-dev-tools qt6-tools-dev qt6-l10n-tools qt6-tools-dev-tools \
+            qt6-declarative-dev \
+            qml6-module-qt-labs-platform qml6-module-qt-labs-settings \
+            qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-dialogs \
+            qml6-module-qtquick-shapes qml6-module-qtquick-layouts qml6-module-qtquick-templates \
+            qml6-module-qtquick-window qml6-module-qtqml-models qml6-module-qtqml \
+            qml6-module-qtqml-workerscript \
+            libgl-dev libqrencode-dev \
+            gdb valgrind libqt6core6t64-dbgsym libqt6gui6-dbgsym libqt6qml6-dbgsym libqt6quick6-dbgsym || \
+          sudo apt-get install -y gdb valgrind
+          dpkg -s qt6-base-dev | grep '^Version'
+
+      - name: Configure (RelWithDebInfo, same options as the Qt 6.4 job)
+        run: |
+          cmake -E env CXXFLAGS="-Wno-error=stringop-overread -fno-omit-frame-pointer" -- \
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DBUILD_APP_TESTS=ON \
+            -DENABLE_IPC=OFF
+
+      - name: Build the integration test binary
+        run: cmake --build build --parallel --target bitcoinqml_integration_tests
+
+      - name: Loop the test with core dumps
+        run: |
+          mkdir -p diag/cores diag/runs diag/profiles
+          sudo sysctl -w kernel.core_pattern="$PWD/diag/cores/core.%e.%p.%t"
+          ulimit -c unlimited
+          crashes=0
+          for i in $(seq "$LOOPS"); do
+            for mode in enabled disabled; do
+              log="diag/runs/$mode-$i.txt"
+              ./build/bin/bitcoinqml_integration_tests --module=settings --wallet=$mode --test="$TEST_NAME" \
+                --profile-dir="$PWD/diag/profiles" > "$log" 2>&1 || true
+              if grep -q "Child exited with status 11\|Crash backtrace" "$log"; then
+                crashes=$((crashes + 1)); echo "::warning::crash in $mode run $i"
+              elif ! grep -q "Totals: .* 0 failed" "$log"; then
+                echo "::warning::non-crash failure in $mode run $i"; grep -A4 "FAIL!" "$log" | head -8
+              fi
+            done
+          done
+          echo "CRASHES=$crashes of $((LOOPS * 2))" | tee diag/summary.txt
+          ls -la diag/cores | tee -a diag/summary.txt
+
+      - name: Backtraces from cores
+        if: always()
+        run: |
+          shopt -s nullglob
+          for core in diag/cores/core.*; do
+            out="$core.gdb.txt"
+            gdb -batch -q \
+              -ex "set pagination off" -ex "set print pretty off" \
+              -ex "info sharedlibrary" \
+              -ex "echo \n=== faulting thread ===\n" -ex "bt 60" \
+              -ex "echo \n=== registers ===\n" -ex "info registers rip rsp rbp rax rdi rsi" \
+              -ex "echo \n=== stack words (return address of the bad call is at rsp) ===\n" -ex "x/48a \$rsp" \
+              -ex "echo \n=== all threads ===\n" -ex "thread apply all bt 50" \
+              ./build/bin/bitcoinqml_integration_tests "$core" > "$out" 2>&1 || true
+            echo "===== $core"; sed -n '/=== faulting thread ===/,/=== all threads ===/p' "$out" | head -120
+          done
+
+      - name: Valgrind (use-after-free origin)
+        if: always()
+        env:
+          QML_TEST_TIMEOUT: '1500000'
+        run: |
+          mkdir -p diag/valgrind
+          for mode in enabled disabled; do
+            timeout 2400 valgrind --trace-children=yes --child-silent-after-fork=yes \
+              --num-callers=50 --error-limit=no --read-var-info=no \
+              --suppressions=/usr/lib/x86_64-linux-gnu/valgrind/default.supp \
+              --log-file="$PWD/diag/valgrind/$mode.%p.log" \
+              ./build/bin/bitcoinqml_integration_tests --module=settings --wallet=$mode --test="$TEST_NAME" \
+                --profile-dir="$PWD/diag/profiles" > "diag/valgrind/$mode.out.txt" 2>&1 || true
+          done
+          for f in diag/valgrind/*.log; do
+            if grep -qE "Invalid (read|write|free)|Jump to the invalid address|Process terminating" "$f"; then
+              echo "===== $f"; grep -nE "Invalid|Jump to|Address 0x.* is|Process terminating" "$f" | head -20
+              awk '/Invalid (read|write)|Jump to the invalid/{p=1} p{print} /^==[0-9]+== *$/{if(p){n++; if(n>=6) exit}}' "$f" | head -200
+            fi
+          done
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: qt64-prune-crash-diagnostics
+          path: |
+            diag/summary.txt
+            diag/runs/
+            diag/cores/*.gdb.txt
+            diag/valgrind/
+            diag/profiles/
+          if-no-files-found: ignore
