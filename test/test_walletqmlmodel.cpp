@@ -7761,7 +7761,10 @@ void WalletQmlModelTests::reconciliationPreservesPaymentNotifiedDuringScan()
     QTRY_COMPARE(changed.size(), 1);
     QTRY_VERIFY(!model->receiveRequestReconciliationPending());
     QTRY_COMPARE(detail->receipts()->receivedAmountSatoshi(), qint64{100});
-    QVERIFY(detail->historicallyUsed());
+    // historicallyUsed comes from the editor's own projection, refreshed by a
+    // separate read after the request history is published. Reconciliation
+    // pending does not cover that read, so wait for it rather than sampling.
+    QTRY_VERIFY(detail->historicallyUsed());
     QVERIFY(model->receiveRequests()->entryById(id)->payment_received);
 }
 

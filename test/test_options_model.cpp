@@ -3305,6 +3305,13 @@ void OptionsModelTests::manualDisplayRefreshWaitsForPendingWrite()
 }
 void OptionsModelTests::externalDisplayWriterIsObservedWithoutUserEdit()
 {
+    // The model observes external writers through a file watch. With the
+    // native macOS format the plist is written by cfprefsd some seconds
+    // after sync(), so the wait measured the daemon, not the model. An INI
+    // file is written by QSettings itself and the watch fires on sync().
+    QTemporaryDir settings_dir; QVERIFY(settings_dir.isValid());
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings_dir.path());
+    SavedSettingsFormat settings_format{QSettings::IniFormat};
     SavedGuiDataDirSettings saved; QSettings settings;
     settings.setValue(SettingsKeys::DISPLAY_UNIT, 0); settings.sync();
     MockNode node; const auto drain = DrainExecutorsBeforeNativeOwnerDestruction();
