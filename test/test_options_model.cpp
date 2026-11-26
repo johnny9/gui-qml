@@ -1227,6 +1227,9 @@ void OptionsModelTests::signerValidationReportsManualTransportRefusal()
 
 void OptionsModelTests::signerValidationRunsOnCoreWorker()
 {
+    QTemporaryDir settings_dir; QVERIFY(settings_dir.isValid());
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings_dir.path());
+    SavedSettingsFormat settings_format{QSettings::IniFormat};
     MockNode node;
     const auto drain_node_owner = DrainExecutorsBeforeNativeOwnerDestruction();
     ArgsManager model_args;
