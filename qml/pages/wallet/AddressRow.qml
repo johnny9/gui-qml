@@ -85,7 +85,9 @@ AbstractButton {
                 property string submittedText: root.label
                 width: Math.min(350, parent.width)
                 implicitHeight: 30
-                text: root.editor && root.editor.available && root.editor.phase !== TextEditSessionModel.Loading ? root.editor.text.text : root.pendingLabel
+                // While the editor loads, show the saved label, but only until the
+                // user types: a publish from that edit must not restore the label.
+                text: root.editor && root.editor.available && (root.editor.phase !== TextEditSessionModel.Loading || root.editor.hasLocalInput) ? root.editor.text.text : root.pendingLabel
                 placeholderText: root.canEditLabel
                     //: Placeholder shown when an address has no label yet.
                     ? qsTr("Add label…")

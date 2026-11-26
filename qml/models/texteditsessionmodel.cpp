@@ -263,6 +263,10 @@ TextEditSessionModel::TextEditSessionModel(QString entity, Ports ports, QObject*
         if (m_retired || m_input_sequence == UINT64_MAX) return;
         m_input_invalid = false;
         const auto sequence = ++m_input_sequence;
+        const QPointer<TextEditSessionModel> guard{this};
+        // The first edit flips hasLocalInput; views must stop showing the
+        // pre-load fallback before any later publish can re-evaluate them.
+        if (sequence == 1) { Q_EMIT changed(); if (!guard) return; }
         submit([value, sequence](State& state) { state.edit(value, sequence); }, QStringLiteral("edit"));
     });
     connect(&m_text, &TextEditInput::rejected, this, [this] {

@@ -101,6 +101,9 @@ class TextEditSessionModel : public QObject {
     Q_PROPERTY(Phase phase READ phase NOTIFY changed)
     Q_PROPERTY(bool available READ available NOTIFY changed)
     Q_PROPERTY(bool dirty READ dirty NOTIFY changed)
+    /** True from the first local edit, before the worker has seen it. A view
+     * shows text.text from then on, even while the editor is still Loading. */
+    Q_PROPERTY(bool hasLocalInput READ hasLocalInput NOTIFY changed)
     Q_PROPERTY(bool valid READ valid NOTIFY changed)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
     Q_PROPERTY(bool canSave READ canSave NOTIFY changed)
@@ -153,6 +156,7 @@ public:
     Phase phase() const;
     bool available() const { return !m_retired && phase() != Closed && phase() != Retiring; }
     bool dirty() const;
+    bool hasLocalInput() const { return !m_retired && m_input_sequence > 0; }
     bool valid() const;
     bool busy() const;
     bool canSave() const;

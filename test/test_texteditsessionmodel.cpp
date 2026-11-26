@@ -121,6 +121,29 @@ private Q_SLOTS:
         QVERIFY(f.editor->dirty()); QVERIFY(f.editor->canSave());
         QCOMPARE(f.editor->saveResult().value, QString{"accepted"}); QVERIFY(f.editor->saveResult().persisted);
     }
+    void typedInputDuringLoadingIsReportedBeforeTheWorkerSeesIt()
+    {
+        // A view that shows a fallback while Loading must switch to text()
+        // on the first edit. The worker's publish of that edit arrives while
+        // the read is still outstanding and re-evaluates such a view; if the
+        // view still chose the fallback then, the user's text was replaced.
+        Fixture f; f.utility(); QCOMPARE(f.editor->phase(), Model::Loading);
+        QVERIFY(!f.editor->hasLocalInput());
+        QSignalSpy changed{f.editor.get(), &Model::changed};
+        f.editor->text()->edit("");
+        QVERIFY(f.editor->hasLocalInput()); QCOMPARE(changed.size(), 1);
+        QCOMPARE(f.editor->text()->text(), QString{});
+        f.utility(); // Publish while still Loading: the input is not projected yet.
+        QCOMPARE(f.reads, 0); QCOMPARE(f.editor->phase(), Model::Loading);
+        QVERIFY(f.editor->hasLocalInput()); QCOMPARE(f.editor->text()->text(), QString{});
+        f.editor->text()->edit("typed while loading"); f.utility();
+        QCOMPARE(f.editor->text()->text(), QString{"typed while loading"});
+        f.drain();
+        QCOMPARE(f.reads, 1); QCOMPARE(f.editor->phase(), Model::Editing);
+        QCOMPARE(f.editor->text()->text(), QString{"typed while loading"}); QVERIFY(f.editor->dirty());
+        Fixture untouched; untouched.drain();
+        QVERIFY(!untouched.editor->hasLocalInput()); QCOMPARE(untouched.editor->text()->text(), QString{"original"});
+    }
     void closeWhileLoadingAsksAboutTypedInput()
     {
         // Text typed before the current value arrives is unsaved. Close waits
