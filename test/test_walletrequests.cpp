@@ -368,6 +368,24 @@ private Q_SLOTS:
             QCOMPARE(decoded.entries.front().recipient.noteSelf, std::string{"private"});
         }
     }
+    void waitingPublicationReportsBusyOnceACommandIsQueued()
+    {
+        // The GUI marks storage busy when it submits and then adopts the
+        // busy flag of the next publication it takes. A publication built
+        // before the submit, but taken after it, must not report idle while
+        // the command has not run yet.
+        Fixture idle; idle.load();
+        const auto settled = idle.store->take(); QVERIFY(settled); QVERIFY(!settled->busy);
+
+        Fixture f; f.load();
+        const auto admitted = f.store->submit(Intent(Kind::Reload)); QVERIFY(admitted);
+        const auto waiting = f.store->take(); QVERIFY(waiting); QVERIFY(waiting->busy);
+        QVERIFY(!admitted.operation->result());
+        f.commands.drain(); QVERIFY(admitted.operation->result());
+        QCOMPARE(admitted.operation->result()->error, Error::None);
+        f.observe();
+        const auto done = f.store->take(); QVERIFY(done); QVERIFY(!done->busy);
+    }
     void nativeHistoryFailureFencesMutationUntilAnExplicitReload()
     {
         Fixture f; f.load(); const auto original = f.wallet->stored;

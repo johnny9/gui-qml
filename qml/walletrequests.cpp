@@ -169,6 +169,10 @@ Admission Store::submitImpl(Command command, Notify complete, std::shared_ptr<co
         }
         operation = std::make_shared<Operation>(m_opening->identity(), token, command.kind, std::move(complete), std::move(intent), std::move(result_notify));
         m_queue.push_back({std::move(command), operation, action});
+        // A publication built before this command may still be waiting for
+        // the GUI. It must not report idle once the command is queued, or a
+        // reader that marked itself busy on submit sees busy=false first.
+        if (m_latest) m_latest->busy = true;
         m_source_epoch->advance();
     }
     const auto admission = schedule(action);
