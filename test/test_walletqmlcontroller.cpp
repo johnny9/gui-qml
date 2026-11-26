@@ -909,7 +909,10 @@ void WalletQmlControllerTests::restorationCapturesExactSourceAndTarget()
     auto* refused = controller.creation()->restore(url); QVERIFY(refused); QCOMPARE(refused->phase(), WalletOperationModel::Rejected); QCOMPARE(controller.creation()->operation(), operation);
     QVERIFY(controller.walletLoadInProgress()); QCOMPARE(loader.restore_wallet_calls, 0);
     QVERIFY(graph.until([&] { return operation->terminal() && !controller.walletLoadInProgress(); }));
-    QCOMPARE(operation->phase(), WalletOperationModel::Succeeded); QCOMPARE(actual_source, path); QCOMPARE(actual_target, expected); QVERIFY(!restore_load); QVERIFY(loaded_on_core);
+    // The source is captured canonically: the stamp that identifies the file
+    // and the path Core reads are the same file even behind a symlinked
+    // directory (macOS /var -> /private/var).
+    QCOMPARE(operation->phase(), WalletOperationModel::Succeeded); QCOMPARE(actual_source, QFileInfo(path).canonicalFilePath()); QCOMPARE(actual_target, expected); QVERIFY(!restore_load); QVERIFY(loaded_on_core);
     QCOMPARE(loader.restore_wallet_calls, 1); QCOMPARE(loader.load_wallet_calls, 1); QCOMPARE(loader.migrate_wallet_calls, 0);
     QCOMPARE(operation->targetWalletId(), expected); QCOMPARE(operation->resultWallet(), controller.walletForName(expected)); QVERIFY(operation->canOpenResult()); QCOMPARE(controller.selectedWallet(), selected_before.data());
     QCOMPARE(ReadTestFile(path), original_bytes); QCOMPARE(operation->warningText(), QString(5000, QLatin1Char('w'))); QVERIFY(operation->warningDetails()->rowCount() > 1);
@@ -4319,7 +4322,9 @@ void WalletQmlControllerTests::walletOperationsUseCatalogQueues()
     };
     loader.restore_detailed_fn = [&](const fs::path& path, const std::string& name, auto&, bool load) -> util::Result<std::unique_ptr<interfaces::Wallet>> {
         effect_thread = QThread::currentThread();
-        if (load || QString::fromStdString(fs::PathToString(path)) != backup) return util::Error{Untranslated("Unexpected restore request")};
+        // Restoration hands Core the canonical source (a temp dir may sit
+        // behind a symlink, as /var does on macOS).
+        if (load || QString::fromStdString(fs::PathToString(path)) != QFileInfo(backup).canonicalFilePath()) return util::Error{Untranslated("Unexpected restore request")};
         return std::unique_ptr<interfaces::Wallet>{std::make_unique<FakeWallet>(name, nullptr)};
     };
     loader.migrate_wallet_fn = [&](const std::string& name, const SecureString&, bool load) -> util::Result<interfaces::WalletMigrationResult> {
