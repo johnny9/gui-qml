@@ -23,6 +23,7 @@
 #include <QTest>
 #include <QtQuickTest/quicktest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <future>
 #include <memory>
@@ -155,6 +156,42 @@ inline bool WaitForPolish(QQuickItem* item)
     }
     return true;
 #endif
+}
+
+// The item a press of `button` at a scene point would reach first: the
+// topmost item in paint order that is visible, enabled, contains the point
+// and accepts that button. Items that only paint (an idle Loader, a label)
+// are skipped, as delivery skips them. Pointer handlers are not considered;
+// targets here are MouseAreas and controls.
+inline QQuickItem* PointerTargetAt(QQuickItem* item, QPointF scene, Qt::MouseButton button)
+{
+    if (!item || !item->isVisible() || !item->isEnabled()) return nullptr;
+    const auto local = item->mapFromScene(scene);
+    if (item->clip() && !item->contains(local)) return nullptr;
+    auto children = item->childItems();
+    std::stable_sort(children.begin(), children.end(), [](const QQuickItem* a, const QQuickItem* b) { return a->z() < b->z(); });
+    for (auto it = children.crbegin(); it != children.crend(); ++it)
+        if (auto* target = PointerTargetAt(*it, scene, button)) return target;
+    return item->contains(local) && (item->acceptedMouseButtons() & button) ? item : nullptr;
+}
+inline QQuickItem* PointerTargetAt(QQuickWindow* window, QPointF scene, Qt::MouseButton button)
+{
+    return window ? PointerTargetAt(window->contentItem(), scene, button) : nullptr;
+}
+
+// Waits until a press of `button` at `scene` would reach `target` or one of
+// its descendants rather than a popup, dimmer or page still in transition.
+// This waits for state; it never resends input, so a delivered gesture cannot
+// be hidden by a retry.
+inline bool WaitUntilPointerTarget(QQuickItem* target, QPointF scene, Qt::MouseButton button, int timeout_ms = 10'000)
+{
+    const QPointer<QQuickItem> guard{target};
+    return QTest::qWaitFor([&] {
+        if (!guard || !guard->window()) return false;
+        for (auto* item = PointerTargetAt(guard->window(), scene, button); item; item = item->parentItem())
+            if (item == guard) return true;
+        return false;
+    }, timeout_ms);
 }
 
 inline bool ClickWithRetries(QObject* object)

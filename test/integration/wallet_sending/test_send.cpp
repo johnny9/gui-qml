@@ -1265,21 +1265,30 @@ private Q_SLOTS:
         QVERIFY(!coins->data(coins->index(0), CoinsListModel::LockedRole).toBool());
         auto* page = qmltest::WaitForVisible(m_app, "walletCoinsPage"); QVERIFY(page);
         auto* row = qobject_cast<QQuickItem*>(qmltest::Find(page, QStringLiteral("coinSelectionItem_0"))); QVERIFY(row); QVERIFY(qmltest::WaitForPolish(row));
-        // The settings stack slides the page in; act only once it has settled.
+        // The settings stack slides the page in. Send one right click only once
+        // the stack is idle and nothing outside the row covers the point;
+        // these are states to wait for, not timings, and the click is never
+        // resent, so a swallowed press fails with what covered it.
         QTRY_COMPARE(qobject_cast<QQuickItem*>(page)->x(), 0.0); QVERIFY(qmltest::TransitionsFinished(m_app.window()));
+        QTRY_VERIFY_WITH_TIMEOUT([page] {
+            auto* stack = page->property("navigationStack").value<QObject*>();
+            return !stack || !stack->property("busy").toBool();
+        }(), 30'000);
         const auto point = row->mapToScene(row->boundingRect().center()).toPoint();
         QVERIFY(m_app.window()->contentItem()->contains(point));
-        QTest::mouseClick(row->window(), Qt::RightButton, Qt::NoModifier, point);
         auto* menu = qmltest::Find(page, QStringLiteral("walletCoinContextMenu")); QVERIFY(menu);
-        // Fails on macOS CI only: name what the right click reached.
         const auto context = [&] {
-            return QStringLiteral("visible %1 opened %2 menu (%3, %4) window active %5 row (%6, %7) enabled %8 context coin %9")
+            const auto* topmost = qmltest::PointerTargetAt(m_app.window(), point, Qt::RightButton);
+            return QStringLiteral("visible %1 opened %2 menu (%3, %4) window active %5 row (%6, %7) enabled %8 right-click target %9 (%10)")
                 .arg(menu->property("visible").toBool()).arg(menu->property("opened").toBool())
                 .arg(menu->property("x").toReal()).arg(menu->property("y").toReal()).arg(row->window()->isActive())
                 .arg(point.x()).arg(point.y()).arg(row->isEnabled())
-                .arg(menu->parent() ? menu->parent()->property("contextCoinId").toString() : QStringLiteral("no list"));
+                .arg(topmost ? topmost->objectName() : QStringLiteral("none"))
+                .arg(topmost ? QString::fromUtf8(topmost->metaObject()->className()) : QString{});
         };
-        QTRY_VERIFY2_WITH_TIMEOUT(menu->property("opened").toBool(), qPrintable(context()), 5000);
+        QVERIFY2(qmltest::WaitUntilPointerTarget(row, point, Qt::RightButton, 30'000), qPrintable(context()));
+        QTest::mouseClick(row->window(), Qt::RightButton, Qt::NoModifier, point);
+        QTRY_VERIFY2_WITH_TIMEOUT(menu->property("opened").toBool(), qPrintable(context()), 30'000);
         auto* toggle = qmltest::Find(menu, QStringLiteral("walletCoinLockToggle")); QVERIFY(toggle);
         QCOMPARE(toggle->property("text").toString(), QStringLiteral("Lock coin"));
         QVERIFY(qmltest::Click(toggle)); QTRY_VERIFY(!coins->lockPending());
