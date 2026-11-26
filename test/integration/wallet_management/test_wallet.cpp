@@ -32,7 +32,6 @@
 #include <QTimer>
 #include <QFile>
 #include <QDir>
-#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QPointer>
 #include <QSignalSpy>
@@ -76,7 +75,9 @@ public:
 // #966: Core's ListDatabases() opens <walletdir>/<name>/wallet.dat to sniff
 // its format. A FIFO there blocks that real read until a writer appears, so a
 // test can hold wallet directory discovery inside Core. The write end opens
-// only when released, or after a deadline that bounds a blocked GUI thread.
+// only when released, or after a hang deadline. Reaching the deadline is
+// recorded: only a GUI thread blocked on the read needs it to make progress,
+// so the deadline is a hang breaker, not a speed limit.
 class WalletDirectoryStall
 {
 public:
@@ -86,8 +87,12 @@ public:
         hold();
         m_thread = std::thread{[this] {
             while (!m_stop) {
-                if (m_open || std::chrono::steady_clock::now().time_since_epoch().count() > m_deadline) {
-                    if (const int fd = ::open(m_fifo.c_str(), O_WRONLY | O_NONBLOCK); fd >= 0) { ++m_released; ::close(fd); }
+                const bool expired = !m_open && std::chrono::steady_clock::now().time_since_epoch().count() > m_deadline;
+                if (m_open || expired) {
+                    if (const int fd = ::open(m_fifo.c_str(), O_WRONLY | O_NONBLOCK); fd >= 0) {
+                        ++m_released; if (expired) ++m_expired;
+                        ::close(fd);
+                    }
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds{2});
             }
@@ -102,16 +107,17 @@ public:
         m_thread.join();
     }
     bool ready() const { return m_ready; }
-    void hold() { m_open = false; m_deadline = (std::chrono::steady_clock::now() + std::chrono::seconds{15}).time_since_epoch().count(); }
+    void hold() { m_open = false; m_deadline = (std::chrono::steady_clock::now() + std::chrono::seconds{60}).time_since_epoch().count(); }
     void release() { m_open = true; }
     int released() const { return m_released; }
+    int expired() const { return m_expired; }
 
 private:
     const std::string m_fifo;
     bool m_ready{false};
     std::atomic_bool m_open{false}, m_stop{false};
     std::atomic<int64_t> m_deadline{0};
-    std::atomic_int m_released{0};
+    std::atomic_int m_released{0}, m_expired{0};
     std::thread m_thread;
 };
 #endif
@@ -869,20 +875,20 @@ private Q_SLOTS:
         const auto wallet_dir = QString::fromStdString(qmltest::Call(m_app, [](interfaces::Node* node) { return node->walletLoader().getWalletDir(); }));
         QVERIFY(QDir{wallet_dir}.mkpath("stall-fifo"));
         WalletDirectoryStall stall{QDir{wallet_dir}.filePath("stall-fifo/wallet.dat")}; QVERIFY(stall.ready());
-        int beats{0}; QTimer heartbeat; heartbeat.setInterval(10);
-        connect(&heartbeat, &QTimer::timeout, this, [&] { ++beats; }); heartbeat.start();
-        // The stall deadline is 15 s; a GUI-thread read would hold either the
-        // action or the following event-loop turns for that long.
-        auto responsive = [&] {
-            QElapsedTimer clock; clock.start(); const int before = beats;
-            QTest::qWait(300);
-            return clock.elapsed() < 3'000 && beats - before >= 10;
+        // While the stall is held, the action under test must return and the
+        // event loop must reach a turn queued behind any GUI work it posted.
+        // A GUI-thread directory read could do neither until the stall's hang
+        // deadline expires, so progress plus "not expired" proves it without
+        // timing how fast either happened.
+        auto progressesWhileHeld = [&] {
+            bool turned{false};
+            QMetaObject::invokeMethod(this, [&turned] { turned = true; }, Qt::QueuedConnection);
+            return QTest::qWaitFor([&turned] { return turned; }, 120'000) && stall.expired() == 0;
         };
-        QElapsedTimer clock;
 
         // Discovery: opening the selector refreshes the catalog.
-        clock.start(); QVERIFY(openSelector()); QVERIFY2(clock.elapsed() < 3'000, "Opening the selector waited for the wallet directory");
-        QVERIFY(responsive());
+        QVERIFY(openSelector()); QVERIFY2(stall.expired() == 0, "Opening the selector waited for the wallet directory");
+        QVERIFY(progressesWhileHeld());
         QVERIFY(!catalog->fresh()); QCOMPARE(stall.released(), 0);
         QVERIFY(qmltest::Find(m_app, "walletSelectItem_stall_open"));
         stall.release(); QTRY_VERIFY(catalog->fresh()); QVERIFY(stall.released() > 0);
@@ -891,10 +897,9 @@ private Q_SLOTS:
 
         // Preflight: the name check reports pending, then the real conflict.
         stall.hold(); const int discovery_releases = stall.released();
-        clock.restart();
         std::unique_ptr<WalletProvisioningCheck> check{controller->creation()->createProvisioningCheck()}; QVERIFY(check);
-        check->setName("stall-open"); QVERIFY2(clock.elapsed() < 3'000, "The name check waited for the wallet directory");
-        QVERIFY(responsive());
+        check->setName("stall-open"); QVERIFY2(stall.expired() == 0, "The name check waited for the wallet directory");
+        QVERIFY(progressesWhileHeld());
         QVERIFY(check->pending()); QCOMPARE(stall.released(), discovery_releases);
         stall.release(); QTRY_VERIFY(!check->pending()); QVERIFY(stall.released() > discovery_releases);
         QVERIFY(!check->nameError().isEmpty());
@@ -902,10 +907,10 @@ private Q_SLOTS:
 
         // Creation rechecks the name against the directory when it executes.
         stall.hold(); const int preflight_releases = stall.released();
-        clock.restart(); const QPointer<WalletOperationModel> operation{controller->creation()->create(WalletCreationModel::Software, "stall-created", {}, {})}; QVERIFY2(clock.elapsed() < 3'000, "Creation waited for the wallet directory");
+        const QPointer<WalletOperationModel> operation{controller->creation()->create(WalletCreationModel::Software, "stall-created", {}, {})}; QVERIFY2(stall.expired() == 0, "Creation waited for the wallet directory");
         QVERIFY(controller->walletLoadInProgress());
         QVERIFY(operation);
-        QVERIFY(responsive());
+        QVERIFY(progressesWhileHeld());
         QVERIFY(controller->walletLoadInProgress()); QVERIFY(!controller->walletForName("stall-created"));
         QCOMPARE(stall.released(), preflight_releases);
         QVERIFY(!controller->creation()->create(WalletCreationModel::Software, "stall-duplicate", {}, {}));
@@ -933,8 +938,10 @@ private Q_SLOTS:
             return node->walletLoader().handleLoadWallet([gate](std::unique_ptr<interfaces::Wallet> wallet) {
                 if (!wallet || wallet->getWalletName() != "close-gate") return;
                 // Core runs load callbacks under its wallet registry mutex.
+                // The deadline only breaks a hang: a GUI thread blocked on
+                // the registry can return only once it has expired.
                 gate->entered.release();
-                if (!gate->release.tryAcquire(1, 15'000)) gate->timed_out = true;
+                if (!gate->release.tryAcquire(1, 60'000)) gate->timed_out = true;
             });
         }));
         QVERIFY(*handler);
@@ -950,18 +957,22 @@ private Q_SLOTS:
             gate->rpc_finished = true;
         }};
         QVERIFY(QTest::qWaitFor([&] { return gate->entered.tryAcquire(); }, 15'000));
-        int beats{0}; QTimer heartbeat; heartbeat.setInterval(10);
-        connect(&heartbeat, &QTimer::timeout, this, [&] { ++beats; }); heartbeat.start();
-        QElapsedTimer clock; clock.start();
+        // Progress while the registry is held, never a speed limit: the event
+        // loop reaches a turn queued behind the GUI work, and the gate has not
+        // had to expire to let it.
+        auto progressesWhileHeld = [&] {
+            bool turned{false};
+            QMetaObject::invokeMethod(this, [&turned] { turned = true; }, Qt::QueuedConnection);
+            return QTest::qWaitFor([&turned] { return turned; }, 120'000) && !gate->timed_out.load();
+        };
         controller->closeWallet("close-target");
-        QVERIFY2(clock.elapsed() < 3'000, "Closing waited for Core's wallet registry");
+        QVERIFY2(!gate->timed_out.load(), "Closing waited for Core's wallet registry");
         QVERIFY(!controller->isWalletOpen("close-target"));
-        const int before = beats;
-        QTRY_VERIFY_WITH_TIMEOUT(beats - before >= 10, 3'000);
+        QVERIFY(progressesWhileHeld());
         // Core has not removed the wallet yet, so reopening it is refused
         // rather than admitted as a second instance.
         controller->setSelectedWallet("close-target");
-        clock.restart(); QTest::qWait(300); QVERIFY(clock.elapsed() < 3'000);
+        QVERIFY(progressesWhileHeld());
         QTRY_VERIFY(!LoadError(*controller).isEmpty()); QVERIFY(!controller->isWalletOpen("close-target"));
         QVERIFY(!gate->rpc_finished.load()); QVERIFY(!gate->timed_out.load());
         gate->release.release();
