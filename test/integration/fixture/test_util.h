@@ -29,6 +29,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace qmltest {
 template <typename Method, typename... Args>
@@ -163,16 +164,32 @@ inline bool WaitForPolish(QQuickItem* item)
 // and accepts that button. Items that only paint (an idle Loader, a label)
 // are skipped, as delivery skips them. Pointer handlers are not considered;
 // targets here are MouseAreas and controls.
-inline QQuickItem* PointerTargetAt(QQuickItem* item, QPointF scene, Qt::MouseButton button)
+inline QQuickItem* PointerTargetAt(QQuickItem* root, QPointF scene, Qt::MouseButton button)
 {
-    if (!item || !item->isVisible() || !item->isEnabled()) return nullptr;
-    const auto local = item->mapFromScene(scene);
-    if (item->clip() && !item->contains(local)) return nullptr;
-    auto children = item->childItems();
-    std::stable_sort(children.begin(), children.end(), [](const QQuickItem* a, const QQuickItem* b) { return a->z() < b->z(); });
-    for (auto it = children.crbegin(); it != children.crend(); ++it)
-        if (auto* target = PointerTargetAt(*it, scene, button)) return target;
-    return item->contains(local) && (item->acceptedMouseButtons() & button) ? item : nullptr;
+    // Iterative depth-first walk: children topmost first, then the item itself.
+    struct Frame { QQuickItem* item; QList<QQuickItem*> children; qsizetype next; };
+    std::vector<Frame> stack;
+    const auto enter = [&](QQuickItem* item) {
+        if (!item || !item->isVisible() || !item->isEnabled()) return;
+        if (item->clip() && !item->contains(item->mapFromScene(scene))) return;
+        auto children = item->childItems();
+        std::stable_sort(children.begin(), children.end(), [](const QQuickItem* a, const QQuickItem* b) { return a->z() < b->z(); });
+        const auto count = children.size();
+        stack.push_back({item, std::move(children), count});
+    };
+    enter(root);
+    while (!stack.empty()) {
+        if (stack.back().next > 0) {
+            auto& frame = stack.back();
+            QQuickItem* child = frame.children[--frame.next];
+            enter(child);
+            continue;
+        }
+        QQuickItem* item = stack.back().item;
+        stack.pop_back();
+        if (item->contains(item->mapFromScene(scene)) && (item->acceptedMouseButtons() & button)) return item;
+    }
+    return nullptr;
 }
 inline QQuickItem* PointerTargetAt(QQuickWindow* window, QPointF scene, Qt::MouseButton button)
 {
